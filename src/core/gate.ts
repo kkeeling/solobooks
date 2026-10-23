@@ -207,7 +207,7 @@ export function waiting(p: PendingAction, page: string) {
   const how =
     p.level === "passkey"
       ? `the person approves it with their passkey on the approval page at ${page} (start it with solobooks serve)`
-      : `the person approves it in this chat or on the approval page at ${page} (start it with solobooks serve)`;
+      : `the person approves it when their agent app asks them, or on the approval page at ${page} (start it with solobooks serve)`;
   return {
     status: "pending",
     pending_id: p.id,

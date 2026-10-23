@@ -24,6 +24,7 @@ const VALID: Record<string, Record<string, unknown>> = {
   invoice_sent: { id: 2 },
   invoice_void: { id: 2, reason: "r" },
   invoice_credit: { invoice_id: 2, reason: "r", amount_cents: 50 },
+  gate_set: { invoice_issue: "click" },
 };
 const ENVELOPE = ["source", "idempotency_key", "input", "command"];
 
@@ -163,6 +164,15 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["invoice_reminder", { id: 2, as_of: "2026-10-23" }, {}, "as_of"],
     ["invoice_get", { id: 99 }, {}, "id"],
     ["time_edit", { id: 2, minutes: 9 }, {}, "id"],
+    ["invoice_issue", { id: 1, ids: [1] }, {}, "id"],
+    ["invoice_issue", {}, {}, "id"],
+    ["invoice_issue", { ids: [1, 2] }, {}, "ids[1]"],
+    ["invoice_issue", { ids: [1, 1] }, {}, "ids"],
+    ["gate_set", {}, {}, "invoice_issue"],
+    ["gate_set", { invoice_void: "agent_decides" }, {}, "invoice_void"],
+    ["gate_set", { invoice_credit: "passkey" }, {}, "invoice_credit"],
+    ["gate_set", { invoice_issue: "always" }, {}, "invoice_issue"],
+    ["pending_get", { id: 99 }, {}, "id"],
   ];
   for (const [op, input, env, field] of cases) {
     const r = write(db, op, input, env);

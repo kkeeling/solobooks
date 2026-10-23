@@ -21,7 +21,7 @@ const cat = (...parts: Uint8Array[]) => {
   for (const p of parts) out.set(p, (i += p.length) - p.length);
   return out;
 };
-const sha256 = async (b: Uint8Array) => new Uint8Array(await crypto.subtle.digest("SHA-256", b));
+const sha256 = async (b: Uint8Array) => new Uint8Array(await crypto.subtle.digest("SHA-256", b as Uint8Array<ArrayBuffer>));
 const u32 = (n: number) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
 
 /** Just enough CBOR for an attestation object and a COSE key: ints, byte strings, text and maps. */
@@ -97,7 +97,7 @@ export class SoftAuthenticator {
     const flags = o.verified === false ? 0x01 : 0x05;
     const authData = cat(await sha256(utf8(options.rpId ?? "localhost")), new Uint8Array([flags]), u32(++this.counter));
     const clientDataJSON = this.clientData("webauthn.get", options.challenge, origin);
-    const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, this.key, cat(authData, await sha256(clientDataJSON))));
+    const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, this.key, cat(authData, await sha256(clientDataJSON)) as Uint8Array<ArrayBuffer>));
     return {
       id: this.id,
       rawId: this.id,
