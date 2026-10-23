@@ -154,7 +154,7 @@ Why: tax collected for a state is tracked as owed money, never mistaken for inco
 
 - [ ] ISC-49: A client's tax rate and label appear as a separate invoice line.
 - [ ] ISC-50: Tax collected is recorded as owed and excluded from income.
-- [ ] ISC-51: The owed-by-period report matches tax collected minus payments to the state.
+- [ ] ISC-51: The sales tax report shows, per period, tax charged on issued invoices, tax collected and payments to the state, each matching the ledger, and never names one of them as the amount due.
 - [ ] ISC-52: Anti: no tax line appears on an invoice unless the person set a rate on that client.
 - [x] ISC-105: A tax rate applies only to the line kinds the person listed for that client.
 
@@ -310,7 +310,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-112 | bun-test | unmatch a wrong match | line back on the unmatched list; payment unmatch pending | bun test test/bank.test.ts -t "unmatch" | derived: injection |
 | ISC-49 | bun-test | taxed client invoice | separate tax line | bun test test/tax.test.ts -t "line" | literal |
 | ISC-50 | bun-test | tax collected | liability, not income | bun test test/tax.test.ts -t "liability" | derived: sales-tax |
-| ISC-51 | bun-property | owed report vs collected minus paid | equal | bun test test/tax.property.test.ts | derived: sales-tax |
+| ISC-51 | bun-property | charged, collected, paid vs ledger | each equal, no amount-due figure | bun test test/tax.property.test.ts | derived: sales-tax |
 | ISC-52 | bun-test | client without rate | no tax line | bun test test/tax.test.ts -t "never decides" | derived: not-an-accountant |
 | ISC-105 | bun-test | pass-through taxed only when listed | untaxed unless listed | bun test test/tax.test.ts -t "applies to" | derived: not-an-accountant |
 | ISC-53 | bun-test | trips on 2026-06-30 and 2026-07-01 | 72.5¢ and 76¢ | bun test test/mileage.test.ts | derived: year-end |
@@ -420,6 +420,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: refined: payment instructions moved from `profile set` to their own gated command, `profile payment instructions set`, because the MCP requiresUserInteraction flag is per tool. The Codex eval runs with full access in its throwaway home, standing in for the person approving setup outside the sandbox, and INSTALL.md tells sandboxed agents to ask.
 - 2026-10-23: Step 4 build calls accepted: bank import takes the bank's own CSV plus a declared column map, so amounts come from the file and not the model; a line's identity is account, date, amount and collapsed description, counted per file; exact matching needs exactly one candidate on each side; payments backed by an imported bank line of the same net amount skip the new `payment_unmatched` gate. Known residual: an agent that writes its own CSV can back a payment ungated; the kept file and its hash are the trail.
 - 2026-10-23: refined: review of step 4 found three gaps, now claims. A refund mirrored the processor fee, but processors keep it (ISC-42 refined). An overpayment credit couldn't be used (ISC-111). A wrong bank match couldn't be undone (ISC-112). And income was booked when invoiced, while Out of Scope rules out accrual books, so reports must count income when paid (ISC-110).
+- 2026-10-23: refined: sales tax owed was first built to follow the money, at my instruction. Most states tax at the sale, and which rule applies is the person's state's call, so the report now gives charged, collected and paid side by side and names no amount due (ISC-51 refined). New books also get a seeded Schedule C chart of accounts, which the Constraints promised.
 
 ## Learning
 
