@@ -41,6 +41,12 @@ const COMMANDS = [
     description:
       "Pick the folder backups go to (--folder <dir>). solobooks then writes a dated copy of the books there once a day, the first time they change that day, and keeps every one; it writes today's at once.",
   },
+  {
+    command: "move",
+    kind: "install",
+    description:
+      "Copy the books to a new, empty folder (--to <dir>): the books file, receipts, invoice PDFs and statements, each checked, and point the settings at it. The old folder is left as it was.",
+  },
   { command: "mcp", kind: "install", description: "Serve the MCP tools over stdio. Agent apps start this; you don't run it by hand." },
   { command: "version", kind: "install", description: "Print the solobooks version (also --version)." },
 ];
@@ -136,11 +142,12 @@ export async function serve(argv: string[], env: Env = process.env) {
   return startPage({ books: booksDir(flags.books, env), port, env });
 }
 
-/** Runs setup, doctor or backup set and prints its JSON; doctor exits 1 when a check failed. */
+/** Runs setup, doctor, backup set or move and prints its JSON; doctor exits 1 when a check failed. */
 export async function install(word: string, argv: string[], env: Env = process.env): Promise<{ code: number; stdout: string }> {
   const out = (code: number, v: unknown) => ({ code, stdout: JSON.stringify(v, null, 2) });
   try {
     if (word === "setup") return out(0, (await import("./setup.ts")).setup(argv, env));
+    if (word === "move") return out(0, (await import("./move.ts")).move(argv, env));
     if (word === "backup") {
       if (argv[0] !== "set") throw new Refusal("There is no such command; run solobooks help for the list.", "command");
       return out(0, (await import("./durability.ts")).backupSet(argv.slice(1), env));
@@ -157,7 +164,7 @@ if (import.meta.main && (word === "--version" || word === "version")) {
   process.stdout.write(`solobooks ${VERSION}\n`);
 } else if (import.meta.main && word === "mcp") {
   (await import("./mcp.ts")).serveMcp(process.argv.slice(3));
-} else if (import.meta.main && (word === "setup" || word === "doctor" || word === "backup")) {
+} else if (import.meta.main && (word === "setup" || word === "doctor" || word === "backup" || word === "move")) {
   const r = await install(word, process.argv.slice(3));
   process.stdout.write(r.stdout + "\n");
   process.exit(r.code);

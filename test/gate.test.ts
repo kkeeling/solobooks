@@ -165,9 +165,9 @@ test("ISC-66 no self approval: no CLI command or MCP tool approves a pending act
   const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id;
 
   // Every command there is: the operations, plus serve, which only starts the page, and the install commands, which
-  // connect agents, check the install, and pick the backup folder, but never open a pending action.
+  // connect agents, check the install, pick the backup folder and move the books, but never open a pending action.
   const commands = (await ok(dir, ["help"])).commands.map((c: any) => c.command);
-  expect(commands).toEqual([...OPS.map((o) => o.name.replaceAll("_", " ")), "serve", "setup", "doctor", "backup set", "mcp", "version"]);
+  expect(commands).toEqual([...OPS.map((o) => o.name.replaceAll("_", " ")), "serve", "setup", "doctor", "backup set", "move", "mcp", "version"]);
   const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now });
   const tools = (await mcp.request("tools/list")).result.tools.map((t: any) => t.name);
   expect(tools).toEqual(OPS.map((o) => o.name));

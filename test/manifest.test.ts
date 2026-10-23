@@ -49,23 +49,24 @@ describe("ISC-1", () => {
     expect(trap.attempts).toEqual([]);
   });
 
-  test("no network: setup, doctor and backup set run with zero outbound connections", async () => {
+  test("no network: setup, doctor, backup set and move run with zero outbound connections", async () => {
     const home = tempDir();
     mkdirSync(join(home, ".claude"));
     mkdirSync(join(home, ".codex"));
     const trap = trapNetwork();
-    let setup, doctor, backup, write;
+    let setup, doctor, backup, write, move;
     try {
       setup = await install("setup", [], { HOME: home });
       doctor = await install("doctor", [], { HOME: home });
       backup = await install("backup", ["set", "--folder", join(home, "backups")], { HOME: home });
       write = await run(["client", "add", "--name", "Acme", "--source", "test", "--books", join(home, "solobooks")], { HOME: home, SOLOBOOKS_NOW: "2026-10-23T12:00:00.000Z" });
+      move = await install("move", ["--to", join(home, "moved")], { HOME: home });
     } finally {
       trap.release();
     }
     expect(trap.attempts).toEqual([]);
     expect(setup.code).toBe(0);
     expect(JSON.parse(doctor.stdout)).toMatchObject({ ok: true });
-    expect([backup.code, write.code]).toEqual([0, 0]);
+    expect([backup.code, write.code, move.code]).toEqual([0, 0, 0]);
   }, 30_000);
 });
