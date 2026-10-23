@@ -1,4 +1,5 @@
 import { cli, ok, tempDir } from "./books.ts";
+import { letAgentDecideIn } from "./person.ts";
 import { RECEIPT } from "./scenario.ts";
 
 export const S = ["--source", "agent:test"];
@@ -15,12 +16,13 @@ export const SELLER = {
 export const json = (cmd: string[], body: unknown) => [...cmd, "--json", JSON.stringify(body), ...S];
 
 /**
- * Books with one client, Acme, holding all four kinds of billable item in October 2026, plus one of each
+ * Books where the person lets the agent decide every gated action, with one client, Acme, holding all four kinds of billable item in October 2026, plus one of each
  * dated outside it: time at $150/hr, a $2,500 milestone billable Oct 15, a $500 monthly fee and a $42 pass-through cost.
  * Accounts: 1 Checking, 2 Printing (expense).
  */
 export async function acmeBooks(client: Record<string, unknown> = {}) {
   const dir = tempDir();
+  letAgentDecideIn(dir);
   await ok(dir, json(["profile", "set"], SELLER));
   await ok(dir, json(["client", "add"], { name: "Acme Corp", address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", ...client }));
   await ok(dir, json(["engagement", "add"], {

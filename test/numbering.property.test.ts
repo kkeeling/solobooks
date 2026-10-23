@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import fc from "fast-check";
 import { memBooks } from "./support/books.ts";
 import { must, write } from "./support/gen.ts";
+import { letAgentDecide } from "./support/person.ts";
 
 const step = fc.oneof(
   fc.record({ do: fc.constant("draft"), client: fc.constantFrom(1, 2), cents: fc.integer({ min: 1, max: 5_000_000 }) }),
@@ -18,6 +19,7 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
   fc.assert(
     fc.property(fc.integer({ min: 1, max: 999_000_000 }), fc.array(step, { minLength: 1, maxLength: 30, size: "max" }), (start, steps) => {
       const db = memBooks();
+      letAgentDecide(db);
       must(db, "profile_set", { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "12-3456789", next_invoice_number: start });
       must(db, "client_add", { name: "Acme", address: "500 Market St" });
       must(db, "client_add", { name: "Beta", address: "9 Elm Rd", tax_rate_ppm: 82500, tax_applies_to: ["manual"] }); // tax is owed, not income
@@ -98,6 +100,7 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
 
 test("ISC-32: the configured next number is fixed once an invoice is issued", () => {
   const db = memBooks();
+  letAgentDecide(db);
   must(db, "profile_set", { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "123456789", next_invoice_number: 500 });
   must(db, "profile_set", { next_invoice_number: 1043 }); // free to change before the first issue
   must(db, "client_add", { name: "Acme", address: "500 Market St" });

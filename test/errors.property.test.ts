@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { OPS } from "../src/core/perform.ts";
 import { cli, memBooks, tempDir } from "./support/books.ts";
 import { must, seedAccounts, write } from "./support/gen.ts";
+import { letAgentDecide } from "./support/person.ts";
 
 const VALID: Record<string, Record<string, unknown>> = {
   account_add: { name: "New", type: "asset" },
@@ -28,6 +29,7 @@ const ENVELOPE = ["source", "idempotency_key", "input", "command"];
 
 function setup() {
   const db = memBooks();
+  letAgentDecide(db);
   seedAccounts(db);
   must(db, "client_add", { name: "Acme" });
   must(db, "time_add", { client_id: 1, date: "2026-10-01", minutes: 30, note: "n" }, { idempotency_key: "used" });

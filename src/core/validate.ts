@@ -9,7 +9,8 @@ export type Field =
   | { type: "date"; required?: boolean; description: string }
   | { type: "enum"; required?: boolean; values: readonly string[]; description: string }
   | { type: "list"; required?: boolean; minItems?: number; of: Fields; description: string }
-  | { type: "set"; required?: boolean; values: readonly string[]; description: string };
+  | { type: "set"; required?: boolean; values: readonly string[]; description: string }
+  | { type: "ids"; required?: boolean; description: string };
 
 export type Fields = Record<string, Field>;
 
@@ -79,6 +80,12 @@ export function validate(input: unknown, fields: Fields, prefix = ""): Record<st
         out[key] = f.values.filter((x) => v.includes(x)); // one canonical order
         break;
       }
+      case "ids": {
+        const ok = Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "number" && Number.isSafeInteger(x) && x >= 1);
+        if (!ok || new Set(v).size !== v.length) throw new Refusal(`${name} must be a list of one or more record ids, each once.`, name);
+        out[key] = v;
+        break;
+      }
       case "list": {
         if (!Array.isArray(v)) throw new Refusal(`${name} must be a list.`, name);
         if (f.minItems !== undefined && v.length < f.minItems) {
@@ -97,7 +104,11 @@ export function coerceFlags(flags: Record<string, string>, fields: Fields): Reco
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(flags)) {
     const t = fields[k]?.type;
-    out[k] = t === "int" && /^-?\d+$/.test(v) ? Number(v) : t === "set" ? v.split(",").map((x) => x.trim()) : v;
+    const parts = () => v.split(",").map((x) => x.trim());
+    out[k] = t === "int" && /^-?\d+$/.test(v) ? Number(v)
+      : t === "set" ? parts()
+      : t === "ids" ? parts().map((x) => (/^\d+$/.test(x) ? Number(x) : x))
+      : v;
   }
   return out;
 }

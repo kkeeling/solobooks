@@ -1,13 +1,22 @@
 #!/usr/bin/env bun
-import { booksDir, booksFile, now, type Env } from "./config.ts";
+import { booksDir, booksFile, now, pagePort, pageUrl, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
+import { startPage } from "./page.ts";
 
 // Thin adapter: argv in, JSON out. All logic lives in src/core.
 
 const ENVELOPE = new Set(["books", "json", "dry-run", "idempotency-key", "source"]);
+
+/** The one command that isn't an operation: it runs the local approval page until stopped. It approves nothing itself. */
+const SERVE = {
+  command: "serve",
+  kind: "page",
+  description:
+    "Run the local approval page on localhost (default port 7317, or --port / SOLOBOOKS_PORT) until stopped. The person approves or rejects pending actions there, and registers a passkey.",
+};
 
 function parse(argv: string[]) {
   const words: string[] = [];
@@ -35,12 +44,15 @@ function parse(argv: string[]) {
 function help() {
   return {
     usage: "solobooks <noun> <verb> [--field value ...] [--json '{...}'] --books <dir> [--source s] [--idempotency-key k] [--dry-run]",
-    commands: OPS.map((o) => ({
-      command: o.name.replace("_", " "),
-      kind: o.kind,
-      description: o.description,
-      fields: o.fields,
-    })),
+    commands: [
+      ...OPS.map((o) => ({
+        command: o.name.replace("_", " "),
+        kind: o.kind,
+        description: o.description,
+        fields: o.fields,
+      })),
+      SERVE,
+    ],
   };
 }
 
@@ -74,6 +86,7 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
         idempotency_key: flags["idempotency-key"],
         dry_run: dryRun,
         now: now(env),
+        page: pageUrl(env),
       });
       return r.ok ? out(0, r.result) : out(2, r.refusal);
     } finally {
@@ -85,7 +98,22 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
   }
 }
 
-if (import.meta.main) {
+/** Starts the approval page for `solobooks serve`; returns a refusal instead when it can't. */
+export async function serve(argv: string[], env: Env = process.env) {
+  const { flags } = parse(argv.slice(1));
+  const port = flags.port !== undefined ? pagePort({ SOLOBOOKS_PORT: flags.port }) : pagePort(env);
+  return startPage({ books: booksDir(flags.books, env), port, env });
+}
+
+if (import.meta.main && process.argv[2] === "serve") {
+  try {
+    const page = await serve(process.argv.slice(2));
+    process.stdout.write(JSON.stringify({ serving: page.url }) + "\n");
+  } catch (e) {
+    process.stdout.write(JSON.stringify(e instanceof Refusal ? e.toJSON() : { error: String(e) }) + "\n");
+    process.exit(e instanceof Refusal ? 2 : 1);
+  }
+} else if (import.meta.main) {
   const r = await run(process.argv.slice(2));
   process.stdout.write(r.stdout + "\n");
   process.exit(r.code);

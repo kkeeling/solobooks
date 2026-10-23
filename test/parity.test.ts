@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { dbPath, dumpFile, ROOT, tempDir } from "./support/books.ts";
 import { stdioMcp } from "./support/mcp-client.ts";
+import { setUpPerson } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
 
 const ENV = { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" };
@@ -14,6 +15,8 @@ async function binCli(dir: string, args: string[]) {
 test("ISC-14: the CLI and MCP produce identical records for the same operations", async () => {
   const viaCli = tempDir();
   const viaMcp = tempDir();
+  await setUpPerson(viaCli);
+  await setUpPerson(viaMcp);
   const mcp = await stdioMcp(viaMcp, ENV);
 
   const refusal = { op: "time_add", input: { client_id: 1, date: "2026-10-01", minutes: 0, note: "x" } };

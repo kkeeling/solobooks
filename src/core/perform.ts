@@ -2,6 +2,7 @@ import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { documentOps } from "./documents.ts";
 import { expenseOps } from "./expenses.ts";
+import { DEFAULT_PAGE, gateOps, park, requiredLevel } from "./gate.ts";
 import { saveFiles, sha256 } from "./files.ts";
 import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
@@ -21,6 +22,7 @@ export const OPS: readonly Op[] = [
   ...documentOps,
   ...ledgerOps,
   ...reportOps,
+  ...gateOps,
 ];
 
 export function findOp(name: string): Op | undefined {
@@ -33,6 +35,8 @@ export interface Envelope {
   idempotency_key?: unknown;
   dry_run?: unknown;
   now: string;
+  /** The local approval page's address; pending actions point to it. */
+  page?: string;
 }
 
 export type Outcome = { ok: true; result: Record<string, unknown> } | { ok: false; refusal: { reason: string; field: string } };
@@ -81,8 +85,9 @@ function execute(
   const op = findOp(opName);
   if (!op) throw new Refusal("There is no such operation.", "command");
   const input = validate(rawInput, op.fields);
+  const page = env.page ?? DEFAULT_PAGE;
   if (op.kind === "read") {
-    const ctx: Ctx = { source: "", now: env.now, files: [] };
+    const ctx: Ctx = { source: "", now: env.now, files: [], page };
     const result = op.run(db, input, ctx);
     if (result instanceof Promise) {
       return result.then((r) => {
@@ -97,17 +102,45 @@ function execute(
   if (typeof env.source !== "string" || !env.source.trim()) {
     throw new Refusal("Every write needs a source saying where it came from, such as agent:claude-code or person.", "source");
   }
-  const source = env.source.trim();
-  const key = env.idempotency_key;
-  if (key !== undefined && (typeof key !== "string" || !key.trim())) {
+  if (env.idempotency_key !== undefined && (typeof env.idempotency_key !== "string" || !env.idempotency_key.trim())) {
     throw new Refusal("idempotency_key must be non-empty text.", "idempotency_key");
   }
-  const dryRun = env.dry_run === true;
-  const payload = canonical({ op: op.name, input, source });
+  const key = env.idempotency_key as string | undefined;
+  const write: Write = { name: op.name, input, source: env.source.trim(), key, dryRun: env.dry_run === true, now: env.now, page };
+  // The gate: a gated action the person hasn't left to the agent is parked as a pending action instead of run.
+  const action = op.gate?.(input) ?? null;
+  const level = action === null ? "agent_decides" : requiredLevel(db, action, input);
+  if (action !== null && level !== "agent_decides") {
+    return runWrite(db, write, (ctx) => park(db, op, input, ctx, action, level, key));
+  }
+  return runWrite(db, write, (ctx) => {
+    const result = op.run(db, input, ctx);
+    if (result instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
+    return result;
+  });
+}
+
+/** One write as asked for: what it is, who asked, and how. */
+export interface Write {
+  name: string;
+  input: unknown;
+  source: string;
+  key?: string;
+  dryRun: boolean;
+  now: string;
+  page: string;
+}
+
+/**
+ * The one way anything changes the books: the change, the balance check and exactly one history row commit together,
+ * or nothing does. A repeated idempotency key returns the first result; a dry run takes the same path and rolls back.
+ */
+export function runWrite(db: Books, w: Write, change: (ctx: Ctx) => Record<string, unknown>): Record<string, unknown> {
+  const payload = canonical({ op: w.name, input: w.input, source: w.source });
   const hash = sha256(payload);
 
-  if (key !== undefined) {
-    const prior = db.query("SELECT payload_hash, result FROM history WHERE idempotency_key = ?").get(key) as
+  if (w.key !== undefined) {
+    const prior = db.query("SELECT payload_hash, result FROM history WHERE idempotency_key = ?").get(w.key) as
       | { payload_hash: string; result: string }
       | null;
     if (prior) {
@@ -115,20 +148,19 @@ function execute(
         throw new Refusal("This idempotency_key was already used for a different write, so use a new key.", "idempotency_key");
       }
       const result = JSON.parse(prior.result);
-      return dryRun ? { dry_run: true, result } : result;
+      return w.dryRun ? { dry_run: true, result } : result;
     }
   }
 
   db.exec("BEGIN IMMEDIATE");
   try {
-    const ctx: Ctx = { source, now: env.now, files: [] };
-    const result = op.run(db, input, ctx);
-    if (result instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
+    const ctx: Ctx = { source: w.source, now: w.now, files: [], page: w.page };
+    const result = change(ctx);
     assertBalanced(db);
     db.query(
       "INSERT INTO history (at, op, source, idempotency_key, payload_hash, payload, result) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).run(env.now, op.name, source, key ?? null, hash, payload, JSON.stringify(result));
-    if (dryRun) {
+    ).run(w.now, w.name, w.source, w.key ?? null, hash, payload, JSON.stringify(result));
+    if (w.dryRun) {
       db.exec("ROLLBACK");
       return { dry_run: true, result };
     }

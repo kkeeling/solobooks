@@ -2,7 +2,11 @@ import { join } from "node:path";
 
 export const RECEIPT = join(import.meta.dir, "..", "fixtures", "receipt.png");
 
-/** One pass through every operation solobooks has, in an order where each step succeeds. */
+/**
+ * One pass through every operation solobooks has, in an order where each step succeeds, on books set up with
+ * setUpPerson(): a passkey registered and every gated action left to the agent (pending action 1). gate_set then
+ * parks pending action 2.
+ */
 export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "account_add", input: { name: "Checking", type: "asset" } },
   { op: "account_add", input: { name: "Consulting income", type: "income" } },
@@ -65,6 +69,10 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_draft", input: { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31" } },
   { op: "invoice_issue", input: { id: 4 } },
   { op: "invoice_void", input: { id: 4, reason: "Wrong period" } },
+  { op: "gate_set", input: { invoice_issue: "click" } },
+  { op: "gate_list", input: {} },
+  { op: "pending_list", input: {} },
+  { op: "pending_get", input: { id: 2 } },
   { op: "account_list", input: {} },
   { op: "entry_list", input: {} },
   { op: "client_list", input: {} },

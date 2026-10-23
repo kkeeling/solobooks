@@ -3,6 +3,7 @@ import { OPS } from "../src/core/perform.ts";
 import { cli, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 import { trapNetwork } from "./support/network-trap.ts";
+import { setUpPerson } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
 
 describe("ISC-1", () => {
@@ -23,13 +24,16 @@ describe("ISC-1", () => {
     const trap = trapNetwork();
     try {
       const cliDir = tempDir();
+      await setUpPerson(cliDir);
       for (const step of SCENARIO) {
         expect((await cli(cliDir, [...cliArgs(step), "--dry-run"])).code).toBe(0);
         expect((await cli(cliDir, cliArgs(step))).code).toBe(0);
       }
       expect((await cli(cliDir, ["help"])).code).toBe(0);
 
-      const mcp = await inProcessMcp(tempDir());
+      const mcpDir = tempDir();
+      await setUpPerson(mcpDir);
+      const mcp = await inProcessMcp(mcpDir);
       await mcp.request("tools/list");
       for (const step of SCENARIO) {
         const r = await mcp.call(step.op, { ...step.input, source: "test:scenario" });

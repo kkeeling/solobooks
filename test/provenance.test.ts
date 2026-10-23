@@ -1,10 +1,12 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { cli, dbPath, tempDir } from "./support/books.ts";
+import { setUpPerson } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
 
 test("ISC-12: every record carries a non-empty source", async () => {
   const dir = tempDir();
+  await setUpPerson(dir);
   for (const step of SCENARIO) await cli(dir, cliArgs(step, "agent:claude-code"));
 
   const db = new Database(dbPath(dir));

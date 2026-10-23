@@ -15,7 +15,12 @@ export interface Ctx {
   now: string;
   /** Files to save. For a write they are saved just before commit, and never on a dry run. */
   files: PendingFile[];
+  /** The local approval page's address, which a pending action points the person to. */
+  page: string;
 }
+
+/** What the approval gate guards. The first four have a level the person sets; gate settings always need approval. */
+export type GateAction = "invoice_issue" | "invoice_void" | "invoice_credit" | "payment_instructions" | "gate_settings";
 
 /** One thing solobooks can do. The CLI and the MCP server are both generated from these. */
 export interface Op {
@@ -28,6 +33,8 @@ export interface Op {
   savesFile?: boolean;
   description: string;
   fields: Fields;
+  /** For a gated write: which gated action this input is, or null when it touches nothing gated. */
+  gate?(input: any): GateAction | null;
   /** Writes are synchronous so they run inside one transaction; only reads may return a promise. */
   run(db: Books, input: any, ctx: Ctx): Record<string, unknown> | Promise<Record<string, unknown>>;
 }

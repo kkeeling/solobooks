@@ -43,7 +43,8 @@ const profileSet: Op = {
   name: "profile_set",
   kind: "write",
   description:
-    "Set the business details issued invoices carry: legal name, address, EIN, the email invoices come from, payment instructions and the first invoice number. Only the fields given change.",
+    "Set the business details issued invoices carry: legal name, address, EIN, the email invoices come from, payment instructions and the first invoice number. Only the fields given change. Changing payment_instructions is gated: unless the person lets the agent decide, the whole change waits as a pending action for them to approve.",
+  gate: (input) => (input.payment_instructions !== undefined ? "payment_instructions" : null),
   fields: {
     legal_name: { type: "text", description: "The business's legal name." },
     address: { type: "text", description: "Postal address; separate lines with a newline." },

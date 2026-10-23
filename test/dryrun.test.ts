@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { OPS } from "../src/core/perform.ts";
 import { cli, dbPath, fileHash, tempDir } from "./support/books.ts";
+import { setUpPerson } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
 
 /** Every file under a folder, so a dry run that leaves anything behind (a journal, a receipt) shows up. */
@@ -12,6 +13,7 @@ function listing(dir: string): string[] {
 
 test("ISC-11: --dry-run on every write leaves the database file byte-identical", async () => {
   const dir = tempDir();
+  await setUpPerson(dir);
   const writes = SCENARIO.filter((s) => OPS.find((o) => o.name === s.op)!.kind === "write");
   expect(new Set(writes.map((w) => w.op))).toEqual(new Set(OPS.filter((o) => o.kind === "write").map((o) => o.name)));
 
