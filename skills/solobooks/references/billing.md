@@ -24,7 +24,7 @@ Both wait for the person's approval by default.
 
 ## Overdue
 
-`invoice reminder --id <id>` writes the reminder text with the unpaid balance and days late. You send it.
+`report unpaid` lists every invoice still owed, most days late first. `invoice reminder --id <id>` writes the reminder text with the unpaid balance and days late. You send it. Payments, partial or not, go through `payment add`: see money.md.
 
 ## Looking at the books
 
