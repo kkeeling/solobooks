@@ -1,3 +1,7 @@
+import { join } from "node:path";
+
+export const RECEIPT = join(import.meta.dir, "..", "fixtures", "receipt.png");
+
 /** One pass through every operation solobooks has, in an order where each step succeeds. */
 export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "account_add", input: { name: "Checking", type: "asset" } },
@@ -27,12 +31,54 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "time_add", input: { client_id: 2, date: "2026-10-04", minutes: 5, note: "Call" } },
   { op: "time_edit", input: { id: 1, minutes: 40 } },
   { op: "time_delete", input: { id: 2 } },
+  {
+    op: "profile_set",
+    input: {
+      legal_name: "Jane Doe Consulting LLC",
+      address: "1 Main St\nSpringfield, IL 62701",
+      ein: "12-3456789",
+      email: "jane@example.com",
+      payment_instructions: "ACH to First Bank, routing 011000015, account 1234567",
+      next_invoice_number: 1043,
+    },
+  },
+  {
+    op: "client_edit",
+    input: { id: 1, address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", tax_rate_ppm: 62500, tax_label: "IL sales tax" },
+  },
+  { op: "client_edit", input: { id: 2, address: "9 Elm Rd\nAustin, TX 78701", terms_days: 15 } },
+  { op: "milestone_billable", input: { id: 1, date: "2026-10-15" } },
+  {
+    op: "expense_add",
+    input: {
+      date: "2026-10-05", amount_cents: 4200, vendor: "Print shop", memo: "Workshop handouts",
+      account_id: 3, paid_from_account_id: 1, receipt_path: RECEIPT, pass_through_client_id: 1,
+    },
+  },
+  { op: "invoice_draft", input: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Setup", amount_cents: 10000 }] } },
+  { op: "invoice_edit", input: { id: 1, terms_days: 15, note: "Thank you for your business" } },
+  { op: "invoice_draft", input: { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31" } },
+  { op: "invoice_delete", input: { id: 2 } },
+  { op: "invoice_issue", input: { id: 1 } },
+  { op: "invoice_sent", input: { id: 1 } },
+  { op: "invoice_credit", input: { invoice_id: 1, amount_cents: 1000, reason: "Goodwill discount" } },
+  { op: "invoice_draft", input: { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31" } },
+  { op: "invoice_issue", input: { id: 4 } },
+  { op: "invoice_void", input: { id: 4, reason: "Wrong period" } },
   { op: "account_list", input: {} },
   { op: "entry_list", input: {} },
   { op: "client_list", input: {} },
   { op: "engagement_list", input: { client_id: 1 } },
   { op: "time_list", input: {} },
   { op: "report_pnl", input: { from: "2026-01-01", to: "2026-12-31" } },
+  { op: "profile_get", input: {} },
+  { op: "invoice_list", input: {} },
+  { op: "invoice_get", input: { id: 1 } },
+  { op: "invoice_pdf", input: { id: 1 } },
+  { op: "invoice_pdf", input: { id: 3 } },
+  { op: "invoice_email", input: { id: 1 } },
+  { op: "invoice_reminder", input: { id: 1, as_of: "2099-01-01" } },
+  { op: "expense_list", input: {} },
   { op: "history_list", input: {} },
 ];
 

@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { OPS } from "../src/core/perform.ts";
 import { cli, dbPath, fileHash, tempDir } from "./support/books.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
+
+/** Every file under a folder, so a dry run that leaves anything behind (a journal, a receipt) shows up. */
+function listing(dir: string): string[] {
+  return readdirSync(dir, { recursive: true }).map(String).sort().map((f) => join(dir, f));
+}
 
 test("ISC-11: --dry-run on every write leaves the database file byte-identical", async () => {
   const dir = tempDir();
@@ -12,11 +18,13 @@ test("ISC-11: --dry-run on every write leaves the database file byte-identical",
   for (const step of writes) {
     if (existsSync(dbPath(dir))) {
       const before = fileHash(dbPath(dir));
+      const files = listing(dir);
       const dry = await cli(dir, [...cliArgs(step), "--dry-run"]);
       expect(dry.code).toBe(0);
       expect(dry.out.dry_run).toBe(true);
       expect(fileHash(dbPath(dir))).toBe(before);
-      expect(readdirSync(dir)).toEqual(["solobooks.sqlite"]); // no journal, -wal or -shm left behind
+      expect(listing(dir)).toEqual(files); // no journal, -wal, -shm or receipt left behind
+      expect(readdirSync(dir).filter((f) => f.startsWith("solobooks"))).toEqual(["solobooks.sqlite"]);
     }
     expect((await cli(dir, cliArgs(step))).code).toBe(0);
   }

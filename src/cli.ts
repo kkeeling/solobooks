@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { booksDir, booksFile, now, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
-import { findOp, OPS, perform } from "./core/perform.ts";
+import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
 
@@ -69,7 +69,7 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
 
     const db = openForRun(booksFile(booksDir(flags.books, env)), dryRun);
     try {
-      const r = perform(db, op.name, input, {
+      const r = await performAsync(db, op.name, input, {
         source: flags.source,
         idempotency_key: flags["idempotency-key"],
         dry_run: dryRun,

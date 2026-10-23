@@ -4,7 +4,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { booksDir, booksFile, now, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
 import type { Op } from "./core/op.ts";
-import { OPS, perform } from "./core/perform.ts";
+import { OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import type { Field, Fields } from "./core/validate.ts";
 
@@ -63,7 +63,7 @@ export function createServer(env: Env, books?: string): McpServer {
         description: op.description,
         inputSchema: fromJsonSchema(toolSchema(op) as JsonSchemaType, coreValidates),
         annotations: {
-          readOnlyHint: op.kind === "read",
+          readOnlyHint: op.kind === "read" && !op.savesFile,
           destructiveHint: op.destructive === true,
           idempotentHint: op.kind === "read",
           openWorldHint: false,
@@ -77,7 +77,7 @@ export function createServer(env: Env, books?: string): McpServer {
           const dryRun = dry_run === true;
           const db = openForRun(booksFile(booksDir(books, env)), dryRun);
           try {
-            const r = perform(db, op.name, input, { source, idempotency_key, dry_run: dryRun, now: now(env) });
+            const r = await performAsync(db, op.name, input, { source, idempotency_key, dry_run: dryRun, now: now(env) });
             result = r.ok ? r.result : r.refusal;
             isError = !r.ok;
           } finally {

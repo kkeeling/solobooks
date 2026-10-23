@@ -2,6 +2,7 @@ import { billableMinutes, lineAmountCents } from "./billing.ts";
 import { getEngagement, requireClient } from "./clients.ts";
 import type { Books } from "./db.ts";
 import type { Op } from "./op.ts";
+import { dollars } from "./format.ts";
 import { Refusal } from "./refusal.ts";
 
 // solobooks stores time it is given. It never reads agent logs and never runs timers.
@@ -49,6 +50,39 @@ export function priced(db: Books, e: Entry) {
   };
 }
 
+/** How a priced time entry reads as an invoice line. */
+export function timeLine(db: Books, e: Entry): { description: string; amount_cents: number } {
+  const p = priced(db, e);
+  if (p.amount_cents === null || p.rate_cents_per_hour === null) {
+    throw new Refusal(`Time entry ${e.id} has no hourly rate, so give it the engagement_id of an hourly engagement.`, "engagement_id");
+  }
+  return {
+    description: `${e.date} ${e.note} (${p.billable_minutes} min at ${dollars(p.rate_cents_per_hour)}/hr)`,
+    amount_cents: p.amount_cents,
+  };
+}
+
+/** Where a time entry is billed: the invoice it sits on, unless that invoice was voided. */
+function billedOn(db: Books, entryId: number) {
+  return db
+    .query(
+      `SELECT i.id, i.status, i.number, l.id AS line_id FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+       WHERE l.time_entry_id = ? AND i.status <> 'void'`,
+    )
+    .get(entryId) as { id: number; status: string; number: number | null; line_id: number } | null;
+}
+
+/** Time on an issued invoice is locked; time on a draft is free, and the draft follows the change. */
+function refuseIfIssued(db: Books, entryId: number): void {
+  const inv = billedOn(db, entryId);
+  if (inv && inv.status !== "draft") {
+    throw new Refusal(
+      `Time entry ${entryId} is billed on issued invoice ${inv.number}, so it can't change; void or credit that invoice instead.`,
+      "id",
+    );
+  }
+}
+
 const fields = {
   client_id: { type: "int", required: true, min: 1, description: "Client id." },
   date: { type: "date", required: true, description: "Day the work happened, YYYY-MM-DD." },
@@ -77,7 +111,7 @@ const timeAdd: Op = {
 const timeEdit: Op = {
   name: "time_edit",
   kind: "write",
-  description: "Change an unbilled time entry. Only the fields given change.",
+  description: "Change a time entry that isn't on an issued invoice. Only the fields given change; a draft holding it follows the change.",
   fields: {
     id: { type: "int", required: true, min: 1, description: "Time entry id." },
     client_id: { ...fields.client_id, required: false },
@@ -88,13 +122,30 @@ const timeEdit: Op = {
   },
   run(db, input, ctx) {
     const old = requireEntry(db, input.id);
+    refuseIfIssued(db, old.id);
     const next = { ...old, ...input, source: ctx.source };
     requireClient(db, next.client_id);
     checkEngagement(db, next.client_id, next.engagement_id);
     db.query(
       "UPDATE time_entries SET client_id = ?, engagement_id = ?, date = ?, minutes = ?, note = ?, source = ? WHERE id = ?",
     ).run(next.client_id, next.engagement_id, next.date, next.minutes, next.note, next.source, old.id);
-    return { time_entry: priced(db, getTimeEntry(db, old.id)!) };
+    const entry = getTimeEntry(db, old.id)!;
+    const draft = billedOn(db, old.id);
+    if (draft) {
+      const onClient = (db.query("SELECT client_id FROM invoices WHERE id = ?").get(draft.id) as { client_id: number }).client_id;
+      if (onClient !== entry.client_id) {
+        db.query("DELETE FROM invoice_lines WHERE id = ?").run(draft.line_id);
+      } else {
+        const line = timeLine(db, entry);
+        db.query("UPDATE invoice_lines SET description = ?, amount_cents = ?, source = ? WHERE id = ?").run(
+          line.description,
+          line.amount_cents,
+          ctx.source,
+          draft.line_id,
+        );
+      }
+    }
+    return { time_entry: priced(db, entry) };
   },
 };
 
@@ -102,10 +153,21 @@ const timeDelete: Op = {
   name: "time_delete",
   kind: "write",
   destructive: true,
-  description: "Delete an unbilled time entry.",
+  description: "Delete a time entry that isn't on an issued invoice; a draft holding it drops the line.",
   fields: { id: { type: "int", required: true, min: 1, description: "Time entry id." } },
   run(db, input) {
     const old = requireEntry(db, input.id);
+    refuseIfIssued(db, old.id);
+    const voided = db
+      .query(
+        `SELECT i.number FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+         WHERE l.time_entry_id = ? AND i.status = 'void' LIMIT 1`,
+      )
+      .get(old.id) as { number: number } | null;
+    if (voided) {
+      throw new Refusal(`Time entry ${old.id} is part of voided invoice ${voided.number}'s record, so edit it instead of deleting it.`, "id");
+    }
+    db.query("DELETE FROM invoice_lines WHERE time_entry_id = ?").run(old.id); // only a draft's line can be left here
     db.query("DELETE FROM time_entries WHERE id = ?").run(old.id);
     return { deleted: { time_entry: old } };
   },

@@ -1,13 +1,27 @@
 import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
+import { documentOps } from "./documents.ts";
+import { expenseOps } from "./expenses.ts";
+import { saveFiles, sha256 } from "./files.ts";
+import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
-import type { Op } from "./op.ts";
+import type { Ctx, Op } from "./op.ts";
+import { profileOps } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
 import { reportOps } from "./reports.ts";
 import { timeOps } from "./time.ts";
 import { validate } from "./validate.ts";
 
-export const OPS: readonly Op[] = [...clientOps, ...timeOps, ...ledgerOps, ...reportOps];
+export const OPS: readonly Op[] = [
+  ...profileOps,
+  ...clientOps,
+  ...timeOps,
+  ...expenseOps,
+  ...invoiceOps,
+  ...documentOps,
+  ...ledgerOps,
+  ...reportOps,
+];
 
 export function findOp(name: string): Op | undefined {
   return OPS.find((o) => o.name === name);
@@ -33,28 +47,52 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-function sha256(s: string): string {
-  return new Bun.CryptoHasher("sha256").update(s).digest("hex");
-}
-
 /**
  * Runs one operation. A write is one transaction: the change, the balance check and exactly one history row
  * commit together, or nothing does. A dry run takes the same path and rolls back.
  */
 export function perform(db: Books, opName: string, input: unknown, env: Envelope): Outcome {
   try {
-    return { ok: true, result: execute(db, opName, input ?? {}, env) };
+    const result = execute(db, opName, input ?? {}, env);
+    if (result instanceof Promise) throw new Error(`${opName} finishes asynchronously, so call performAsync`);
+    return { ok: true, result };
   } catch (e) {
     if (e instanceof Refusal) return { ok: false, refusal: e.toJSON() };
     throw e;
   }
 }
 
-function execute(db: Books, opName: string, rawInput: unknown, env: Envelope): Record<string, unknown> {
+/** perform() for callers that can wait, which is what the CLI and MCP use: it also runs the reads that render files. */
+export async function performAsync(db: Books, opName: string, input: unknown, env: Envelope): Promise<Outcome> {
+  try {
+    return { ok: true, result: await execute(db, opName, input ?? {}, env) };
+  } catch (e) {
+    if (e instanceof Refusal) return { ok: false, refusal: e.toJSON() };
+    throw e;
+  }
+}
+
+function execute(
+  db: Books,
+  opName: string,
+  rawInput: unknown,
+  env: Envelope,
+): Record<string, unknown> | Promise<Record<string, unknown>> {
   const op = findOp(opName);
   if (!op) throw new Refusal("There is no such operation.", "command");
   const input = validate(rawInput, op.fields);
-  if (op.kind === "read") return op.run(db, input, { source: "", now: env.now });
+  if (op.kind === "read") {
+    const ctx: Ctx = { source: "", now: env.now, files: [] };
+    const result = op.run(db, input, ctx);
+    if (result instanceof Promise) {
+      return result.then((r) => {
+        saveFiles(db, ctx.files);
+        return r;
+      });
+    }
+    saveFiles(db, ctx.files);
+    return result;
+  }
 
   if (typeof env.source !== "string" || !env.source.trim()) {
     throw new Refusal("Every write needs a source saying where it came from, such as agent:claude-code or person.", "source");
@@ -83,7 +121,9 @@ function execute(db: Books, opName: string, rawInput: unknown, env: Envelope): R
 
   db.exec("BEGIN IMMEDIATE");
   try {
-    const result = op.run(db, input, { source, now: env.now });
+    const ctx: Ctx = { source, now: env.now, files: [] };
+    const result = op.run(db, input, ctx);
+    if (result instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
     assertBalanced(db);
     db.query(
       "INSERT INTO history (at, op, source, idempotency_key, payload_hash, payload, result) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -92,6 +132,8 @@ function execute(db: Books, opName: string, rawInput: unknown, env: Envelope): R
       db.exec("ROLLBACK");
       return { dry_run: true, result };
     }
+    // Files land before the commit: if saving fails the write rolls back, and an orphan file is the worst case.
+    saveFiles(db, ctx.files);
     db.exec("COMMIT");
     return result;
   } catch (e) {
