@@ -25,10 +25,9 @@ const ANY = [1, 2, 3, 4, 5, 6, 7];
 const date = fc.integer({ min: 0, max: 364 }).map((d) => new Date(Date.UTC(2026, 0, 1 + d)).toISOString().slice(0, 10));
 const amount = fc.integer({ min: 1, max: 50_000_000 });
 
-/** Legs that net to zero across distinct own accounts: random amounts out of some, one leg taking the rest in. */
-const balancedLegs = fc
-  .shuffledSubarray(OWN, { minLength: 2, maxLength: 4 })
-  .chain((ids) =>
+/** Legs that net to zero across distinct accounts from a pool: random amounts in and out, one leg taking the rest. */
+const balancedLegs = (pool: number[]) =>
+  fc.shuffledSubarray(pool, { minLength: 2, maxLength: 4 }).chain((ids) =>
     fc.array(fc.tuple(amount, fc.boolean()), { minLength: ids.length - 1, maxLength: ids.length - 1 }).map((xs) => {
       const legs = xs.map(([a, out], i) => ({ account_id: ids[i]!, amount_cents: out ? -a : a }));
       const net = legs.reduce((s, l) => s + l.amount_cents, 0);
@@ -37,11 +36,14 @@ const balancedLegs = fc
     }),
   );
 
-/** Legs that may not net to zero, or that reach accounts that aren't the person's own. */
+/** Legs that usually don't net to zero. */
 const strayLegs = fc.array(fc.record({ account_id: fc.constantFrom(...ANY), amount_cents: fc.integer({ min: -50_000_000, max: 50_000_000 }) }), {
   minLength: 2,
   maxLength: 4,
 });
+
+/** Transfers between own accounts, balanced ones that reach equity, income or expense, and unbalanced ones. */
+const legs = fc.oneof(balancedLegs(OWN), balancedLegs(ANY), strayLegs);
 
 const pnl = (db: Books) => must(db, "report_pnl", {});
 /** What the person's own accounts hold in all, debits less credits: moving money among them never changes it. */
@@ -52,7 +54,7 @@ test("ISC-20 transfers: random transfers between the person's own accounts leave
   let posted = 0;
   let refused = 0;
   fc.assert(
-    fc.property(fc.array(fc.tuple(date, fc.oneof(balancedLegs, strayLegs)), { maxLength: 12 }), (transfers) => {
+    fc.property(fc.array(fc.tuple(date, legs), { maxLength: 12 }), (transfers) => {
       const db = books();
       const before = pnl(db);
       const held = own(db);
