@@ -112,12 +112,18 @@ test("ISC-51 sales tax by period: charged, collected and paid to the state each 
           expect(t.payments_to_state.reduce((s: number, x: any) => s + x.amount_cents, 0)).toBe(t.paid_to_state_cents);
         }
         // Collected is part of the money that settled invoices in the period: with the income beside it, it is exactly
-        // what payments settled less what refunds took back, plus credit applied.
+        // what the ledger took off Accounts receivable in the period's payments, refunds and applied credit.
         const settled = ledger(
+          `SELECT COALESCE(SUM(l.credit_cents) - SUM(l.debit_cents), 0) AS n FROM lines l JOIN entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+           WHERE a.name = 'Accounts receivable' AND e.date BETWEEN ?1 AND ?2
+             AND e.id IN (SELECT entry_id FROM payments UNION SELECT entry_id FROM refunds UNION SELECT entry_id FROM credit_applications)`, ps, pe,
+        );
+        // The same figure from the records themselves.
+        expect(settled).toBe(ledger(
           `SELECT (SELECT COALESCE(SUM(applied_cents), 0) FROM payments WHERE date BETWEEN ?1 AND ?2)
                 - (SELECT COALESCE(SUM(applied_cents), 0) FROM refunds WHERE date BETWEEN ?1 AND ?2)
                 + (SELECT COALESCE(SUM(amount_cents), 0) FROM credit_applications WHERE date BETWEEN ?1 AND ?2) AS n`, ps, pe,
-        );
+        ));
         const events = cashEvents(db, ps, pe);
         expect(events.reduce((s, e) => s + e.services + e.reimbursed + e.tax, 0)).toBe(settled);
         expect(sum("collected_cents")).toBe(events.reduce((s, e) => s + e.tax, 0));
