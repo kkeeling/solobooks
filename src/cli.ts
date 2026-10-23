@@ -145,7 +145,12 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
 export async function serve(argv: string[], env: Env = process.env) {
   const { flags } = parse(argv.slice(1));
   const port = flags.port !== undefined ? pagePort({ SOLOBOOKS_PORT: flags.port }) : pagePort(env);
-  return startPage({ books: booksDir(flags.books, env), port, env });
+  // A test seam: holds the page's data back this many milliseconds, so its loading state can be seen and captured.
+  const delay = env.SOLOBOOKS_PAGE_DELAY_MS ? Number(env.SOLOBOOKS_PAGE_DELAY_MS) : 0;
+  if (!Number.isInteger(delay) || delay < 0 || delay > 600_000) {
+    throw new Refusal("SOLOBOOKS_PAGE_DELAY_MS must be a whole number of milliseconds from 0 to 600000.", "SOLOBOOKS_PAGE_DELAY_MS");
+  }
+  return startPage({ books: booksDir(flags.books, env), port, env, dataDelayMs: delay });
 }
 
 /** Runs setup, doctor, backup set or move and prints its JSON; doctor exits 1 when a check failed. */

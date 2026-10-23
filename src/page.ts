@@ -7,10 +7,12 @@ import { openOptions } from "./durability.ts";
 import { field, getPending, hasPasskey, levelToApprove, type PendingAction, promptFields } from "./core/gate.ts";
 import { authenticationOptions, registrationOptions, verifyPasskey, verifyRegistration } from "./core/passkey.ts";
 import { Refusal } from "./core/refusal.ts";
+import { esc, panels } from "./panels.ts";
 
-// The local approval page: the list of pending actions with Approve and Reject, and passkey registration. It listens
-// on loopback only and loads nothing from anywhere else. Every approve or reject carries a one-time code the page
-// itself handed out, so a bare POST to a guessed address does nothing.
+// The local page: the list of pending actions with Approve and Reject, passkey registration, and four read-only
+// panels (invoices, unpaid, the year's P&L, recent changes) that load from /data. It listens on loopback only and
+// loads nothing from anywhere else. Every approve or reject carries a one-time code the page itself handed out, so a
+// bare POST to a guessed address does nothing. There is no other way to change the books here; the agent does that.
 
 const GRANT_MS = 15 * 60_000;
 
@@ -24,7 +26,7 @@ export interface Page {
   stop(): void;
 }
 
-export function startPage(o: { books: string; port: number; env: Env }): Page {
+export function startPage(o: { books: string; port: number; env: Env; dataDelayMs?: number }): Page {
   const file = booksFile(o.books);
   if (!existsSync(file)) throw new Refusal(`There are no books in ${o.books} yet, so there is nothing to approve.`, "books");
 
@@ -57,7 +59,19 @@ export function startPage(o: { books: string; port: number; env: Env }): Page {
     }
   };
 
-  const json = (status: number, body: unknown) => Response.json(body, { status });
+  /** For what the page only reads: the books must already be there, so a missing file is an error, never new books. */
+  const readBooks = <T>(f: (db: Books) => T | Promise<T>): Promise<T> => {
+    if (!existsSync(file)) return Promise.reject(new Error("the file is not there"));
+    return withBooks(f);
+  };
+  /** Says, in plain words, that the books can't be read and what to do about it. */
+  const unreadable = (e: unknown) => {
+    const why = e instanceof Refusal ? e.reason : e instanceof Error ? e.message : String(e);
+    console.error("solobooks serve: can't read the books:", why);
+    return `solobooks can't read the books file at ${file} (${why}). Check the file is there and that you can open it, or run solobooks doctor --books ${o.books} to see what's wrong, then reload this page.`;
+  };
+
+  const json = (status: number, body: unknown) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
   const refused = (status: number, reason: string, field: string) => json(status, { ok: false, refusal: { reason, field } });
   const expired = () => refused(403, "This approval link has expired or was already used, so reload the approval page and try again.", "code");
 
@@ -71,7 +85,23 @@ export function startPage(o: { books: string; port: number; env: Env }): Page {
     if (req.method === "GET" && url.pathname === "/") {
       // Passkeys belong to localhost, so the page always runs there.
       if (!host.startsWith("localhost:")) return Response.redirect(`${origin()}/`, 302);
-      return new Response(await withBooks(render), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+      let page: string;
+      try {
+        page = await readBooks(render);
+      } catch (e) {
+        page = html({ error: unreadable(e) });
+      }
+      return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+    }
+    if (req.method === "GET" && url.pathname === "/data") {
+      // The panels, read fresh on every load. SOLOBOOKS_PAGE_DELAY_MS (read by serve only) holds the answer back so
+      // the loading state can be seen.
+      if (o.dataDelayMs) await Bun.sleep(o.dataDelayMs);
+      try {
+        return json(200, { ok: true, panels: await readBooks((db) => panels(db, now(o.env))) });
+      } catch (e) {
+        return refused(503, unreadable(e), "books");
+      }
     }
     if (req.method !== "POST") return new Response("Not found.", { status: 404 });
 
@@ -144,7 +174,7 @@ export function startPage(o: { books: string; port: number; env: Env }): Page {
       register = { options, code: mint({ kind: "register", challenge: options.challenge, expires: Date.now() + GRANT_MS }) };
     }
     const data = { pending: items.map((i) => ({ id: i.p.id, code: i.code, passkey: i.passkey ?? null })), register: register ?? null };
-    return html(items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), keyRow?.created_at ?? null, data);
+    return html({ cards: items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), passkeyCreated: keyRow?.created_at ?? null, data });
   }
 
   const fetch = (req: Request) =>
@@ -165,9 +195,6 @@ export function startPage(o: { books: string; port: number; env: Env }): Page {
 
 // ---------------------------------------------------------------- markup
 
-const esc = (s: unknown) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 const LEVEL_TEXT = { click: "Click to approve", passkey: "Passkey required", agent_decides: "Agent decides" } as const;
 
 function card(p: PendingAction, level: keyof typeof LEVEL_TEXT, passkeyReady: boolean): string {
@@ -185,7 +212,7 @@ function card(p: PendingAction, level: keyof typeof LEVEL_TEXT, passkeyReady: bo
   const blocked = level === "passkey" && !passkeyReady;
   return `<article class="card" id="pending-${p.id}">
   <header><span class="level ${level}">${LEVEL_TEXT[level]}</span><span class="meta">#${p.id} &middot; asked by ${esc(field(p.source))}</span></header>
-  <h2>${esc(p.title)}</h2>
+  <h3>${esc(p.title)}</h3>
   <ul class="docs">${rows}</ul>${hint}
   <div class="actions">
     <button class="approve" data-approve="${p.id}"${blocked ? " disabled" : ""}>${level === "passkey" ? "Approve with passkey" : "Approve"}</button>
@@ -195,26 +222,59 @@ function card(p: PendingAction, level: keyof typeof LEVEL_TEXT, passkeyReady: bo
 </article>`;
 }
 
-function html(cards: string[], passkeyCreated: string | null, data: unknown): string {
+const PANELS = [
+  ["invoices", "Invoices", "invoices"],
+  ["unpaid", "Unpaid", "what is owed"],
+  ["pnl", "Profit and loss this year", "the profit and loss"],
+  ["changes", "Recent changes", "recent changes"],
+] as const;
+
+type View = { cards: string[]; passkeyCreated: string | null; data: unknown } | { error: string };
+
+function html(v: View): string {
+  const error = "error" in v ? v.error : null;
+  const data = "error" in v ? { pending: [], register: null } : v.data;
   const payload = JSON.stringify(data).replace(/</g, "\\u003c");
-  const passkey = passkeyCreated
-    ? `<p>A passkey is registered for these books (since ${esc(passkeyCreated.slice(0, 10))}). Actions set to passkey need it.</p>`
-    : `<p>No passkey yet. Register one to use the passkey level for any action.</p>
-       <button id="register">Register a passkey</button><p class="outcome" id="register-outcome" role="status"></p>`;
+  let approvals: string;
+  let passkey = "";
+  if ("error" in v) {
+    approvals = `<p class="state error">solobooks can't read the books, so it can't show what is waiting for your approval, and nothing can be approved here until it can.</p>`;
+  } else {
+    approvals = v.cards.length ? v.cards.join("\n") : `<p class="empty">Nothing is waiting for approval.</p>`;
+    passkey = `<section class="passkey"><h2>Passkey</h2>${
+      v.passkeyCreated
+        ? `<p>A passkey is registered for these books (since ${esc(v.passkeyCreated.slice(0, 10))}). Actions set to passkey need it.</p>`
+        : `<p>No passkey yet. Register one to use the passkey level for any action.</p>
+       <button id="register">Register a passkey</button><p class="outcome" id="register-outcome" role="status"></p>`
+    }</section>`;
+  }
+  const loading = (label: string) =>
+    `<p class="state loading">Loading ${label}…</p><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>`;
+  const panelHtml = PANELS.map(
+    ([id, title, label]) =>
+      `<section class="block" aria-labelledby="h-${id}"><h2 id="h-${id}">${title}</h2><div class="panel" id="panel-${id}" data-label="${label}" aria-busy="true" aria-live="polite">${loading(label)}</div></section>`,
+  ).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>solobooks approvals</title>
+<meta name="color-scheme" content="light dark">
+<title>solobooks</title>
 <style>
-:root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc; --ok:#1f7a4d; --bad:#a33a2b; --accent:#2c5fd6; --key:#7a4bc2; }
-@media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#21211f; --ink:#ecebe7; --muted:#a09e98; --line:#34332f; --ok:#5cc28f; --bad:#e07b6c; --accent:#7ea2ff; --key:#b794f0; } }
+:root { color-scheme:light dark; --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc; --ok:#1f7a4d; --bad:#a33a2b; --accent:#2c5fd6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#21211f; --ink:#ecebe7; --muted:#a09e98; --line:#34332f; --ok:#5cc28f; --bad:#e07b6c; --accent:#7ea2ff; } }
 * { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-main { max-width:680px; margin:0 auto; padding:32px 16px 64px; }
-h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 24px; }
+html { background:var(--bg); }
+body { margin:0; min-height:100vh; min-height:100dvh; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width:720px; margin:0 auto; padding:32px 16px 64px; }
+h1 { font-size:22px; margin:0 0 4px; } .lede { color:var(--muted); margin:0 0 28px; }
+.alert { border:1px solid var(--bad); color:var(--bad); background:var(--card); border-radius:12px; padding:12px 16px; margin:0 0 24px; overflow-wrap:anywhere; }
+.alert p { margin:0; } .alert[hidden] { display:none; }
+.block { margin:0 0 28px; } .block > h2, .approvals > h2 { font-size:17px; margin:0 0 10px; }
+.approvals > .lede { margin:-6px 0 14px; font-size:15px; }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:2px 16px 4px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:0 0 16px; }
 .card header { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
-.level { font-weight:600; } .level.click { color:var(--accent); } .level.passkey { color:var(--key); }
-.card h2 { font-size:18px; margin:8px 0; overflow-wrap:anywhere; }
+.level { font-weight:600; color:var(--accent); }
+.card h3 { font-size:18px; margin:8px 0; overflow-wrap:anywhere; }
 .card ul.docs { list-style:none; margin:0 0 8px; padding:0; overflow-wrap:anywhere; } .card ul.docs > li { margin:8px 0; padding-top:8px; border-top:1px solid var(--line); }
 .card dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; margin:6px 0 0; font-size:15px; }
 .card dt { color:var(--muted); } .card dd { margin:0; overflow-wrap:anywhere; }
@@ -223,14 +283,41 @@ h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 24p
 button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
 button.approve { background:var(--ok); border-color:var(--ok); color:#fff; } button:disabled { opacity:.5; cursor:default; }
 .outcome { margin:8px 0 0; font-size:14px; } .outcome.ok { color:var(--ok); } .outcome.bad { color:var(--bad); }
-section.passkey { border-top:1px solid var(--line); margin-top:32px; padding-top:16px; color:var(--muted); }
+section.passkey { border-top:1px solid var(--line); margin-top:36px; padding-top:16px; color:var(--muted); } section.passkey h2 { font-size:17px; color:var(--ink); }
 .empty { color:var(--muted); }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+th { text-align:left; font-size:12px; font-weight:500; color:var(--muted); padding:12px 8px 6px 0; border-bottom:1px solid var(--line); }
+td { padding:10px 8px 10px 0; vertical-align:top; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+tbody:last-of-type tr:last-child td { border-bottom:0; }
+th.num, td.num { text-align:right; white-space:nowrap; padding-right:0; }
+td.two > span { display:block; } .sub { display:block; font-size:13px; color:var(--muted); } .sub.inline { display:inline; }
+.strong { font-weight:600; } .bad { color:var(--bad); } .muted { color:var(--muted); }
+.tag { display:inline-block; font-size:11px; line-height:16px; padding:0 6px; border:1px solid var(--line); border-radius:999px; color:var(--muted); vertical-align:1px; }
+tfoot td { font-weight:600; border-top:1px solid var(--line); border-bottom:0; }
+.pnl .group th { padding-top:16px; font-size:13px; font-weight:600; color:var(--ink); border-bottom:0; }
+.pnl .line { display:inline-block; min-width:2.4em; color:var(--muted); }
+.pnl .subtotal td { color:var(--muted); }
+.basis { font-size:13px; color:var(--muted); margin:12px 0 0; }
+.changes { list-style:none; margin:0; padding:0; } .changes li { padding:10px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; } .changes li:last-child { border-bottom:0; }
+.changes .what { display:block; }
+.state { margin:12px 0; color:var(--muted); } .state strong { color:var(--ink); font-weight:600; } .state.error { color:var(--bad); }
+.foot { font-size:13px; color:var(--muted); margin:8px 0; }
+.skeleton i { display:block; height:12px; margin:0 0 14px; border-radius:6px; background:var(--line); animation:pulse 1.4s ease-in-out infinite; }
+.skeleton i:nth-child(2) { width:80%; } .skeleton i:nth-child(3) { width:60%; }
+@keyframes pulse { 50% { opacity:.45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton i { animation:none; } }
 </style></head>
 <body><main>
-<h1>Waiting for your approval</h1>
-<p class="sub">Your agent asked for these. Nothing happens until you approve.</p>
-${cards.length ? cards.join("\n") : `<p class="empty">Nothing is waiting for approval.</p>`}
-<section class="passkey"><h2>Passkey</h2>${passkey}</section>
+<h1>Your books</h1>
+<p class="lede">Your agent keeps them. This page is for a look, and for approving what it asks.</p>
+<div class="alert" id="alert" role="alert"${error ? "" : " hidden"}><p>${esc(error ?? "")}</p></div>
+<section class="approvals" aria-labelledby="h-approvals">
+<h2 id="h-approvals">Waiting for your approval</h2>
+<p class="lede">Your agent asked for these. Nothing happens until you approve.</p>
+${approvals}
+</section>
+${panelHtml}
+${passkey}
 </main>
 <script type="application/json" id="data">${payload}</script>
 <script>
@@ -286,6 +373,30 @@ if (reg && data.register) reg.onclick = async () => {
     else say(out, false, r.refusal.reason);
   } catch (e) { say(out, false, "Registration didn't finish: " + e.message); }
 };
+async function loadPanels() {
+  let r;
+  try { r = await (await fetch("/data", { cache: "no-store" })).json(); }
+  catch (e) { r = { ok: false, refusal: { reason: "This page can't reach solobooks, so start it again with solobooks serve and reload this page." } }; }
+  for (const el of document.querySelectorAll(".panel[aria-busy]")) {
+    const name = el.id.slice("panel-".length);
+    el.removeAttribute("aria-busy");
+    if (r.ok) { el.innerHTML = r.panels[name]; continue; }
+    const p = document.createElement("p");
+    p.className = "state error";
+    p.textContent = "Can't show " + el.dataset.label + " while the books can't be read.";
+    el.replaceChildren(p);
+  }
+  if (!r.ok) {
+    const a = document.getElementById("alert");
+    a.firstElementChild.textContent = (r.refusal && r.refusal.reason) || "The books can't be read right now. Reload this page to try again.";
+    a.hidden = false;
+  }
+  for (const t of document.querySelectorAll("time[datetime]")) {
+    const d = new Date(t.dateTime);
+    if (!isNaN(d)) t.textContent = d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+}
+loadPanels();
 </script>
 </body></html>`;
 }

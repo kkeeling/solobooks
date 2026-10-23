@@ -82,10 +82,15 @@ export function openBooks(path: string, o: OpenOptions = {}): Books {
     if (!existsSync(path)) placeFresh(path);
     db = new Database(path, { create: true, strict: true });
   }
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec("PRAGMA busy_timeout = 5000");
-  if (path !== ":memory:") backUpBeforeUpgrade(db, path, o);
-  migrate(db);
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA busy_timeout = 5000");
+    if (path !== ":memory:") backUpBeforeUpgrade(db, path, o);
+    migrate(db);
+  } catch (e) {
+    db.close(); // a file that isn't books, or can't be read, isn't left open
+    throw e;
+  }
   return db;
 }
 
