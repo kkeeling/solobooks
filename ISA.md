@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: scoping
-progress: 0/105
+progress: 0/104
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T01:31:17Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -167,7 +167,7 @@ Why: a full year goes to an accountant with nothing missing, so there are no fol
 - [ ] ISC-59: One command exports a year's transactions as a single CSV.
 - [ ] ISC-60: Year-to-date profit is available as one number.
 - [ ] ISC-61: The hledger export passes `hledger check`.
-- [ ] ISC-62: An accountant accepts a full year's CSV and P&L without a follow-up question.
+- [ ] ISC-62: [DROPPED — see Decisions 2026-10-22; CPA review moved to Remaining Work for April tax season]
 
 ### F9 · The approval gate
 Why: the person decides how much their agent may do, and that choice holds even when the agent is told otherwise.
@@ -311,7 +311,6 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-59 | bash | year CSV export | one file, all rows | `solobooks export --year 2026 --format csv > /tmp/y.csv && test -s /tmp/y.csv` | literal |
 | ISC-60 | bun-test | YTD profit vs fixture | exact | bun test test/reports.test.ts -t "ytd" | derived: year-end |
 | ISC-61 | bash | hledger check on export | exit 0 | `solobooks export --format hledger > /tmp/j.journal && hledger -f /tmp/j.journal check` | derived: export |
-| ISC-62 | manual | an accountant reviews a full fixture year | no follow-up questions | recognize-on-encounter | literal |
 | ISC-63 | bun-test | gated action | pending, no effect | bun test test/gate.test.ts -t "parks" | derived: gate |
 | ISC-64 | bun-test | gate levels per action | 3 of 3 | bun test test/gate.test.ts -t "levels" | derived: gate |
 | ISC-65 | bun-test | fresh install defaults | click-in-chat | bun test test/gate.test.ts -t "defaults" | derived: gate |
@@ -386,6 +385,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-22: refined: the Problem was rewritten and approved by the maintainer. The incumbents are fine products for solo consultants. The gap is that they were built for humans to click, not for agents to run, and they cost a monthly fee. The main user is the agentic engineer or consultant who wants agents to keep the books and only peeks to check. The Vision and Goal were updated to match.
 - 2026-10-22: refined: ISC-78 (Grok Build and Muse Code install tests) and ISC-84 (Windows installer test) were dropped from the v1 climb at the maintainer's call and moved to Remaining Work. A friend of the maintainer will test Windows.
 - 2026-10-22: The maintainer granted for the climb: git init and local commits; a private GitHub repo kkeeling/solobooks; beads tracking; a fresh empty home folder counting as a clean machine for install tests; installing hledger with Homebrew; and publishing the npm package, which needs an npm sign-in this machine does not have yet.
+- 2026-10-22: refined: ISC-62 (an accountant accepts a full year without follow-up) was dropped from the v1 climb at the maintainer's call, because it can only be checked during tax season in April. It moved to Remaining Work.
 - 2026-10-22: Named solobooks. It was free on npm and Homebrew that day, and the only GitHub match was a 2-star repo. No trademark search yet.
 
 ## Remaining Work
@@ -395,4 +395,5 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] First real test: the maintainer's own month of client work becomes a correct invoice through the agent-time add-on — dogfood, not part of the product's definition of done.
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
+- [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
 - [ ] Flip the repo public — waits on the trademark search and the docs scrub above.
