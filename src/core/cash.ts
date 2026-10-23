@@ -42,17 +42,21 @@ function split(settled: number, holds: Parts): Parts {
 }
 
 /**
- * Money that settled an invoice, each dated, positive in and negative back out: payments, refunds, and a past invoice
- * brought in as paid. Applying a client's credit to an invoice belongs here too, on the day it is applied.
+ * Money that settled an invoice, each dated, positive in and negative back out: what payments settled on it, what
+ * refunds took back off it, client credit applied to it (money the business already held, settling the invoice on
+ * the day it is applied), and a past invoice brought in as paid. The part of a payment held as client credit, and a
+ * refund of that part, never settled the invoice, so neither is here.
  */
 function money(db: Books, r: InvoiceRow): { date: string; cents: number }[] {
-  const pays = db.query("SELECT date, applied_cents AS cents FROM payments WHERE invoice_id = ?").all(r.id) as { date: string; cents: number }[];
-  // A refund takes back what it took off the invoice: here every refund is the whole payment.
-  const refunds = db
-    .query("SELECT f.date, -p.applied_cents AS cents FROM refunds f JOIN payments p ON p.id = f.payment_id WHERE p.invoice_id = ?")
+  const rows = db
+    .query(
+      `SELECT date, applied_cents AS cents FROM payments WHERE invoice_id = ?1
+       UNION ALL SELECT f.date, -f.applied_cents FROM refunds f JOIN payments p ON p.id = f.payment_id WHERE p.invoice_id = ?1
+       UNION ALL SELECT date, amount_cents FROM credit_applications WHERE invoice_id = ?1`,
+    )
     .all(r.id) as { date: string; cents: number }[];
   const past = r.paid_on === null ? [] : [{ date: r.paid_on, cents: amounts(db, r).total }];
-  return [...pays, ...refunds, ...past].filter((m) => m.cents !== 0);
+  return [...rows, ...past].filter((m) => m.cents !== 0);
 }
 
 /** Credit notes against an invoice, each taking its parts off on the day it was issued and back on the day it was voided. */

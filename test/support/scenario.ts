@@ -92,6 +92,12 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   },
   { op: "bank_match", input: { line_id: 2, entry_id: 2 } }, // the editor licence, charged two days after its entry
   { op: "payment_add", input: { invoice_id: 1, date: "2026-10-20", amount_cents: 25000, deposit_account_id: 1, bank_line_id: 3 } }, // backed by the ACH deposit
+  { op: "bank_unmatch", input: { line_id: 2, reason: "Matched the wrong charge" } }, // not a payment's line, so not gated
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-21", amount_cents: 900000, fee_cents: 2000, deposit_account_id: 1 } }, // overpaid: a credit
+  { op: "payment_refund", input: { payment_id: 4, date: "2026-10-22", reason: "Part of the overpayment", amount_cents: 1000, fee_returned_cents: 30 } },
+  { op: "invoice_draft", input: { client_id: 1, period_start: "2026-11-01", period_end: "2026-11-30" } },
+  { op: "invoice_issue", input: { id: 6 } },
+  { op: "client_credit_apply", input: { client_id: 1, invoice_id: 6, date: "2026-11-30", amount_cents: 1000 } },
   {
     op: "sales_tax_payment_add",
     input: { date: "2026-10-21", amount_cents: 500, paid_from_account_id: 1, tax_label: "IL sales tax", period_start: "2026-10-01", period_end: "2026-10-31", confirmation: "IL-778" },
@@ -129,7 +135,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_pdf", input: { id: 1 } },
   { op: "invoice_pdf", input: { id: 3 } },
   { op: "invoice_email", input: { id: 1 } },
-  { op: "invoice_reminder", input: { id: 1, as_of: "2099-01-01" } },
+  { op: "invoice_reminder", input: { id: 6, as_of: "2099-01-01" } }, // invoice 1 was overpaid
   { op: "expense_list", input: {} },
   { op: "owner_list", input: {} },
   { op: "payment_list", input: { invoice_id: 1 } },

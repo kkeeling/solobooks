@@ -21,7 +21,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 
 ## The rules that matter
 
-1. **Pending means nothing happened.** Issuing, voiding and crediting invoices, changing payment instructions (`profile payment instructions set`), recording a payment with no bank line behind it, and changing approval levels wait for the person unless they chose otherwise. When a result says `"status": "pending"`, tell the person it is waiting for their approval and has not happened. Never say an invoice was issued or sent while it is pending. Read [references/approvals.md](references/approvals.md) the first time you see one.
+1. **Pending means nothing happened.** Issuing, voiding and crediting invoices, changing payment instructions (`profile payment instructions set`), recording a payment with no bank line behind it (or undoing the bank match behind one), and changing approval levels wait for the person unless they chose otherwise. When a result says `"status": "pending"`, tell the person it is waiting for their approval and has not happened. Never say an invoice was issued or sent while it is pending. Read [references/approvals.md](references/approvals.md) the first time you see one.
 2. **You can't approve anything,** and no tool lets you. Don't look for one, and don't ask the person to lower the gate to save you a step. That choice is theirs, unprompted.
 3. **Never decide what is taxable.** solobooks adds sales tax only where the person set a rate on a client and named the line kinds it covers. Ask them; don't guess.
 4. **Issued money is locked.** Drafts can change freely. After issue, the only changes are void (a reversal) or a credit note.
@@ -47,6 +47,8 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Record a cost | `expense add`, with `receipt_path` for the receipt file |
 | Import a bank or card statement | `bank import` with the CSV's column map, then `bank list --status unmatched` |
 | Record a client's payment | `payment add` (gross, fee, and the bank line it is) |
+| Refund a payment, or use a client's credit | `payment refund` (full or part; the fee stays spent unless the processor returned it), `client credit apply` |
+| Undo a wrong bank match | `bank unmatch` (waits for approval when the line backs a payment) |
 | Move their own money | `transfer add`, `owner draw`, `owner contribute`; personal-card costs are `expense add --paid-personally true` |
 | See who owes what | `report unpaid` |
 | See how they're doing | `report pnl` (cash basis, by Schedule C line), `report ytd`, `invoice list` |

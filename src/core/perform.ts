@@ -120,7 +120,7 @@ function execute(
   const key = env.idempotency_key as string | undefined;
   const write: Write = { name: op.name, input, source: env.source.trim(), key, dryRun: env.dry_run === true, now: env.now, page };
   // The gate: a gated action the person hasn't left to the agent is parked as a pending action instead of run.
-  const action = typeof op.gate === "function" ? op.gate(input) : (op.gate ?? null);
+  const action = typeof op.gate === "function" ? op.gate(input, db) : (op.gate ?? null);
   const level = action === null ? "agent_decides" : requiredLevel(db, action, input);
   if (action !== null && level !== "agent_decides") {
     return runWrite(db, write, (ctx) => park(db, op, input, ctx, action, level, key));

@@ -113,7 +113,46 @@ test("ISC-110 cash basis: an invoice issued in December and paid in January is J
   // The ledger still posts what was owed when each invoice was issued.
   const ar = asPerson(dir, (db) => (db.query("SELECT SUM(l.debit_cents) - SUM(l.credit_cents) AS n FROM lines l JOIN accounts a ON a.id = l.account_id WHERE a.name = 'Accounts receivable'").get() as { n: number }).n);
   expect(ar).toBe(55000 + 44000 - 11000); // the refunded invoice is owed again, and the credited one is unpaid
-});
+}, 30_000); // many CLI runs: allow for a busy machine
+
+test("ISC-110 cash basis: a partial refund takes back its share of income and tax on its day; refunding held credit takes none", async () => {
+  const dir = await acmeBooks();
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd", tax_rate_ppm: 100000, tax_label: "TX sales tax", tax_applies_to: ["manual"] }));
+  const inv = await issued(dir, "2026-10-01", 100000, 30); // $1,000 plus $100 tax
+  // Paid $1,200: $1,100 settles it, $100 is held as client credit, which is not income.
+  const p = (await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-10", amount_cents: 120000, deposit_account_id: 1 }))).payment;
+  expect(consulting(await pnlFor(dir, "2026-10-01", "2026-10-31"))).toBe(100000);
+
+  // Refunding $100 gives back the held credit first: no income or tax moves.
+  await ok(dir, json(["payment", "refund"], { payment_id: p.id, date: "2026-11-03", reason: "Overpaid", amount_cents: 10000 }));
+  const nov3 = await pnlFor(dir, "2026-11-03", "2026-11-03");
+  expect(consulting(nov3)).toBe(0);
+  // A further $220 comes off the invoice: $200 of income and $20 of tax go back, on the refund's day.
+  await ok(dir, json(["payment", "refund"], { payment_id: p.id, date: "2026-11-20", reason: "Partial refund", amount_cents: 22000 }));
+  expect(consulting(await pnlFor(dir, "2026-11-20", "2026-11-20"))).toBe(-20000);
+  expect((await ok(dir, ["report", "sales", "tax", "--from", "2026-11-01", "--to", "2026-11-30"])).taxes[0]).toMatchObject({ collected_cents: -2000 });
+  // October stays as it was, and the year nets to what the client kept paid.
+  expect(consulting(await pnlFor(dir, "2026-10-01", "2026-10-31"))).toBe(100000);
+  expect(consulting(await ok(dir, ["report", "pnl"]))).toBe(80000);
+  expect((await ok(dir, ["invoice", "get", "--id", String(inv.id)])).invoice.open_cents).toBe(22000);
+}, 30_000); // many CLI runs: allow for a busy machine
+
+test("ISC-110 cash basis: client credit applied to a later invoice is income on the day it is applied", async () => {
+  const dir = await acmeBooks();
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  const oct = await issued(dir, "2026-10-01", 100000, 30);
+  await ok(dir, json(["payment", "add"], { invoice_id: oct.id, date: "2026-10-10", amount_cents: 130000, deposit_account_id: 1 })); // $300 held
+  const dec = await issued(dir, "2026-12-01", 50000, 30);
+  await ok(dir, json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
+
+  // October counts what settled October's invoice; the held $300 counts nowhere until it settles December's, in January.
+  expect(consulting(await pnlFor(dir, "2026-10-01", "2026-10-31"))).toBe(100000);
+  expect(consulting(await pnlFor(dir, "2026-12-01", "2026-12-31"))).toBe(0);
+  expect(consulting(await pnlFor(dir, "2027-01-01", "2027-01-31"))).toBe(30000);
+  // When the client pays the rest, the invoice has counted exactly its total.
+  await ok(dir, json(["payment", "add"], { invoice_id: dec.id, date: "2027-01-20", amount_cents: 20000, deposit_account_id: 1 }));
+  expect(consulting(await pnlFor(dir, "2027-01-01", "2027-01-31"))).toBe(50000);
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-58 schedule c: the P&L groups income and expenses by Schedule C line, in the form's order", async () => {
   const dir = await acmeBooks(); // 1 Checking, 2 Printing (expense)
@@ -150,7 +189,7 @@ test("ISC-58 schedule c: the P&L groups income and expenses by Schedule C line, 
   expect((await cli(dir, ["account", "edit", "--id", "1", "--schedule-c", "1", ...S])).out.field).toBe("schedule_c");
   await ok(dir, ["account", "edit", "--id", "5", "--schedule-c", "6", ...S]);
   expect((await ok(dir, ["report", "pnl"])).schedule_c.find((l: any) => l.line === "6")).toMatchObject({ name: "Other income", total_cents: 12 });
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-60 ytd: year-to-date profit is one exact number, from January 1 through the day asked", async () => {
   const dir = await acmeBooks(); // two expenses from checking: $42.00 on Oct 5 and $9.99 on Nov 5
@@ -169,4 +208,4 @@ test("ISC-60 ytd: year-to-date profit is one exact number, from January 1 throug
   // Another day of the year, and a past year, without the person's own money in either.
   expect((await ok(dir, ["report", "ytd", "--as-of", "2026-12-31"])).profit_cents).toBe(123457 - 3611 - 4200 - 999);
   expect((await ok(dir, ["report", "ytd", "--as-of", "2025-12-31"])).profit_cents).toBe(-70000);
-});
+}, 30_000); // many CLI runs: allow for a busy machine

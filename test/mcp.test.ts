@@ -19,7 +19,7 @@ const GATED: Record<string, GateAction> = {
   profile_payment_instructions_set: "payment_instructions",
 };
 /** Tools gated only for some inputs: they carry no flag, and the core parks just the gated calls. */
-const GATED_SOMETIMES = ["payment_add"];
+const GATED_SOMETIMES = ["bank_unmatch", "payment_add"];
 
 /** A client whose person answers every approval prompt the same way. */
 const answering = (dir: string, action: "accept" | "decline" | "cancel", content: Record<string, unknown> = {}) =>
@@ -197,6 +197,7 @@ const WRITES = [
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
   "transfer_add", "owner_draw", "owner_contribute", "payment_add", "payment_refund", "bank_import", "bank_match",
+  "client_credit_apply", "bank_unmatch",
   "account_edit", "sales_tax_payment_add", "mileage_add", "mileage_delete", "home_office_set", "owner_item_add", "contractor_add", "contractor_edit",
 ];
 
