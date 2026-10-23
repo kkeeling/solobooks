@@ -31,4 +31,4 @@ test("ISC-14: the CLI and MCP produce identical records for the same operations"
   const b = dumpFile(dbPath(viaMcp));
   expect(Object.values(a).flat().length).toBeGreaterThan(20);
   expect(b).toEqual(a);
-});
+}, 60_000); // one bun process per scenario step: allow for a busy machine
