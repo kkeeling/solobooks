@@ -2,6 +2,7 @@ import fc from "fast-check";
 import type { Books } from "../../src/core/db.ts";
 import { perform, type Outcome } from "../../src/core/perform.ts";
 import { MAX_CENTS } from "../../src/core/validate.ts";
+import { acct } from "./books.ts";
 
 export const NOW = "2026-10-22T12:00:00.000Z";
 
@@ -21,14 +22,14 @@ const date = fc.integer({ min: 0, max: 364 }).map((d) => new Date(Date.UTC(2026,
 
 /** Lines that balance: random debits and credits, with the last line closing the gap. */
 const balancedLines = fc
-  .array(fc.record({ account_id: fc.integer({ min: 1, max: 6 }), amount: fc.integer({ min: 1, max: 10_000_000 }), debit: fc.boolean() }), {
+  .array(fc.record({ account_id: fc.integer({ min: 1, max: 6 }).map(acct), amount: fc.integer({ min: 1, max: 10_000_000 }), debit: fc.boolean() }), {
     minLength: 1,
     maxLength: 4,
   })
   .chain((ls) => {
     const net = ls.reduce((s, l) => s + (l.debit ? l.amount : -l.amount), 0);
     const lines: any[] = ls.map((l) => ({ account_id: l.account_id, [l.debit ? "debit_cents" : "credit_cents"]: l.amount }));
-    return fc.integer({ min: 1, max: 6 }).map((account_id) => {
+    return fc.integer({ min: 1, max: 6 }).map(acct).map((account_id) => {
       if (net > 0) lines.push({ account_id, credit_cents: net });
       else if (net < 0) lines.push({ account_id, debit_cents: -net });
       else lines.push({ account_id, debit_cents: 1 }, { account_id, credit_cents: 1 });
@@ -37,7 +38,7 @@ const balancedLines = fc
   });
 
 const unbalancedLines = fc
-  .tuple(fc.integer({ min: 1, max: 6 }), fc.integer({ min: 1, max: 6 }), cents, cents)
+  .tuple(fc.integer({ min: 1, max: 6 }).map(acct), fc.integer({ min: 1, max: 6 }).map(acct), cents, cents)
   .filter(([, , a, b]) => a !== b)
   .map(([x, y, a, b]) => [{ account_id: x, debit_cents: a }, { account_id: y, credit_cents: b }]);
 
@@ -62,6 +63,6 @@ export function seedAccounts(db: Books): void {
     ["Owner", "equity"],
     ["Income", "income"],
     ["Software", "expense"],
-    ["Travel", "expense"],
+    ["Trips", "expense"],
   ]) must(db, "account_add", { name, type });
 }

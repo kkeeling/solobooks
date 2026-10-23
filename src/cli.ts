@@ -76,7 +76,7 @@ function help() {
   };
 }
 
-export async function run(argv: string[], env: Env = process.env): Promise<{ code: number; stdout: string }> {
+export async function run(argv: string[], env: Env = process.env): Promise<{ code: number; stdout: string; text?: true }> {
   const out = (code: number, v: unknown) => ({ code, stdout: JSON.stringify(v, null, 2) });
   try {
     const { words, flags, dryRun } = parse(argv);
@@ -108,6 +108,8 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
         now: now(env),
         page: pageUrl(env),
       });
+      // A file, such as an export, prints as itself so it can be redirected into a file; everything else is JSON.
+      if (r.ok && op.text !== undefined && typeof r.result[op.text] === "string") return { code: 0, stdout: r.result[op.text] as string, text: true };
       return r.ok ? out(0, r.result) : out(2, r.refusal);
     } finally {
       db.close();
@@ -156,6 +158,6 @@ if (import.meta.main && (word === "--version" || word === "version")) {
   }
 } else if (import.meta.main) {
   const r = await run(process.argv.slice(2));
-  process.stdout.write(r.stdout + "\n");
+  process.stdout.write(r.text ? r.stdout : r.stdout + "\n");
   process.exit(r.code);
 }

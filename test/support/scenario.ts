@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { acct } from "./books.ts";
 
 export const RECEIPT = join(import.meta.dir, "..", "fixtures", "receipt.png");
 /** A checking statement: interest that matches its entry exactly, a charge two days after its entry, and two others. */
@@ -14,13 +15,15 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "account_add", input: { name: "Interest income", type: "income" } },
   { op: "account_add", input: { name: "Software", type: "expense" } },
   { op: "account_add", input: { name: "Card", type: "liability" } },
+  { op: "account_add", input: { name: "Design contractors", type: "expense", schedule_c: "11" } },
+  { op: "account_edit", input: { id: acct(3), schedule_c: "18" } },
   {
     op: "entry_post",
-    input: { date: "2026-10-01", memo: "Bank interest", lines: [{ account_id: 1, debit_cents: 92500 }, { account_id: 2, credit_cents: 92500 }] },
+    input: { date: "2026-10-01", memo: "Bank interest", lines: [{ account_id: acct(1), debit_cents: 92500 }, { account_id: acct(2), credit_cents: 92500 }] },
   },
   {
     op: "entry_post",
-    input: { date: "2026-10-02", memo: "Editor licence", lines: [{ account_id: 3, debit_cents: 1999 }, { account_id: 1, credit_cents: 1999, currency: "USD" }] },
+    input: { date: "2026-10-02", memo: "Editor licence", lines: [{ account_id: acct(3), debit_cents: 1999 }, { account_id: acct(1), credit_cents: 1999, currency: "USD" }] },
   },
   { op: "client_add", input: { name: "Acme", increment_minutes: 6 } },
   { op: "client_add", input: { name: "Beta", minimum_minutes: 15 } },
@@ -59,7 +62,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
     op: "expense_add",
     input: {
       date: "2026-10-05", amount_cents: 4200, vendor: "Print shop", memo: "Workshop handouts",
-      account_id: 3, paid_from_account_id: 1, receipt_path: RECEIPT, pass_through_client_id: 1,
+      account_id: acct(3), paid_from_account_id: acct(1), receipt_path: RECEIPT, pass_through_client_id: 1,
     },
   },
   { op: "invoice_draft", input: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Setup", amount_cents: 10000 }] } },
@@ -74,28 +77,42 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_void", input: { id: 4, reason: "Wrong period" } },
   {
     op: "invoice_import",
-    input: { client_id: 2, number: 900, invoice_date: "2026-09-01", lines: [{ description: "August retainer", amount_cents: 300000 }], paid_on: "2026-09-20", paid_account_id: 1 },
+    input: { client_id: 2, number: 900, invoice_date: "2026-09-01", lines: [{ description: "August retainer", amount_cents: 300000 }], paid_on: "2026-09-20", paid_account_id: acct(1) },
   },
-  { op: "transfer_add", input: { date: "2026-10-06", memo: "Pay off the card", legs: [{ account_id: 1, amount_cents: -1999 }, { account_id: 4, amount_cents: 1999 }] } },
-  { op: "owner_draw", input: { date: "2026-10-07", amount_cents: 50000, account_id: 1 } },
-  { op: "owner_contribute", input: { date: "2026-10-08", amount_cents: 20000, account_id: 1, memo: "Top-up" } },
-  { op: "expense_add", input: { date: "2026-10-09", amount_cents: 1500, vendor: "Cafe", memo: "Client lunch", account_id: 3, paid_personally: true } },
-  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-10", amount_cents: 5000, fee_cents: 175, deposit_account_id: 1, memo: "Card payment" } },
+  { op: "transfer_add", input: { date: "2026-10-06", memo: "Pay off the card", legs: [{ account_id: acct(1), amount_cents: -1999 }, { account_id: acct(4), amount_cents: 1999 }] } },
+  { op: "owner_draw", input: { date: "2026-10-07", amount_cents: 50000, account_id: acct(1) } },
+  { op: "owner_contribute", input: { date: "2026-10-08", amount_cents: 20000, account_id: acct(1), memo: "Top-up" } },
+  { op: "expense_add", input: { date: "2026-10-09", amount_cents: 1500, vendor: "Cafe", memo: "Client lunch", account_id: acct(3), paid_personally: true } },
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-10", amount_cents: 5000, fee_cents: 175, deposit_account_id: acct(1), memo: "Card payment" } },
   { op: "payment_refund", input: { payment_id: 1, date: "2026-10-11", reason: "Paid on the wrong invoice" } },
-  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-12", amount_cents: 500000, deposit_account_id: 1 } }, // more than is owed
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-12", amount_cents: 500000, deposit_account_id: acct(1) } }, // more than is owed
   { op: "payment_refund", input: { payment_id: 2, date: "2026-10-13", reason: "Overpaid" } },
   {
     op: "bank_import",
-    input: { account_id: 1, file_path: STATEMENT, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" },
+    input: { account_id: acct(1), file_path: STATEMENT, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" },
   },
   { op: "bank_match", input: { line_id: 2, entry_id: 2 } }, // the editor licence, charged two days after its entry
-  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-20", amount_cents: 25000, deposit_account_id: 1, bank_line_id: 3 } }, // backed by the ACH deposit
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-20", amount_cents: 25000, deposit_account_id: acct(1), bank_line_id: 3 } }, // backed by the ACH deposit
   { op: "bank_unmatch", input: { line_id: 2, reason: "Matched the wrong charge" } }, // not a payment's line, so not gated
-  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-21", amount_cents: 900000, fee_cents: 2000, deposit_account_id: 1 } }, // overpaid: a credit
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-21", amount_cents: 900000, fee_cents: 2000, deposit_account_id: acct(1) } }, // overpaid: a credit
   { op: "payment_refund", input: { payment_id: 4, date: "2026-10-22", reason: "Part of the overpayment", amount_cents: 1000, fee_returned_cents: 30 } },
   { op: "invoice_draft", input: { client_id: 1, period_start: "2026-11-01", period_end: "2026-11-30" } },
   { op: "invoice_issue", input: { id: 6 } },
   { op: "client_credit_apply", input: { client_id: 1, invoice_id: 6, date: "2026-11-30", amount_cents: 1000 } },
+  {
+    op: "sales_tax_payment_add",
+    input: { date: "2026-10-21", amount_cents: 500, paid_from_account_id: acct(1), tax_label: "IL sales tax", period_start: "2026-10-01", period_end: "2026-10-31", confirmation: "IL-778" },
+  },
+  { op: "mileage_add", input: { date: "2026-06-30", miles_tenths: 125, destination: "Acme HQ", purpose: "Kickoff workshop", client_id: 1 } },
+  { op: "mileage_add", input: { date: "2026-07-01", miles_tenths: 80, destination: "Print shop", purpose: "Pick up handouts" } },
+  { op: "mileage_delete", input: { id: 2 } },
+  { op: "home_office_set", input: { year: 2026, office_square_feet: 150, home_square_feet: 1500, expenses: [{ description: "Rent", amount_cents: 2400000 }], note: "Used all year" } },
+  { op: "owner_item_add", input: { kind: "estimated_tax", date: "2026-09-15", amount_cents: 300000, paid_from_account_id: acct(1), jurisdiction: "federal", confirmation: "EFT-1" } },
+  { op: "owner_item_add", input: { kind: "health_insurance", date: "2026-10-01", amount_cents: 45000, paid_personally: true } },
+  { op: "contractor_add", input: { name: "Sam Rivera", w9_status: "not_on_file" } },
+  { op: "contractor_edit", input: { id: 1, w9_status: "on_file", w9_received_on: "2026-10-14" } },
+  { op: "expense_add", input: { date: "2026-10-14", amount_cents: 80000, vendor: "Sam Rivera", account_id: acct(5), paid_from_account_id: acct(1), contractor_id: 1, payment_method: "ach" } },
+  { op: "expense_add", input: { date: "2026-10-15", amount_cents: 20000, vendor: "Sam Rivera", account_id: acct(5), paid_from_account_id: acct(4), contractor_id: 1, payment_method: "card" } },
   { op: "gate_set", input: { invoice_issue: "click" } },
   { op: "gate_list", input: {} },
   { op: "pending_list", input: {} },
@@ -106,6 +123,13 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "engagement_list", input: { client_id: 1 } },
   { op: "time_list", input: {} },
   { op: "report_pnl", input: { from: "2026-01-01", to: "2026-12-31" } },
+  { op: "report_ytd", input: {} },
+  { op: "report_sales_tax", input: { from: "2026-10-01", to: "2026-10-31" } },
+  { op: "report_yearend", input: { year: 2026 } },
+  { op: "mileage_list", input: {} },
+  { op: "contractor_list", input: { year: 2026 } },
+  { op: "export", input: { format: "csv", year: 2026 } },
+  { op: "export", input: { format: "hledger" } },
   { op: "profile_get", input: {} },
   { op: "invoice_list", input: {} },
   { op: "invoice_get", input: { id: 1 } },

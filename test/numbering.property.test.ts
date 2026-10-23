@@ -74,7 +74,8 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
         expect(db.query("SELECT COALESCE(SUM(debit_cents),0) d, COALESCE(SUM(credit_cents),0) c FROM lines").get()).toMatchObject({
           d: count(db, "SELECT COALESCE(SUM(credit_cents),0) n FROM lines"),
         });
-        expect(must(db, "report_pnl", {}).income_total_cents).toBe(income);
+        // The ledger posts what invoices are owed when issued (the cash-basis P&L counts it when paid, and nothing here is).
+        expect(count(db, "SELECT COALESCE(SUM(l.credit_cents) - SUM(l.debit_cents), 0) n FROM lines l JOIN accounts a ON a.id = l.account_id WHERE a.type = 'income'")).toBe(income);
       }
 
       // Every invoice that was ever issued, voided ones included, holds one number from an unbroken run.

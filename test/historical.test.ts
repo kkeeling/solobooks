@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { clickAcme, cli, draftOctober, json, ok, S } from "./support/billing.ts";
 import { asPerson } from "./support/person.ts";
+import { acct } from "./support/books.ts";
 
 // Past invoices brought in from an old spreadsheet. The clock in these tests is 2026-10-22, and every gated action
 // waits for the person's click, so anything that slipped past the gate would show up as an issued invoice.
@@ -21,7 +22,7 @@ test("ISC-81: past invoices keep their numbers, post to the books, never wait at
   const unpaid = await imported(dir, { number: 511, note: "From the old spreadsheet" });
   const paid = await imported(dir, {
     number: 512, invoice_date: "2026-09-01", due_date: "2026-10-01", sent_on: "2026-09-02",
-    lines: [{ description: "August work", amount_cents: 80000 }], paid_on: "2026-09-25", paid_account_id: 1,
+    lines: [{ description: "August work", amount_cents: 80000 }], paid_on: "2026-09-25", paid_account_id: acct(1),
   });
 
   // Already happened: sent, numbered as they were, and marked historical.
@@ -32,8 +33,11 @@ test("ISC-81: past invoices keep their numbers, post to the books, never wait at
   expect((await ok(dir, ["gate", "list"])).gate.every((g: any) => g.level === "click")).toBe(true);
   expect((await ok(dir, ["pending", "list"])).pending).toEqual([]);
 
-  // They post like any invoice: both are income, the unpaid one is still owed, and the paid one landed in checking.
-  expect((await ok(dir, ["report", "pnl"])).income_total_cents).toBe(200000);
+  // They post like any invoice: the ledger holds both as income, the unpaid one is still owed, and the paid one landed
+  // in checking. The cash-basis P&L counts only the paid one, on the day it was paid.
+  expect(balance(dir, "Consulting income")).toBe(-200000);
+  expect((await ok(dir, ["report", "pnl"])).income_total_cents).toBe(80000);
+  expect((await ok(dir, ["report", "pnl", "--from", "2026-09-25", "--to", "2026-09-25"])).income_total_cents).toBe(80000);
   expect(balance(dir, "Accounts receivable")).toBe(120000);
   expect(balance(dir, "Checking")).toBe(80000 - 4200 - 999); // less the two expenses acmeBooks paid from checking
   const memos = (await ok(dir, ["entry", "list"])).entries.map((e: any) => [e.date, e.memo]);
@@ -74,10 +78,10 @@ test("ISC-81 guard: only an invoice dated before today, numbered below solobooks
     field: "number",
   });
   expect((await refused({ sent_on: "2026-10-23" })).field).toBe("sent_on");
-  expect((await refused({ paid_on: "2026-10-23", paid_account_id: 1 })).field).toBe("paid_on");
-  expect((await refused({ paid_on: "2026-07-01", paid_account_id: 1 })).field).toBe("paid_on"); // before it was issued
+  expect((await refused({ paid_on: "2026-10-23", paid_account_id: acct(1) })).field).toBe("paid_on");
+  expect((await refused({ paid_on: "2026-07-01", paid_account_id: acct(1) })).field).toBe("paid_on"); // before it was issued
   expect((await refused({ paid_on: "2026-09-01" })).field).toBe("paid_account_id");
-  expect((await refused({ paid_on: "2026-09-01", paid_account_id: 2 })).field).toBe("paid_account_id"); // an expense account
+  expect((await refused({ paid_on: "2026-09-01", paid_account_id: acct(2) })).field).toBe("paid_account_id"); // an expense account
   expect((await refused({ total_cents: 120001 })).field).toBe("total_cents");
   expect((await refused({ tax_rate_ppm: 62500 })).field).toBe("tax_label");
   expect((await ok(dir, ["invoice", "list"])).invoices).toEqual([]);
@@ -97,7 +101,8 @@ test("ISC-81: a past invoice's sales tax is owed, not income, and changing one a
   const dir = await clickAcme();
   const inv = await imported(dir, { number: 300, tax_rate_ppm: 62500, tax_label: "IL sales tax", total_cents: 127500 });
   expect(inv.tax).toMatchObject({ label: "IL sales tax", rate_ppm: 62500, amount_cents: 7500 });
-  expect((await ok(dir, ["report", "pnl"])).income_total_cents).toBe(120000);
+  expect(balance(dir, "Consulting income")).toBe(-120000); // the ledger's income leaves the tax out
+  expect((await ok(dir, ["report", "pnl"])).income_total_cents).toBe(0); // unpaid, so nothing counts yet on the cash basis
   expect(balance(dir, "Sales tax payable")).toBe(-7500);
 
   // Voiding or crediting it reaches money already booked, so the gate holds those as for any invoice.
@@ -105,7 +110,7 @@ test("ISC-81: a past invoice's sales tax is owed, not income, and changing one a
   expect((await ok(dir, ["invoice", "get", "--id", String(inv.id)])).invoice.status).toBe("sent");
 
   // One brought in as paid is settled, so there is nothing to void or credit.
-  const paid = await imported(dir, { number: 301, paid_on: "2026-08-15", paid_account_id: 1 });
+  const paid = await imported(dir, { number: 301, paid_on: "2026-08-15", paid_account_id: acct(1) });
   expect((await cli(dir, ["invoice", "void", "--id", String(paid.id), "--reason", "x", ...S])).out).toEqual({
     reason: "Invoice 301 was brought in as paid, so it can't be voided.",
     field: "id",

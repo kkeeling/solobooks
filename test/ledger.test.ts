@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { memBooks } from "./support/books.ts";
+import { memBooks, acct } from "./support/books.ts";
 import { must, seedAccounts } from "./support/gen.ts";
 
 test("ISC-7 posted immutable: UPDATE and DELETE on a posted entry are refused by the database", () => {
   const db = memBooks();
   seedAccounts(db);
-  must(db, "entry_post", { date: "2026-10-01", memo: "fee", lines: [{ account_id: 1, debit_cents: 500 }, { account_id: 4, credit_cents: 500 }] });
+  must(db, "entry_post", { date: "2026-10-01", memo: "fee", lines: [{ account_id: acct(1), debit_cents: 500 }, { account_id: acct(4), credit_cents: 500 }] });
 
   const attempts = [
     "UPDATE entries SET memo = 'changed' WHERE id = 1",

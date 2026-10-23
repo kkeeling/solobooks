@@ -26,7 +26,7 @@ On import, a line matches by itself when exactly one posted entry moves the same
 2. For each line, work out what it is:
    - **Already recorded, different day** (a charge that posted two days later): `bank match --line-id <id> --entry-id <entry>`. The match is recorded as yours, for the person to see.
    - **A client payment:** `payment add ... --bank-line-id <id>` (below).
-   - **A business cost:** `expense add` (ask for the receipt), then `bank match` it to the expense's `entry_id`.
+   - **A business cost:** `expense add` (ask for the receipt) on the chart account for its Schedule C line (`account list` shows each account's line, such as Office expense on 18 or Travel on 24a; ask the person when it isn't clear), then `bank match` it to the expense's `entry_id`.
    - **The person's own money moving:** `transfer add`, `owner draw` or `owner contribute` (below), then `bank match` each leg's line.
    - **Not sure:** leave it on the list and ask the person. Don't guess.
 3. Two look-alikes (two $4.50 coffees, two candidates) never match by themselves. Pair them yourself with `bank match`.

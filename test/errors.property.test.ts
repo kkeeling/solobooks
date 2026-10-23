@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 import { OPS } from "../src/core/perform.ts";
-import { cli, memBooks, tempDir } from "./support/books.ts";
+import { cli, memBooks, tempDir, acct } from "./support/books.ts";
 import { must, seedAccounts, write } from "./support/gen.ts";
 import { letAgentDecide } from "./support/person.ts";
 
 const VALID: Record<string, Record<string, unknown>> = {
   account_add: { name: "New", type: "asset" },
-  entry_post: { date: "2026-10-01", memo: "m", lines: [{ account_id: 1, debit_cents: 100 }, { account_id: 4, credit_cents: 100 }] },
+  entry_post: { date: "2026-10-01", memo: "m", lines: [{ account_id: acct(1), debit_cents: 100 }, { account_id: acct(4), credit_cents: 100 }] },
   client_add: { name: "Zeta", increment_minutes: 6 },
   engagement_add: { client_id: 1, name: "E", rate_cents_per_hour: 15000 },
   time_add: { client_id: 1, date: "2026-10-01", minutes: 30, note: "n" },
@@ -16,7 +16,7 @@ const VALID: Record<string, Record<string, unknown>> = {
   profile_set: { legal_name: "New LLC", ein: "98-7654321" },
   client_edit: { id: 1, address: "2 Side St", tax_rate_ppm: 50000, tax_applies_to: ["time", "fixed"] },
   milestone_billable: { id: 1, date: "2026-10-15" },
-  expense_add: { date: "2026-10-01", amount_cents: 500, vendor: "V", account_id: 5, paid_from_account_id: 1 },
+  expense_add: { date: "2026-10-01", amount_cents: 500, vendor: "V", account_id: acct(5), paid_from_account_id: acct(1) },
   invoice_draft: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "d", amount_cents: 100 }] },
   invoice_edit: { id: 1, terms_days: 10 },
   invoice_delete: { id: 1 },
@@ -25,11 +25,17 @@ const VALID: Record<string, Record<string, unknown>> = {
   invoice_void: { id: 2, reason: "r" },
   invoice_credit: { invoice_id: 2, reason: "r", amount_cents: 50 },
   gate_set: { invoice_issue: "click" },
-  transfer_add: { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -100 }, { account_id: 2, amount_cents: 100 }] },
-  owner_draw: { date: "2026-10-01", amount_cents: 100, account_id: 1 },
-  owner_contribute: { date: "2026-10-01", amount_cents: 100, account_id: 1 },
-  payment_add: { invoice_id: 2, date: "2026-10-01", amount_cents: 50, fee_cents: 2, deposit_account_id: 1 },
+  transfer_add: { date: "2026-10-01", legs: [{ account_id: acct(1), amount_cents: -100 }, { account_id: acct(2), amount_cents: 100 }] },
+  owner_draw: { date: "2026-10-01", amount_cents: 100, account_id: acct(1) },
+  owner_contribute: { date: "2026-10-01", amount_cents: 100, account_id: acct(1) },
+  payment_add: { invoice_id: 2, date: "2026-10-01", amount_cents: 50, fee_cents: 2, deposit_account_id: acct(1) },
   bank_match: { line_id: 1, entry_id: 1 },
+  account_edit: { id: 5, schedule_c: "18" },
+  sales_tax_payment_add: { date: "2026-10-01", amount_cents: 100, paid_from_account_id: acct(1), tax_label: "Sales tax", period_start: "2026-09-01", period_end: "2026-09-30" },
+  mileage_add: { date: "2026-10-01", miles_tenths: 125, destination: "Acme", purpose: "Workshop" },
+  home_office_set: { year: 2026, office_square_feet: 100, home_square_feet: 1000, expenses: [{ description: "Rent", amount_cents: 100 }] },
+  owner_item_add: { kind: "estimated_tax", date: "2026-10-01", amount_cents: 100, paid_from_account_id: acct(1), jurisdiction: "federal" },
+  contractor_add: { name: "Sam", w9_status: "on_file", w9_received_on: "2026-10-01" },
 };
 const ENVELOPE = ["source", "idempotency_key", "input", "command"];
 
@@ -118,7 +124,7 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
   must(db, "client_edit", { id: 2, address: "9 Elm Rd" });
   must(db, "engagement_add", { client_id: 2, name: "Hourly", rate_cents_per_hour: 100 });
   must(db, "invoice_issue", { id: must(db, "invoice_draft", { client_id: 2, period_start: "2026-07-01", period_end: "2026-07-31" }).invoice.id });
-  const lines = (a: number, b: number) => [{ account_id: 1, debit_cents: a }, { account_id: 4, credit_cents: b }];
+  const lines = (a: number, b: number) => [{ account_id: acct(1), debit_cents: a }, { account_id: acct(4), credit_cents: b }];
   const cases: [string, unknown, Record<string, unknown>, string][] = [
     ["client_add", { name: "acme" }, {}, "name"],
     ["account_add", { name: "Checking", type: "asset" }, {}, "name"],
@@ -128,8 +134,8 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["engagement_add", { client_id: 1, name: "X", recurring_amount_cents: 5 }, {}, "recurring_interval"],
     ["engagement_add", { client_id: 1, name: "X", recurring_interval: "monthly" }, {}, "recurring_amount_cents"],
     ["entry_post", { date: "2026-10-01", memo: "m", lines: lines(5, 6) }, {}, "lines"],
-    ["entry_post", { date: "2026-10-01", memo: "m", lines: [{ account_id: 99, debit_cents: 5 }, { account_id: 4, credit_cents: 5 }] }, {}, "lines[0].account_id"],
-    ["entry_post", { date: "2026-10-01", memo: "m", lines: [{ account_id: 1, debit_cents: 5, credit_cents: 5 }, { account_id: 4, credit_cents: 5 }] }, {}, "lines[0].debit_cents"],
+    ["entry_post", { date: "2026-10-01", memo: "m", lines: [{ account_id: acct(99), debit_cents: 5 }, { account_id: acct(4), credit_cents: 5 }] }, {}, "lines[0].account_id"],
+    ["entry_post", { date: "2026-10-01", memo: "m", lines: [{ account_id: acct(1), debit_cents: 5, credit_cents: 5 }, { account_id: acct(4), credit_cents: 5 }] }, {}, "lines[0].debit_cents"],
     ["time_add", { client_id: 9, date: "2026-10-01", minutes: 5, note: "n" }, {}, "client_id"],
     ["time_add", { client_id: 2, engagement_id: 1, date: "2026-10-01", minutes: 5, note: "n" }, {}, "engagement_id"],
     ["time_add", { client_id: 1, engagement_id: 7, date: "2026-10-01", minutes: 5, note: "n" }, {}, "engagement_id"],
@@ -148,10 +154,22 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["client_edit", { id: 1, tax_rate_ppm: 62500, tax_applies_to: ["time", "time"] }, {}, "tax_applies_to"],
     ["client_add", { name: "Taxed", tax_rate_ppm: 62500, tax_applies_to: [] }, {}, "tax_applies_to"],
     ["milestone_billable", { id: 9, date: "2026-10-01" }, {}, "id"],
-    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 1, paid_from_account_id: 1 }, {}, "account_id"],
-    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 4 }, {}, "paid_from_account_id"],
-    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, receipt_path: "/no/such/file" }, {}, "receipt_path"],
-    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, pass_through_client_id: 9 }, {}, "pass_through_client_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(1), paid_from_account_id: acct(1) }, {}, "account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(5), paid_from_account_id: acct(4) }, {}, "paid_from_account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(5), paid_from_account_id: acct(1), receipt_path: "/no/such/file" }, {}, "receipt_path"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(5), paid_from_account_id: acct(1), pass_through_client_id: 9 }, {}, "pass_through_client_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(5), paid_from_account_id: acct(1), contractor_id: 9, payment_method: "ach" }, {}, "contractor_id"],
+    ["account_edit", { id: 5, schedule_c: "1" }, {}, "schedule_c"],
+    ["account_edit", { id: 1, schedule_c: "18" }, {}, "schedule_c"],
+    ["account_edit", { id: 99, schedule_c: "18" }, {}, "id"],
+    ["sales_tax_payment_add", { date: "2026-10-01", amount_cents: 5, paid_from_account_id: acct(1), tax_label: "None", period_start: "2026-09-01", period_end: "2026-09-30" }, {}, "tax_label"],
+    ["sales_tax_payment_add", { date: "2026-10-01", amount_cents: 5, paid_from_account_id: acct(1), tax_label: "None", period_start: "2026-09-30", period_end: "2026-09-01" }, {}, "period_start"],
+    ["mileage_delete", { id: 99 }, {}, "id"],
+    ["home_office_set", { year: 2026, office_square_feet: 900, home_square_feet: 800 }, {}, "office_square_feet"],
+    ["owner_item_add", { kind: "estimated_tax", date: "2026-10-01", amount_cents: 5, paid_personally: true }, {}, "jurisdiction"],
+    ["owner_item_add", { kind: "retirement", date: "2026-10-01", amount_cents: 5 }, {}, "paid_from_account_id"],
+    ["contractor_edit", { id: 99, w9_status: "on_file" }, {}, "id"],
+    ["contractor_add", { name: "X", w9_status: "not_on_file", w9_received_on: "2026-10-01" }, {}, "w9_received_on"],
     ["invoice_draft", { client_id: 1, period_start: "2026-10-31", period_end: "2026-10-01" }, {}, "period_start"],
     ["invoice_draft", { client_id: 1, period_start: "2025-01-01", period_end: "2025-01-31" }, {}, "period_end"],
     ["invoice_draft", { client_id: 9, period_start: "2026-10-01", period_end: "2026-10-31" }, {}, "client_id"],
@@ -178,19 +196,19 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["gate_set", { invoice_credit: "passkey" }, {}, "invoice_credit"],
     ["gate_set", { invoice_issue: "always" }, {}, "invoice_issue"],
     ["pending_get", { id: 99 }, {}, "id"],
-    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -5 }, { account_id: 2, amount_cents: 4 }] }, {}, "legs"],
-    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 4, amount_cents: -5 }, { account_id: 1, amount_cents: 5 }] }, {}, "legs[0].account_id"],
-    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -5 }, { account_id: 1, amount_cents: 5 }] }, {}, "legs[1].account_id"],
-    ["owner_draw", { date: "2026-10-01", amount_cents: 5, account_id: 4 }, {}, "account_id"],
-    ["owner_contribute", { date: "2026-10-01", amount_cents: 5, account_id: 99 }, {}, "account_id"],
-    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, paid_personally: true }, {}, "paid_from_account_id"],
-    ["payment_add", { invoice_id: 1, date: "2026-10-01", amount_cents: 5, deposit_account_id: 1 }, {}, "invoice_id"],
-    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, fee_cents: 5, deposit_account_id: 1 }, {}, "fee_cents"],
-    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: 2 }, {}, "deposit_account_id"],
-    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: 1, bank_line_id: 99 }, {}, "bank_line_id"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: acct(1), amount_cents: -5 }, { account_id: acct(2), amount_cents: 4 }] }, {}, "legs"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: acct(4), amount_cents: -5 }, { account_id: acct(1), amount_cents: 5 }] }, {}, "legs[0].account_id"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: acct(1), amount_cents: -5 }, { account_id: acct(1), amount_cents: 5 }] }, {}, "legs[1].account_id"],
+    ["owner_draw", { date: "2026-10-01", amount_cents: 5, account_id: acct(4) }, {}, "account_id"],
+    ["owner_contribute", { date: "2026-10-01", amount_cents: 5, account_id: acct(99) }, {}, "account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: acct(5), paid_from_account_id: acct(1), paid_personally: true }, {}, "paid_from_account_id"],
+    ["payment_add", { invoice_id: 1, date: "2026-10-01", amount_cents: 5, deposit_account_id: acct(1) }, {}, "invoice_id"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, fee_cents: 5, deposit_account_id: acct(1) }, {}, "fee_cents"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: acct(2) }, {}, "deposit_account_id"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: acct(1), bank_line_id: 99 }, {}, "bank_line_id"],
     ["payment_refund", { payment_id: 99, date: "2026-10-01", reason: "r" }, {}, "payment_id"],
-    ["bank_import", { account_id: 4, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "account_id"],
-    ["bank_import", { account_id: 1, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "file_path"],
+    ["bank_import", { account_id: acct(4), file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "account_id"],
+    ["bank_import", { account_id: acct(1), file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "file_path"],
     ["bank_match", { line_id: 99, entry_id: 1 }, {}, "line_id"],
     ["bank_unmatch", { line_id: 99, reason: "r" }, {}, "line_id"],
     ["client_credit_apply", { client_id: 9, invoice_id: 2, date: "2026-10-01" }, {}, "client_id"],

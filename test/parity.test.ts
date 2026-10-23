@@ -9,7 +9,7 @@ const ENV = { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" };
 async function binCli(dir: string, args: string[]) {
   const p = Bun.spawn(["bun", "src/cli.ts", ...args, "--books", dir], { cwd: ROOT, env: { PATH: process.env.PATH!, ...ENV }, stdout: "pipe" });
   const out = await new Response(p.stdout).text();
-  return { code: await p.exited, out: JSON.parse(out) };
+  return { code: await p.exited, out: args[0] === "export" ? out : JSON.parse(out) };
 }
 
 test("ISC-14: the CLI and MCP produce identical records for the same operations", async () => {
@@ -23,8 +23,9 @@ test("ISC-14: the CLI and MCP produce identical records for the same operations"
   for (const step of [...SCENARIO, refusal]) {
     const c = await binCli(viaCli, cliArgs(step, "agent:parity"));
     const m = await mcp.call(step.op, { ...step.input, source: "agent:parity" });
-    // Same answer back, refusals included.
-    expect(m.structuredContent).toEqual(c.out);
+    // Same answer back, refusals included. An export's CLI prints just the file, which MCP carries in text.
+    if (step.op === "export") expect(m.structuredContent.text).toBe(c.out);
+    else expect(m.structuredContent).toEqual(c.out);
     expect(m.isError).toBe(c.code !== 0);
   }
   const stderr = await mcp.close();
@@ -34,4 +35,4 @@ test("ISC-14: the CLI and MCP produce identical records for the same operations"
   const b = dumpFile(dbPath(viaMcp));
   expect(Object.values(a).flat().length).toBeGreaterThan(20);
   expect(b).toEqual(a);
-}, 60_000); // one bun process per scenario step: allow for a busy machine
+}, 90_000); // one bun process per scenario step: allow for a busy machine

@@ -1,6 +1,7 @@
 import type { Books } from "./db.ts";
 import type { Op } from "./op.ts";
 import { Refusal } from "./refusal.ts";
+import { INCOME_LINES, lineOf, SCHEDULE_C, SCHEDULE_C_LINES, type ScheduleCLine } from "./schedule-c.ts";
 import { currency, MAX_CENTS } from "./validate.ts";
 
 export const ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"] as const;
@@ -88,32 +89,82 @@ export function assertBalanced(db: Books): void {
   }
 }
 
+/** An account as listed: with the Schedule C line it reports on, the one set on it or solobooks' standard one. */
+export function accountView(db: Books, id: number) {
+  const a = db.query("SELECT id, name, type, schedule_c, source FROM accounts WHERE id = ?").get(id) as
+    | { id: number; name: string; type: string; schedule_c: string | null; source: string }
+    | null;
+  if (!a) return null;
+  const line = lineOf(a);
+  return { id: a.id, name: a.name, type: a.type, schedule_c: line, schedule_c_name: line ? SCHEDULE_C[line] : null, source: a.source };
+}
+
+const scheduleField = {
+  type: "enum",
+  values: [...SCHEDULE_C_LINES, "none"],
+  description: `The Schedule C line an income or expense account reports on, as the person decides: ${SCHEDULE_C_LINES.map((l) => `${l} ${SCHEDULE_C[l]}`).join("; ")}. Income accounts take 1, 2 or 6; none clears it.`,
+} as const;
+
+/** The line to store for an account of a type, or a refusal naming the field. */
+function checkLine(type: string, line: string | undefined): ScheduleCLine | null {
+  if (line === undefined || line === "none") return null;
+  if (type !== "income" && type !== "expense") {
+    throw new Refusal(`Only income and expense accounts report on Schedule C, and this account is ${type}.`, "schedule_c");
+  }
+  const incomeLine = INCOME_LINES.includes(line as ScheduleCLine);
+  if ((type === "income") !== incomeLine) {
+    throw new Refusal(`Line ${line} is ${incomeLine ? "an income" : "an expense"} line, so it can't hold this ${type} account.`, "schedule_c");
+  }
+  return line as ScheduleCLine;
+}
+
 const accountAdd: Op = {
   name: "account_add",
   kind: "write",
-  description: "Add an account to the chart of accounts.",
+  description: "Add an account to the chart of accounts, optionally with the Schedule C line it reports on. New books already hold an account for every Schedule C expense line (see account list), so add one only for something they don't cover.",
   fields: {
     name: { type: "text", required: true, description: "Account name, unique." },
     type: { type: "enum", required: true, values: ACCOUNT_TYPES, description: "asset, liability, equity, income or expense." },
+    schedule_c: scheduleField,
   },
   run(db, input, ctx) {
     if (db.query("SELECT 1 FROM accounts WHERE name = ?").get(input.name)) {
       throw new Refusal("An account with this name already exists.", "name");
     }
+    const line = checkLine(input.type, input.schedule_c);
     const { id } = db
-      .query("INSERT INTO accounts (name, type, source) VALUES (?, ?, ?) RETURNING id")
-      .get(input.name, input.type, ctx.source) as { id: number };
-    return { account: getAccount(db, id) };
+      .query("INSERT INTO accounts (name, type, schedule_c, source) VALUES (?, ?, ?, ?) RETURNING id")
+      .get(input.name, input.type, line, ctx.source) as { id: number };
+    return { account: accountView(db, id) };
+  },
+};
+
+const accountEdit: Op = {
+  name: "account_edit",
+  kind: "write",
+  description:
+    "Set or clear the Schedule C line an income or expense account reports on, as the person decides. Posted entries don't change; the P&L groups by the new line.",
+  fields: {
+    id: { type: "int", required: true, min: 1, description: "Account id." },
+    schedule_c: { ...scheduleField, required: true },
+  },
+  run(db, input, ctx) {
+    const a = getAccount(db, input.id);
+    if (!a) throw new Refusal(`There is no account with id ${input.id}.`, "id");
+    const line = checkLine(a.type, input.schedule_c);
+    db.query("UPDATE accounts SET schedule_c = ?, source = ? WHERE id = ?").run(line, ctx.source, a.id);
+    return { account: accountView(db, a.id) };
   },
 };
 
 const accountList: Op = {
   name: "account_list",
   kind: "read",
-  description: "List the chart of accounts.",
+  description: "List the chart of accounts, each income and expense account with the Schedule C line it reports on.",
   fields: {},
   run(db) {
-    return { accounts: db.query("SELECT id, name, type, source FROM accounts ORDER BY id").all() };
+    const ids = db.query("SELECT id FROM accounts ORDER BY id").all() as { id: number }[];
+    return { accounts: ids.map((r) => accountView(db, r.id)) };
   },
 };
 
@@ -173,4 +224,4 @@ const entryList: Op = {
   },
 };
 
-export const ledgerOps: Op[] = [accountAdd, accountList, entryPost, entryList];
+export const ledgerOps: Op[] = [accountAdd, accountEdit, accountList, entryPost, entryList];

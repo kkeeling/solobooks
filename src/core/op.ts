@@ -31,6 +31,8 @@ export interface Op {
   destructive?: boolean;
   /** A read that saves a file into the books folder (an invoice PDF), so it isn't read-only to MCP. */
   savesFile?: boolean;
+  /** A read whose result holds a whole file in this field: the CLI prints that text as it is, instead of JSON. */
+  text?: string;
   description: string;
   fields: Fields;
   /**

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { memBooks } from "./support/books.ts";
+import { memBooks, acct } from "./support/books.ts";
 import { must, seedAccounts, write } from "./support/gen.ts";
 
 const USD_ONLY = { reason: "solobooks keeps books in US dollars only, so currency must be USD.", field: "" };
@@ -11,7 +11,7 @@ test("ISC-15 usd only: any currency other than USD is refused", () => {
   const line = (currency?: string) => ({
     date: "2026-10-01",
     memo: "m",
-    lines: [{ account_id: 1, debit_cents: 100, currency }, { account_id: 4, credit_cents: 100 }],
+    lines: [{ account_id: acct(1), debit_cents: 100, currency }, { account_id: acct(4), credit_cents: 100 }],
   });
 
   for (const currency of ["EUR", "usd", "CAD", "GBP", ""]) {

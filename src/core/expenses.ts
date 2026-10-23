@@ -13,6 +13,9 @@ import { currency, MAX_CENTS } from "./validate.ts";
 
 const MAX_RECEIPT_BYTES = 25 * 1024 * 1024;
 
+/** How an expense was paid. */
+export const PAYMENT_METHODS = ["ach", "wire", "check", "cash", "zelle", "card", "paypal", "other"] as const;
+
 export function expenseView(db: Books, id: number) {
   const e = db.query("SELECT * FROM expenses WHERE id = ?").get(id) as Record<string, any>;
   const recovered = db
@@ -31,6 +34,8 @@ export function expenseView(db: Books, id: number) {
     paid_from_account_id: e.paid_from_account_id,
     entry_id: e.entry_id,
     pass_through_client_id: e.pass_through_client_id,
+    contractor_id: e.contractor_id,
+    payment_method: e.payment_method,
     receipt: e.receipt_file ? { file: e.receipt_file, sha256: e.receipt_sha256, bytes: e.receipt_bytes } : null,
     // The invoice that bills this cost on to the client, if any.
     recovered_by_invoice: recovered
@@ -51,7 +56,7 @@ const expenseAdd: Op = {
   name: "expense_add",
   kind: "write",
   description:
-    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and as a pass-through cost to bill on to a client. When the person paid it with their own money, such as a personal card, set paid_personally instead of paid_from_account_id: it is recorded as the expense plus an owner contribution of the same amount.",
+    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and as a pass-through cost to bill on to a client. When the person paid it with their own money, such as a personal card, set paid_personally instead of paid_from_account_id: it is recorded as the expense plus an owner contribution of the same amount. A payment to a contractor names them with contractor_id and says how it was paid with payment_method.",
   fields: {
     date: { type: "date", required: true, description: "Day of the expense, YYYY-MM-DD." },
     amount_cents: { type: "int", required: true, min: 1, max: MAX_CENTS, unit: "cents", description: "Amount in cents." },
@@ -65,6 +70,11 @@ const expenseAdd: Op = {
     },
     receipt_path: { type: "text", description: "Path to the receipt file on this machine; it is copied into the books folder." },
     pass_through_client_id: { type: "int", min: 1, description: "Client this cost is billed on to at cost; their next draft for its date picks it up." },
+    contractor_id: { type: "int", min: 1, description: "The contractor paid, when this is a payment for someone's work (see contractor add); needs payment_method." },
+    payment_method: {
+      type: "enum", values: PAYMENT_METHODS,
+      description: "How it was paid: ach, wire, check, cash, zelle, card, paypal or other. Required with contractor_id, because card and PayPal payments to a contractor are reported on 1099-K, not 1099-NEC.",
+    },
     currency,
   },
   run(db, input, ctx) {
@@ -83,6 +93,14 @@ const expenseAdd: Op = {
     // Paid personally: the cost is the business's, and the money is the person's contribution to it.
     const paidFrom: number = personal ? contributionAccount(db, ctx, "paid_personally") : input.paid_from_account_id;
     if (input.pass_through_client_id !== undefined) requireClient(db, input.pass_through_client_id, "pass_through_client_id");
+    if (input.contractor_id !== undefined) {
+      if (!db.query("SELECT 1 FROM contractors WHERE id = ?").get(input.contractor_id)) {
+        throw new Refusal(`There is no contractor with id ${input.contractor_id}.`, "contractor_id");
+      }
+      if (input.payment_method === undefined) {
+        throw new Refusal("A payment to a contractor needs payment_method, since card and PayPal payments are reported on 1099-K instead of 1099-NEC.", "payment_method");
+      }
+    }
 
     let receipt: { file: string; sha: string; size: number } | null = null;
     if (input.receipt_path !== undefined) {
@@ -114,8 +132,8 @@ const expenseAdd: Op = {
     const { id } = db
       .query(
         `INSERT INTO expenses (date, amount_cents, vendor, memo, account_id, paid_from_account_id, entry_id, pass_through_client_id,
-           receipt_file, receipt_sha256, receipt_bytes, source)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+           receipt_file, receipt_sha256, receipt_bytes, contractor_id, payment_method, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
         input.date,
@@ -129,6 +147,8 @@ const expenseAdd: Op = {
         receipt?.file ?? null,
         receipt?.sha ?? null,
         receipt?.size ?? null,
+        input.contractor_id ?? null,
+        input.payment_method ?? null,
         ctx.source,
       ) as { id: number };
     if (!personal) return { expense: expenseView(db, id) };

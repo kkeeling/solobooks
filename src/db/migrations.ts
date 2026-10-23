@@ -10,9 +10,11 @@ import m008 from "./008_bank.sql" with { type: "text" };
 import m009 from "./009_payment_gate.sql" with { type: "text" };
 import m010 from "./010_refunds_credits.sql" with { type: "text" };
 import m011 from "./011_bank_unmatch.sql" with { type: "text" };
+import m012 from "./012_tax_and_year_end.sql" with { type: "text" };
+import m013 from "./013_schedule_c_chart.sql" with { type: "text" };
 
 /** Numbered migrations, applied in order. The file's PRAGMA user_version is the last one applied. */
-export const MIGRATIONS: readonly string[] = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011];
+export const MIGRATIONS: readonly string[] = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013];
 
 export function migrate(db: Database): void {
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };

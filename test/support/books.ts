@@ -11,6 +11,19 @@ export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "solobooks-test-"));
 }
 
+/** How many accounts every new books file starts with: the Schedule C chart. */
+export const CHART_ACCOUNTS = (() => {
+  const db = openBooks(":memory:");
+  try {
+    return (db.query("SELECT COUNT(*) AS n FROM accounts").get() as { n: number }).n;
+  } finally {
+    db.close();
+  }
+})();
+
+/** The id of the nth account a test adds to new books itself, after the chart. */
+export const acct = (n: number) => CHART_ACCOUNTS + n;
+
 /** In-memory books with every migration applied. */
 export function memBooks(): Books {
   return openBooks(":memory:");
@@ -19,7 +32,8 @@ export function memBooks(): Books {
 /** Runs the CLI in-process against a books folder and parses its JSON output. */
 export async function cli(dir: string, args: string[]): Promise<{ code: number; out: any }> {
   const r = await run([...args, "--books", dir], { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" });
-  return { code: r.code, out: JSON.parse(r.stdout) };
+  // An export prints its file as it is; everything else is JSON.
+  return { code: r.code, out: r.text ? r.stdout : JSON.parse(r.stdout) };
 }
 
 /** Like cli(), but throws unless the command succeeded. */

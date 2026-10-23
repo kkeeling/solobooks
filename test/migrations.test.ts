@@ -118,3 +118,39 @@ test("migrations: books saved before bank unmatch open with every match kept and
   expect(db.query("SELECT id FROM live_bank_matches").all()).toEqual([{ id: 2 }]);
   db.close();
 });
+
+test("migrations: books saved before the Schedule C chart get it, keeping every account, id and posting they had", () => {
+  const path = dbPath(tempDir());
+  const old = new Database(path, { create: true, strict: true });
+  const before = MIGRATIONS.length - 1; // everything up to the chart
+  for (const [v, sql] of MIGRATIONS.slice(0, before).entries()) {
+    old.exec(sql);
+    old.exec(`PRAGMA user_version = ${v + 1}`);
+  }
+  old.exec(`INSERT INTO accounts (id, name, type, source) VALUES
+    (1, 'Checking', 'asset', 'agent:old'), (2, 'supplies', 'expense', 'agent:old'), (3, 'Travel', 'asset', 'agent:old'),
+    (4, 'Software', 'expense', 'agent:old'), (5, 'Consulting income', 'income', 'agent:old')`);
+  old.exec("INSERT INTO entries (id, date, memo, source) VALUES (1, '2026-01-02', 'Pens', 'agent:old')");
+  old.exec("INSERT INTO lines (entry_id, account_id, debit_cents, source) VALUES (1, 2, 500, 'agent:old')");
+  old.exec("INSERT INTO lines (entry_id, account_id, credit_cents, source) VALUES (1, 1, 500, 'agent:old')");
+  old.close();
+
+  const db = openBooks(path);
+  expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
+  // The old accounts keep their ids and sources. One of the same name and type gets its line; any other is left alone.
+  expect(db.query("SELECT id, name, type, schedule_c, source FROM accounts WHERE id <= 5 ORDER BY id").all()).toEqual([
+    { id: 1, name: "Checking", type: "asset", schedule_c: null, source: "agent:old" },
+    { id: 2, name: "supplies", type: "expense", schedule_c: "22", source: "agent:old" },
+    { id: 3, name: "Travel", type: "asset", schedule_c: null, source: "agent:old" },
+    { id: 4, name: "Software", type: "expense", schedule_c: null, source: "agent:old" },
+    { id: 5, name: "Consulting income", type: "income", schedule_c: "1", source: "agent:old" },
+  ]);
+  // The rest of the chart arrives after them, each on its line, with no second account for a name already taken.
+  const added = db.query("SELECT name, type, schedule_c FROM accounts WHERE id > 5 ORDER BY id").all() as { name: string; type: string; schedule_c: string }[];
+  expect(added.every((a) => a.schedule_c !== null)).toBe(true);
+  expect(added.map((a) => a.name)).not.toContain("Travel");
+  expect(added.map((a) => a.name.toLowerCase())).not.toContain("supplies");
+  expect(added).toContainEqual({ name: "Office expense", type: "expense", schedule_c: "18" });
+  expect(db.query("SELECT COUNT(*) AS n FROM lines").get()).toEqual({ n: 2 });
+  db.close();
+});
