@@ -1,6 +1,8 @@
 import { join } from "node:path";
 
 export const RECEIPT = join(import.meta.dir, "..", "fixtures", "receipt.png");
+/** A checking statement: interest that matches its entry exactly, a charge two days after its entry, and two others. */
+export const STATEMENT = join(import.meta.dir, "..", "fixtures", "checking.csv");
 
 /**
  * One pass through every operation solobooks has, in an order where each step succeeds, on books set up with
@@ -82,6 +84,11 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "payment_refund", input: { payment_id: 1, date: "2026-10-11", reason: "Paid on the wrong invoice" } },
   { op: "payment_add", input: { invoice_id: 1, date: "2026-10-12", amount_cents: 500000, deposit_account_id: 1 } }, // more than is owed
   { op: "payment_refund", input: { payment_id: 2, date: "2026-10-13", reason: "Overpaid" } },
+  {
+    op: "bank_import",
+    input: { account_id: 1, file_path: STATEMENT, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" },
+  },
+  { op: "bank_match", input: { line_id: 2, entry_id: 2 } }, // the editor licence, charged two days after its entry
   { op: "gate_set", input: { invoice_issue: "click" } },
   { op: "gate_list", input: {} },
   { op: "pending_list", input: {} },
@@ -104,6 +111,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "payment_list", input: { invoice_id: 1 } },
   { op: "client_credits", input: {} },
   { op: "report_unpaid", input: {} },
+  { op: "bank_list", input: { status: "unmatched" } },
   { op: "history_list", input: {} },
 ];
 

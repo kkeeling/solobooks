@@ -6,9 +6,10 @@ import m004 from "./004_gate.sql" with { type: "text" };
 import m005 from "./005_historical.sql" with { type: "text" };
 import m006 from "./006_owner_money.sql" with { type: "text" };
 import m007 from "./007_payments.sql" with { type: "text" };
+import m008 from "./008_bank.sql" with { type: "text" };
 
 /** Numbered migrations, applied in order. The file's PRAGMA user_version is the last one applied. */
-export const MIGRATIONS: readonly string[] = [m001, m002, m003, m004, m005, m006, m007];
+export const MIGRATIONS: readonly string[] = [m001, m002, m003, m004, m005, m006, m007, m008];
 
 export function migrate(db: Database): void {
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };

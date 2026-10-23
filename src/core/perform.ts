@@ -1,3 +1,4 @@
+import { bankOps } from "./bank.ts";
 import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { documentOps } from "./documents.ts";
@@ -25,6 +26,7 @@ export const OPS: readonly Op[] = [
   ...documentOps,
   ...ledgerOps,
   ...ownerOps,
+  ...bankOps,
   ...reportOps,
   ...gateOps,
 ];
