@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 106/112
+progress: 108/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -244,8 +244,8 @@ Why: the person can see the books and approve things when their agent's app can'
   - [ ] ISC-102.2: The page renders an error state when the books file can't be read.
   - [ ] ISC-102.3: The page renders an empty state for new books.
   - [ ] ISC-102.4: The page renders all four panels with populated books.
-- [ ] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
-- [ ] ISC-104: Anti: the page server listens only on loopback.
+- [x] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
+- [x] ISC-104: Anti: the page server listens only on loopback.
 
 ## Not yet specified
 
@@ -369,7 +369,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-102.3 | screenshot | page with new empty books | empty state shown | Interceptor capture | derived: human-page |
 | ISC-102.4 | screenshot | page with fixture books | four panels populated | Interceptor capture | derived: human-page |
 | ISC-103 | bun-test | page HTML forms | approve and reject only | bun test test/page.test.ts -t "no entry forms" | derived: human-page |
-| ISC-104 | bash | listening sockets of page server | loopback only | `lsof -iTCP -sTCP:LISTEN -a -c solobooks \| rg -v "127.0.0.1\|localhost\|\[::1\]" \| rg -c LISTEN ; test $? -eq 1` | derived: manifest |
+| ISC-104 | bash | listening sockets of page server | loopback only | `sh scripts/page-loopback-check.sh` | derived: manifest |
 
 ## Decisions
 
@@ -453,6 +453,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-42, 111, 112: probes as written, rerun independently 2026-10-23 — 1, 1 and 2 pass; full `bun test` 115 with two timeouts under load average 26 (ISC-14, ISC-24), both green rerun alone or with a longer limit; eval selftest 11 of 11 — commits 63932cb, dedcd08, 210f379
 - ISC-49..61, 110: probes as written, rerun independently on the merged tree 2026-10-23 — all pass; `bash scripts/export-check.sh` 62 CSV rows and `hledger check` on 26 transactions; full `bun test` 132 of 133 with ISC-6 timing out under load, green alone in 14s; eval selftest 11 of 11; 2026 IRS mileage rates confirmed on irs.gov by the builder
 - ISC-91..101: probes as written, rerun independently on merge 9579949 2026-10-23 — all pass; `bash scripts/addon-no-bun.sh` PASS with no bun or node on PATH; full `bun test` 177 pass 0 fail in 73s after the migrated-image speed-up (was 280 to 440s with timeouts); eval selftest 11 of 11; exports pass
+- ISC-103, 104: probes as written, rerun independently 2026-10-23 — `-t "no entry forms"` 2 pass; `sh scripts/page-loopback-check.sh` PASS (127.0.0.1 and ::1 only); full `bun test` 184 pass 0 fail in 57s — commits 6f37cbe..328ee66
 
 ## Remaining Work
 
