@@ -1,6 +1,6 @@
 ---
 name: solobooks
-description: Keeps the books for a US solo consultant with the local solobooks app - set up a new person, bill clients for time, fixed fees and retainers, issue invoices through the person's approval, record expenses with receipts, record client payments, reconcile bank and card statements, keep the owner's own money out of the P&L, and bring in past invoices from a spreadsheet. Use when the person mentions solobooks, their books, invoicing or billing a client, unbilled time, expenses or receipts, a client paying, a bank or card statement CSV, transfers or owner draws, who owes them money, their P&L, or moving off a spreadsheet or another books app.
+description: Keeps the books for a US solo consultant with the local solobooks app - set up a new person, bill clients for time, fixed fees and retainers, issue invoices through the person's approval, record expenses with receipts, record client payments, reconcile bank and card statements, keep the owner's own money out of the P&L, track sales tax owed, keep the mileage log and other year-end records, hand their accountant the year, and bring in past invoices from a spreadsheet. Use when the person mentions solobooks, their books, invoicing or billing a client, unbilled time, expenses or receipts, a client paying, a bank or card statement CSV, transfers or owner draws, who owes them money, their P&L or profit, sales tax, mileage, home office, estimated taxes, contractors or 1099s, year end, what their accountant needs, or moving off a spreadsheet or another books app.
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
@@ -33,6 +33,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **They have past invoices or expenses somewhere else:** follow [references/prior-data.md](references/prior-data.md).
 - **A client paid, a bank or card statement, or the person's own money moving:** follow [references/money.md](references/money.md). Import the statement first, so payments are backed by the bank.
 - **"Bill everyone for October" and other day-to-day work:** see [references/billing.md](references/billing.md).
+- **Sales tax owed, a trip, estimated taxes, a contractor, or "what does my accountant need?":** follow [references/year-end.md](references/year-end.md).
 
 ## Quick map
 
@@ -48,7 +49,10 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Record a client's payment | `payment add` (gross, fee, and the bank line it is) |
 | Move their own money | `transfer add`, `owner draw`, `owner contribute`; personal-card costs are `expense add --paid-personally true` |
 | See who owes what | `report unpaid` |
-| See how they're doing | `report pnl`, `invoice list` |
+| See how they're doing | `report pnl` (cash basis, by Schedule C line), `report ytd`, `invoice list` |
+| Sales tax owed, and paying the state | `report sales tax`, `sales tax payment add` |
+| Year-end records | `mileage add`, `home office set`, `owner item add`, `contractor add` |
+| Give the accountant the year | `export --year <y> --format csv` plus `report yearend --year <y>` |
 | Bring in old invoices | `invoice import` |
 | See what's waiting | `pending list` |
 
