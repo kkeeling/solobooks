@@ -1,5 +1,7 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { cli, ok, tempDir } from "./support/books.ts";
+import { acmeBooks, draftOctober } from "./support/billing.ts";
+import { cli, dbPath, ok, tempDir } from "./support/books.ts";
 
 const S = ["--source", "agent:test"];
 const ENTRY = ["--client-id", "1", "--date", "2026-10-01", "--minutes", "45", "--note", "Schema review"];
@@ -48,4 +50,38 @@ test("ISC-28 unbilled: unbilled time entries can be edited and deleted freely", 
   const ops = (await ok(dir, ["history", "list"])).history.map((h: any) => h.op);
   expect(ops).toEqual(["client_add", "client_add", "time_add", "time_add", "time_edit", "time_edit", "time_delete", "time_delete"]);
   expect((await cli(dir, ["time", "delete", "--id", "1", ...S])).out.field).toBe("id");
+});
+
+test("ISC-27 locked: editing a time entry on an issued invoice is refused with a reason", async () => {
+  const dir = await acmeBooks();
+  const draft = await draftOctober(dir);
+
+  // On a draft the entry is still free, and the draft follows the change.
+  const e = (await ok(dir, ["time", "edit", "--id", "1", "--minutes", "60", ...S])).time_entry;
+  expect(e).toMatchObject({ id: 1, minutes: 60, amount_cents: 15000 });
+  const line = (await ok(dir, ["invoice", "get", "--id", String(draft.id)])).invoice.lines[0];
+  expect(line).toMatchObject({ time_entry_id: 1, amount_cents: 15000, description: "2026-10-03 API design (60 min at $150.00/hr)" });
+
+  const inv = (await ok(dir, ["invoice", "issue", "--id", String(draft.id), ...S])).invoice;
+  const reason = {
+    reason: "Time entry 1 is billed on issued invoice 7001, so it can't change; void or credit that invoice instead.",
+    field: "id",
+  };
+  for (const args of [["time", "edit", "--id", "1", "--minutes", "5"], ["time", "edit", "--id", "1", "--note", "x"], ["time", "delete", "--id", "1"]]) {
+    const r = await cli(dir, [...args, ...S]);
+    expect(r.code).toBe(2);
+    expect(r.out).toEqual(reason);
+  }
+  expect((await ok(dir, ["time", "list"])).time_entries[0]).toMatchObject({ id: 1, minutes: 60, note: "API design" });
+
+  // The database refuses too.
+  const db = new Database(dbPath(dir));
+  expect(() => db.exec("UPDATE time_entries SET minutes = 1 WHERE id = 1")).toThrow(/locked/);
+  expect(() => db.exec("DELETE FROM time_entries WHERE id = 1")).toThrow(/locked/);
+  db.close();
+
+  // Time that isn't on the issued invoice stays free, and voiding the invoice frees its time again.
+  await ok(dir, ["time", "edit", "--id", "3", "--minutes", "61", ...S]);
+  await ok(dir, ["invoice", "void", "--id", String(inv.id), "--reason", "redo", ...S]);
+  expect((await ok(dir, ["time", "edit", "--id", "1", "--minutes", "30", ...S])).time_entry.minutes).toBe(30);
 });

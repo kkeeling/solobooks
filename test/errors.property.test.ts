@@ -12,6 +12,17 @@ const VALID: Record<string, Record<string, unknown>> = {
   time_add: { client_id: 1, date: "2026-10-01", minutes: 30, note: "n" },
   time_edit: { id: 1, minutes: 10 },
   time_delete: { id: 1 },
+  profile_set: { legal_name: "New LLC", ein: "98-7654321" },
+  client_edit: { id: 1, address: "2 Side St", tax_rate_ppm: 50000 },
+  milestone_billable: { id: 1, date: "2026-10-15" },
+  expense_add: { date: "2026-10-01", amount_cents: 500, vendor: "V", account_id: 5, paid_from_account_id: 1 },
+  invoice_draft: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "d", amount_cents: 100 }] },
+  invoice_edit: { id: 1, terms_days: 10 },
+  invoice_delete: { id: 1 },
+  invoice_issue: { id: 1 },
+  invoice_sent: { id: 2 },
+  invoice_void: { id: 2, reason: "r" },
+  invoice_credit: { invoice_id: 2, reason: "r", amount_cents: 50 },
 };
 const ENVELOPE = ["source", "idempotency_key", "input", "command"];
 
@@ -20,6 +31,13 @@ function setup() {
   seedAccounts(db);
   must(db, "client_add", { name: "Acme" });
   must(db, "time_add", { client_id: 1, date: "2026-10-01", minutes: 30, note: "n" }, { idempotency_key: "used" });
+  must(db, "profile_set", { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "12-3456789" });
+  must(db, "client_edit", { id: 1, address: "500 Market St" });
+  must(db, "engagement_add", { client_id: 1, name: "Fixed", milestones: [{ name: "Spec", amount_cents: 1000 }] });
+  const manual = (month: string) => ({ client_id: 1, period_start: `2026-${month}-01`, period_end: `2026-${month}-28`, lines: [{ description: "d", amount_cents: 100 }] });
+  must(db, "invoice_draft", manual("09")); // 1 stays a draft
+  must(db, "invoice_draft", manual("08"));
+  must(db, "invoice_issue", { id: 2 }); // 2 is issued
   return db;
 }
 
@@ -87,6 +105,11 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
   const db = setup();
   must(db, "engagement_add", { client_id: 1, name: "Build", rate_cents_per_hour: 100 });
   must(db, "client_add", { name: "Beta" });
+  // Time entry 2 is billed on an issued invoice, so it is locked.
+  must(db, "time_add", { client_id: 2, date: "2026-07-04", minutes: 30, note: "n" });
+  must(db, "client_edit", { id: 2, address: "9 Elm Rd" });
+  must(db, "engagement_add", { client_id: 2, name: "Hourly", rate_cents_per_hour: 100 });
+  must(db, "invoice_issue", { id: must(db, "invoice_draft", { client_id: 2, period_start: "2026-07-01", period_end: "2026-07-31" }).invoice.id });
   const lines = (a: number, b: number) => [{ account_id: 1, debit_cents: a }, { account_id: 4, credit_cents: b }];
   const cases: [string, unknown, Record<string, unknown>, string][] = [
     ["client_add", { name: "acme" }, {}, "name"],
@@ -107,6 +130,33 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["time_delete", { id: 1 }, { idempotency_key: "used" }, "idempotency_key"],
     ["time_delete", { id: 1 }, { source: "" }, "source"],
     ["no_such_op", {}, {}, "command"],
+    ["profile_set", {}, {}, "legal_name"],
+    ["profile_set", { ein: "12-345" }, {}, "ein"],
+    ["profile_set", { next_invoice_number: 9 }, {}, "next_invoice_number"],
+    ["client_edit", { id: 9, name: "X" }, {}, "id"],
+    ["client_edit", { id: 1, tax_label: "VAT" }, {}, "tax_label"],
+    ["milestone_billable", { id: 9, date: "2026-10-01" }, {}, "id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 1, paid_from_account_id: 1 }, {}, "account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 4 }, {}, "paid_from_account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, receipt_path: "/no/such/file" }, {}, "receipt_path"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, pass_through_client_id: 9 }, {}, "pass_through_client_id"],
+    ["invoice_draft", { client_id: 1, period_start: "2026-10-31", period_end: "2026-10-01" }, {}, "period_start"],
+    ["invoice_draft", { client_id: 1, period_start: "2025-01-01", period_end: "2025-01-31" }, {}, "period_end"],
+    ["invoice_draft", { client_id: 9, period_start: "2026-10-01", period_end: "2026-10-31" }, {}, "client_id"],
+    ["invoice_edit", { id: 1 }, {}, "terms_days"],
+    ["invoice_edit", { id: 1, remove_lines: [{ line_id: 99 }] }, {}, "remove_lines[0].line_id"],
+    ["invoice_edit", { id: 2, terms_days: 3 }, {}, "id"],
+    ["invoice_delete", { id: 2 }, {}, "id"],
+    ["invoice_issue", { id: 2 }, {}, "id"],
+    ["invoice_issue", { id: 99 }, {}, "id"],
+    ["invoice_sent", { id: 1 }, {}, "id"],
+    ["invoice_void", { id: 1, reason: "r" }, {}, "id"],
+    ["invoice_credit", { invoice_id: 1, reason: "r" }, {}, "invoice_id"],
+    ["invoice_credit", { invoice_id: 2, reason: "r", amount_cents: 101 }, {}, "amount_cents"],
+    ["invoice_email", { id: 1 }, {}, "id"],
+    ["invoice_reminder", { id: 2, as_of: "2026-10-23" }, {}, "as_of"],
+    ["invoice_get", { id: 99 }, {}, "id"],
+    ["time_edit", { id: 2, minutes: 9 }, {}, "id"],
   ];
   for (const [op, input, env, field] of cases) {
     const r = write(db, op, input, env);
