@@ -1,0 +1,18 @@
+{
+  "name": "solobooks",
+  "version": "0.1.0",
+  "description": "Connects Claude Code to solobooks, local books for US solo consultants: its MCP tools and the solobooks skill. The solobooks app itself comes from the installer.",
+  "author": {
+    "name": "Keenan Keeling"
+  },
+  "homepage": "https://github.com/kkeeling/solobooks",
+  "repository": "https://github.com/kkeeling/solobooks",
+  "license": "MIT",
+  "keywords": ["books", "bookkeeping", "invoicing", "consulting", "mcp"],
+  "mcpServers": {
+    "solobooks": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/plugin/mcp.sh",
+      "args": []
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "solobooks",
+  "owner": {
+    "name": "Keenan Keeling"
+  },
+  "metadata": {
+    "description": "Local, agent-run books for US solo consultants."
+  },
+  "plugins": [
+    {
+      "name": "solobooks",
+      "source": "./",
+      "description": "Connects Claude Code to solobooks: its MCP tools and the skill that onboards you, bills clients and brings in past invoices. Install the solobooks app first.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    }
+  ]
+}
