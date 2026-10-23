@@ -121,13 +121,21 @@ function creditsOf(db: Books, invoiceId: number): InvoiceRow[] {
     .all(invoiceId) as InvoiceRow[];
 }
 
+/** What payments still standing have settled on an invoice: a refunded payment settles nothing. */
+export function paidCents(db: Books, invoiceId: number): number {
+  const { n } = db
+    .query("SELECT COALESCE(SUM(p.applied_cents), 0) AS n FROM payments p WHERE p.invoice_id = ? AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = p.id)")
+    .get(invoiceId) as { n: number };
+  return n;
+}
+
 /**
- * What is still owed on an invoice: its total less the credit notes against it, or nothing for a past invoice
- * brought in as paid. Payments arrive in a later step.
+ * What is still owed on an invoice: its total less the credit notes against it and the payments on it, or nothing
+ * for a past invoice brought in as paid.
  */
 export function openBalance(db: Books, r: InvoiceRow): number {
   if (r.paid_on !== null) return 0;
-  return amounts(db, r).total - creditsOf(db, r.id).reduce((s, c) => s + amounts(db, c).total, 0);
+  return amounts(db, r).total - creditsOf(db, r.id).reduce((s, c) => s + amounts(db, c).total, 0) - paidCents(db, r.id);
 }
 
 export function invoiceView(db: Books, id: number) {
@@ -170,7 +178,7 @@ export function invoiceView(db: Books, id: number) {
 const ACCOUNTS = INVOICE_ACCOUNTS;
 
 /** The account a posting needs, created on first use. */
-function account(db: Books, which: keyof typeof ACCOUNTS, ctx: Ctx): number {
+export function invoiceAccount(db: Books, which: keyof typeof ACCOUNTS, ctx: Ctx): number {
   const { name, type } = ACCOUNTS[which];
   const found = db.query("SELECT id, type FROM accounts WHERE name = ?").get(name) as { id: number; type: string } | null;
   if (found) {
@@ -187,10 +195,10 @@ function account(db: Books, which: keyof typeof ACCOUNTS, ctx: Ctx): number {
 function post(db: Books, r: InvoiceRow, direction: "forward" | "reverse", date: string, memo: string, ctx: Ctx): number {
   const a = amounts(db, r);
   const legs: [number, number][] = [
-    [account(db, "receivable", ctx), a.total],
-    [account(db, "services", ctx), -(a.subtotal - a.passThrough)],
-    [account(db, "reimbursed", ctx), -a.passThrough],
-    [account(db, "salesTax", ctx), -(a.tax?.amount_cents ?? 0)],
+    [invoiceAccount(db, "receivable", ctx), a.total],
+    [invoiceAccount(db, "services", ctx), -(a.subtotal - a.passThrough)],
+    [invoiceAccount(db, "reimbursed", ctx), -a.passThrough],
+    [invoiceAccount(db, "salesTax", ctx), -(a.tax?.amount_cents ?? 0)],
   ];
   const sign = direction === "forward" ? 1 : -1;
   const { id } = db.query("INSERT INTO entries (date, memo, source) VALUES (?, ?, ?) RETURNING id").get(date, memo, ctx.source) as {
@@ -529,6 +537,9 @@ const invoiceVoid: Op = {
     if (r.kind === "invoice" && creditsOf(db, r.id).length > 0) {
       throw new Refusal(`Invoice ${r.number} has credit notes against it, so credit the rest instead of voiding it.`, "id");
     }
+    if (r.kind === "invoice" && paidCents(db, r.id) > 0) {
+      throw new Refusal(`Invoice ${r.number} has payments on it, so refund them with payment refund before voiding it.`, "id");
+    }
     db.query("UPDATE invoices SET status = 'void', voided_at = ?, void_reason = ? WHERE id = ?").run(ctx.now, input.reason, r.id);
     const label = r.kind === "credit" ? `credit note ${displayNumber(r)}` : `invoice ${r.number}`;
     post(db, r, r.kind === "invoice" ? "reverse" : "forward", today(ctx.now), `Void ${label}: ${input.reason}`, ctx);
@@ -611,6 +622,9 @@ const invoiceCredit: Op = {
     );
     const credit = requireInvoice(db, id);
     if (openBalance(db, orig) < 0) {
+      if (paidCents(db, orig.id) > 0) {
+        throw new Refusal(`That credits more than is still owed on invoice ${orig.number} after its payments, so credit at most what is still open.`, "amount_cents");
+      }
       throw new Refusal(`Tax rounding would credit more than is still owed on invoice ${orig.number}, so credit a little less.`, "amount_cents");
     }
     post(db, credit, "reverse", date, `Credit note ${displayNumber(credit)} for invoice ${orig.number} to ${orig.client_name}`, ctx);
@@ -729,7 +743,7 @@ const invoiceImport: Op = {
         .get(input.paid_on, `Payment for past invoice ${input.number} from ${client.name}`, ctx.source) as { id: number };
       const ins = db.query("INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES (?, ?, ?, ?, ?)");
       ins.run(entry, input.paid_account_id, total, 0, ctx.source);
-      ins.run(entry, account(db, "receivable", ctx), 0, total, ctx.source);
+      ins.run(entry, invoiceAccount(db, "receivable", ctx), 0, total, ctx.source);
     }
     return { invoice: invoiceView(db, id) };
   },

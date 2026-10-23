@@ -1,5 +1,48 @@
+import { daysBetween, today } from "./format.ts";
+import { amounts, openBalance, paidCents, type InvoiceRow } from "./invoices.ts";
 import type { Op } from "./op.ts";
 import { Refusal } from "./refusal.ts";
+
+/**
+ * Every issued invoice with money still owed on it, overdue ones first with how many days late they are, measured
+ * against the solobooks clock. Past invoices brought in still owed are on it, marked historical: they get no reminder.
+ */
+const reportUnpaid: Op = {
+  name: "report_unpaid",
+  kind: "read",
+  description:
+    "List every issued invoice with money still owed on it, most days late first: its total, what payments and credit notes took off, what is still open, its due date and how many days late it is today. Past invoices brought in still owed are listed too, marked historical: true, and get no reminder.",
+  fields: { client_id: { type: "int", min: 1, description: "Only this client's." } },
+  run(db, input, ctx) {
+    const day = today(ctx.now);
+    const rows = db
+      .query("SELECT * FROM invoices WHERE kind = 'invoice' AND status IN ('issued', 'sent') AND (?1 IS NULL OR client_id = ?1) ORDER BY id")
+      .all(input.client_id ?? null) as InvoiceRow[];
+    const unpaid = rows
+      .map((r) => ({ r, open: openBalance(db, r) }))
+      .filter((x) => x.open > 0)
+      .map(({ r, open }) => {
+        const late = Math.max(daysBetween(r.due_date!, day), 0);
+        return {
+          invoice_id: r.id,
+          number: String(r.number),
+          client_id: r.client_id,
+          client: r.client_name,
+          invoice_date: r.invoice_date,
+          due_date: r.due_date,
+          total_cents: amounts(db, r).total,
+          paid_cents: paidCents(db, r.id),
+          open_cents: open,
+          overdue: late > 0,
+          days_late: late,
+          historical: r.historical === 1,
+        };
+      })
+      .sort((a, b) => b.days_late - a.days_late || a.invoice_id - b.invoice_id);
+    const sum = (xs: { open_cents: number }[]) => xs.reduce((s, x) => s + x.open_cents, 0);
+    return { as_of: day, invoices: unpaid, open_total_cents: sum(unpaid), overdue_total_cents: sum(unpaid.filter((u) => u.overdue)) };
+  },
+};
 
 /** Profit and loss, summed from journal lines on every call. Nothing is cached. */
 const reportPnl: Op = {
@@ -54,4 +97,4 @@ const historyList: Op = {
   },
 };
 
-export const reportOps: Op[] = [reportPnl, historyList];
+export const reportOps: Op[] = [reportPnl, reportUnpaid, historyList];

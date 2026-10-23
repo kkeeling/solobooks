@@ -19,8 +19,8 @@ export interface Ctx {
   page: string;
 }
 
-/** What the approval gate guards. The first four have a level the person sets; gate settings always need approval. */
-export type GateAction = "invoice_issue" | "invoice_void" | "invoice_credit" | "payment_instructions" | "gate_settings";
+/** What the approval gate guards. The first five have a level the person sets; gate settings always need approval. */
+export type GateAction = "invoice_issue" | "invoice_void" | "invoice_credit" | "payment_instructions" | "payment_unmatched" | "gate_settings";
 
 /** One thing solobooks can do. The CLI and the MCP server are both generated from these. */
 export interface Op {

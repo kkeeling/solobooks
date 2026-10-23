@@ -25,6 +25,11 @@ const VALID: Record<string, Record<string, unknown>> = {
   invoice_void: { id: 2, reason: "r" },
   invoice_credit: { invoice_id: 2, reason: "r", amount_cents: 50 },
   gate_set: { invoice_issue: "click" },
+  transfer_add: { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -100 }, { account_id: 2, amount_cents: 100 }] },
+  owner_draw: { date: "2026-10-01", amount_cents: 100, account_id: 1 },
+  owner_contribute: { date: "2026-10-01", amount_cents: 100, account_id: 1 },
+  payment_add: { invoice_id: 2, date: "2026-10-01", amount_cents: 50, fee_cents: 2, deposit_account_id: 1 },
+  bank_match: { line_id: 1, entry_id: 1 },
 };
 const ENVELOPE = ["source", "idempotency_key", "input", "command"];
 
@@ -173,6 +178,20 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["gate_set", { invoice_credit: "passkey" }, {}, "invoice_credit"],
     ["gate_set", { invoice_issue: "always" }, {}, "invoice_issue"],
     ["pending_get", { id: 99 }, {}, "id"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -5 }, { account_id: 2, amount_cents: 4 }] }, {}, "legs"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 4, amount_cents: -5 }, { account_id: 1, amount_cents: 5 }] }, {}, "legs[0].account_id"],
+    ["transfer_add", { date: "2026-10-01", legs: [{ account_id: 1, amount_cents: -5 }, { account_id: 1, amount_cents: 5 }] }, {}, "legs[1].account_id"],
+    ["owner_draw", { date: "2026-10-01", amount_cents: 5, account_id: 4 }, {}, "account_id"],
+    ["owner_contribute", { date: "2026-10-01", amount_cents: 5, account_id: 99 }, {}, "account_id"],
+    ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 1, paid_personally: true }, {}, "paid_from_account_id"],
+    ["payment_add", { invoice_id: 1, date: "2026-10-01", amount_cents: 5, deposit_account_id: 1 }, {}, "invoice_id"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, fee_cents: 5, deposit_account_id: 1 }, {}, "fee_cents"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: 2 }, {}, "deposit_account_id"],
+    ["payment_add", { invoice_id: 2, date: "2026-10-01", amount_cents: 5, deposit_account_id: 1, bank_line_id: 99 }, {}, "bank_line_id"],
+    ["payment_refund", { payment_id: 99, date: "2026-10-01", reason: "r" }, {}, "payment_id"],
+    ["bank_import", { account_id: 4, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "account_id"],
+    ["bank_import", { account_id: 1, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "file_path"],
+    ["bank_match", { line_id: 99, entry_id: 1 }, {}, "line_id"],
   ];
   for (const [op, input, env, field] of cases) {
     const r = write(db, op, input, env);

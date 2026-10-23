@@ -42,6 +42,8 @@ function jsonSchema(f: Field): Record<string, unknown> {
       return { ...base, type: "array", items: { type: "string", enum: [...f.values] }, uniqueItems: true };
     case "ids":
       return { ...base, type: "array", items: { type: "integer", minimum: 1 }, uniqueItems: true };
+    case "bool":
+      return { ...base, type: "boolean" };
   }
 }
 

@@ -18,6 +18,8 @@ const GATED: Record<string, GateAction> = {
   invoice_void: "invoice_void",
   profile_payment_instructions_set: "payment_instructions",
 };
+/** Tools gated only for some inputs: they carry no flag, and the core parks just the gated calls. */
+const GATED_SOMETIMES = ["payment_add"];
 
 /** A client whose person answers every approval prompt the same way. */
 const answering = (dir: string, action: "accept" | "decline" | "cancel", content: Record<string, unknown> = {}) =>
@@ -38,8 +40,9 @@ test("ISC-67 requires interaction: a tool carries anthropic/requiresUserInteract
   // Every flagged tool's op is gated whatever it is given, so no ungated call path makes the person approve.
   for (const t of flagged) expect(typeof OPS.find((o) => o.name === t.name)!.gate).toBe("string");
   expect(tools.find((t) => t.name === "profile_set")?._meta?.[REQUIRES_USER]).toBeUndefined();
-  // The core agrees with the gate map: these ops are gated on every input, and no other op is gated at all.
-  expect(Object.fromEntries(OPS.filter((o) => o.gate !== undefined).map((o) => [o.name, o.gate]))).toEqual(GATED);
+  // The core agrees with the gate maps: these ops are gated on every input, these on some, and no other op at all.
+  expect(Object.fromEntries(OPS.filter((o) => typeof o.gate === "string").map((o) => [o.name, o.gate]))).toEqual(GATED);
+  expect(OPS.filter((o) => typeof o.gate === "function").map((o) => o.name).sort()).toEqual(GATED_SOMETIMES);
 }, 30_000);
 
 test("ISC-67 requires interaction: a tool gated only for some inputs carries no flag, since its other calls need no one", () => {
@@ -186,11 +189,13 @@ test("elicitation: the chat prompt is a fixed question with labeled one-line fie
 const READ_ONLY = [
   "profile_get", "client_list", "engagement_list", "time_list", "expense_list", "invoice_list", "invoice_get", "invoice_email",
   "invoice_reminder", "account_list", "entry_list", "report_pnl", "history_list", "gate_list", "pending_list", "pending_get",
+  "owner_list", "payment_list", "client_credits", "report_unpaid", "bank_list",
 ];
 const WRITES = [
   "profile_set", "profile_payment_instructions_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
+  "transfer_add", "owner_draw", "owner_contribute", "payment_add", "payment_refund", "bank_import", "bank_match",
 ];
 
 test("ISC-89 annotations: every read-only tool says readOnlyHint true, and no write tool does", async () => {
