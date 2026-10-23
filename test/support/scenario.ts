@@ -1,0 +1,41 @@
+/** One pass through every operation solobooks has, in an order where each step succeeds. */
+export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
+  { op: "account_add", input: { name: "Checking", type: "asset" } },
+  { op: "account_add", input: { name: "Consulting income", type: "income" } },
+  { op: "account_add", input: { name: "Software", type: "expense" } },
+  {
+    op: "entry_post",
+    input: { date: "2026-10-01", memo: "Acme paid", lines: [{ account_id: 1, debit_cents: 92500 }, { account_id: 2, credit_cents: 92500 }] },
+  },
+  {
+    op: "entry_post",
+    input: { date: "2026-10-02", memo: "Editor licence", lines: [{ account_id: 3, debit_cents: 1999 }, { account_id: 1, credit_cents: 1999, currency: "USD" }] },
+  },
+  { op: "client_add", input: { name: "Acme", increment_minutes: 6 } },
+  { op: "client_add", input: { name: "Beta", minimum_minutes: 15 } },
+  { op: "engagement_add", input: { client_id: 1, name: "Build", rate_cents_per_hour: 15000 } },
+  {
+    op: "engagement_add",
+    input: { client_id: 2, name: "Launch", milestones: [{ name: "Spec", amount_cents: 250000 }, { name: "Ship", amount_cents: 500000 }] },
+  },
+  { op: "engagement_add", input: { client_id: 2, name: "Retainer", recurring_amount_cents: 300000, recurring_interval: "monthly" } },
+  {
+    op: "engagement_add",
+    input: { client_id: 1, name: "Support", rate_cents_per_hour: 12000, recurring_amount_cents: 50000, recurring_interval: "monthly" },
+  },
+  { op: "time_add", input: { client_id: 1, engagement_id: 1, date: "2026-10-03", minutes: 37, note: "API design" } },
+  { op: "time_add", input: { client_id: 2, date: "2026-10-04", minutes: 5, note: "Call" } },
+  { op: "time_edit", input: { id: 1, minutes: 40 } },
+  { op: "time_delete", input: { id: 2 } },
+  { op: "account_list", input: {} },
+  { op: "entry_list", input: {} },
+  { op: "client_list", input: {} },
+  { op: "engagement_list", input: { client_id: 1 } },
+  { op: "time_list", input: {} },
+  { op: "report_pnl", input: { from: "2026-01-01", to: "2026-12-31" } },
+  { op: "history_list", input: {} },
+];
+
+export function cliArgs(step: { op: string; input: Record<string, unknown> }, source = "test:scenario"): string[] {
+  return [...step.op.split("_"), "--json", JSON.stringify(step.input), "--source", source];
+}
