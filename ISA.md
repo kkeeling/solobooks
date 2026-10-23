@@ -416,6 +416,11 @@ Why: the person can see the books and approve things when their agent's app can'
   learned: billing periods are labels, not filters; the unbilled set is what must drain
   criterion now: ISC-29's test covers a carried-over late entry and a skipped month's milestone and recurring fee
 
+- 2026-10-23 | conjectured: showing the person the client and total, and re-checking those at approval, is enough for "approve exactly what was shown"
+  refuted by: the gate audit swapped a parked draft's note, lines and terms at the same total, and the person approved the changed invoice, at passkey level too; a note carrying fake bank details reached the client unseen
+  learned: what the person approves is the whole document that reaches the client, not its headline; the gate has to freeze and show everything issue would send
+  criterion now: ISC-106 holds a waiting draft against edits, ISC-107 shows every line, note, terms and payment instructions in fixed wording
+
 ## Verification
 
 - ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
