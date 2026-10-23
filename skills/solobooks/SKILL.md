@@ -1,6 +1,6 @@
 ---
 name: solobooks
-description: Keeps the books for a US solo consultant with the local solobooks app - set up a new person, bill clients for time, fixed fees and retainers, issue invoices through the person's approval, record expenses with receipts, record client payments, reconcile bank and card statements, keep the owner's own money out of the P&L, track sales tax owed, keep the mileage log and other year-end records, hand their accountant the year, and bring in past invoices from a spreadsheet. Use when the person mentions solobooks, their books, invoicing or billing a client, unbilled time, expenses or receipts, a client paying, a bank or card statement CSV, transfers or owner draws, who owes them money, their P&L or profit, sales tax, mileage, home office, estimated taxes, contractors or 1099s, year end, what their accountant needs, or moving off a spreadsheet or another books app.
+description: Keeps the books for a US solo consultant with the local solobooks app - set up a new person, bill clients for time, fixed fees and retainers, issue invoices through the person's approval, record expenses with receipts, record client payments, reconcile bank and card statements, keep the owner's own money out of the P&L, track sales tax owed, keep the mileage log and other year-end records, hand their accountant the year, and bring in past invoices from a spreadsheet. Use when the person mentions solobooks, their books, invoicing or billing a client, unbilled time, expenses or receipts, a client paying, a bank or card statement CSV, transfers or owner draws, who owes them money, their P&L or profit, sales tax, mileage, home office, estimated taxes, contractors or 1099s, year end, what their accountant needs, backups or a new machine, or moving off a spreadsheet or another books app.
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
@@ -17,6 +17,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **CLI**: `solobooks <noun> <verb> --field value ... --source agent:<your-name>`, or `--json '{...}'` for lists. `solobooks help` lists every command and field. Add `--dry-run` to any write to see what it would do without changing anything.
 - Money is whole **cents** (`15000` is $150.00). Dates are `YYYY-MM-DD`. Rates are cents per hour.
 - A refusal is one sentence plus the field to change. Fix that field and retry; don't work around it.
+- A result may carry `warnings`: the books sit in a synced folder, or today's backup couldn't be written. The write still happened; tell the person what the warning says.
 - Pass an `idempotency_key` when a write might be retried (bulk imports especially): repeating it is a no-op.
 
 ## The rules that matter
@@ -34,6 +35,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **A client paid, a bank or card statement, or the person's own money moving:** follow [references/money.md](references/money.md). Import the statement first, so payments are backed by the bank.
 - **"Bill everyone for October" and other day-to-day work:** see [references/billing.md](references/billing.md).
 - **Sales tax, a trip, estimated taxes, a contractor, or "what does my accountant need?":** follow [references/year-end.md](references/year-end.md).
+- **Backups, a `warnings` line about a synced folder or a backup, or a new machine:** follow [references/backups.md](references/backups.md).
 
 ## Quick map
 
@@ -57,5 +59,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Give the accountant the year | `export --year <y> --format csv` plus `report yearend --year <y>` |
 | Bring in old invoices | `invoice import` |
 | See what's waiting | `pending list` |
+| Keep daily backups | `solobooks backup set --folder <dir>` (CLI only) |
+| Move the books to another folder or machine | `solobooks move --to <empty dir>` (CLI only) |
 
 solobooks keeps books in US dollars, for one US business, on one machine. It isn't tax or accounting advice, and you shouldn't present its numbers as such.

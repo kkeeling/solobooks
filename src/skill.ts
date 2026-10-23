@@ -1,5 +1,6 @@
 import skill from "../skills/solobooks/SKILL.md" with { type: "text" };
 import approvals from "../skills/solobooks/references/approvals.md" with { type: "text" };
+import backups from "../skills/solobooks/references/backups.md" with { type: "text" };
 import billing from "../skills/solobooks/references/billing.md" with { type: "text" };
 import money from "../skills/solobooks/references/money.md" with { type: "text" };
 import onboarding from "../skills/solobooks/references/onboarding.md" with { type: "text" };
@@ -13,6 +14,7 @@ import yearEnd from "../skills/solobooks/references/year-end.md" with { type: "t
 export const SKILL_FILES: Readonly<Record<string, string>> = {
   "SKILL.md": skill,
   "references/approvals.md": approvals,
+  "references/backups.md": backups,
   "references/billing.md": billing,
   "references/money.md": money,
   "references/onboarding.md": onboarding,

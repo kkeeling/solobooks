@@ -75,6 +75,10 @@ Show them the draft's lines and total in plain words. A draft has no number and 
 
 When they want it to go out, run `invoice issue --id <draft id>`. It waits for their approval; see approvals.md. After it's approved, make the PDF and the email, send it through their mail, and record `invoice sent`.
 
+## Backups
+
+Ask where daily backups should go, ideally somewhere that leaves this machine, and run `solobooks backup set --folder <dir>`. If `solobooks doctor` or a write warned that the books sit in a synced folder, offer to move them now. See backups.md.
+
 ## Then ask about the past
 
 Ask whether they have earlier invoices or expenses this year, and where they live (a spreadsheet, another books app, a folder of PDFs). If they do, follow prior-data.md.
