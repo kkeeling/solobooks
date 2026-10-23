@@ -1,0 +1,37 @@
+# Approvals: the gate
+
+The person decides how much you may do alone. For each gated action they pick a level:
+
+| Level | What happens when you ask |
+|---|---|
+| `agent_decides` | It runs at once. |
+| `click` (the default) | It waits until the person approves it in their agent app's prompt, or on the approval page. |
+| `passkey` | It waits until they approve it with their passkey (Touch ID and the like) on the approval page. |
+
+Gated actions: issuing invoices, voiding invoices and credit notes, issuing credit notes, and changing the payment instructions printed on invoices. Changing a level is itself always gated. `gate list` shows the current levels.
+
+## When a result is pending
+
+You'll get something like:
+
+```json
+{ "status": "pending", "pending_id": 3, "level": "click", "title": "Issue invoice 1043 for $1,350.00?",
+  "approve_url": "http://localhost:7317/#pending-3", "message": "Nothing has happened yet: ..." }
+```
+
+- **Say it plainly:** "Invoice 1043 for $1,350.00 is waiting for your approval. It hasn't been issued yet."
+- **Don't claim it happened.** No "I've issued your invoice", no PDF or email for it, no `invoice sent`, until it's approved.
+- **Where they approve:** many agent apps show the prompt right in the chat, inside the same tool call. If the person approved there, the result already says `"status": "approved"` with the outcome. Otherwise they approve on the local approval page: start it with `solobooks serve` (it keeps running; start it in the background if you can) and give them the `approve_url`. Passkey level always uses the page.
+- **Checking back:** `pending get --id <pending_id>` shows `pending`, `approved` (with the result) or `rejected`. Look before you continue.
+- **Rejected** means the person said no. Ask what they'd like changed; don't resubmit the same thing.
+- **While a draft waits,** it can't be edited. If something needs to change, the person rejects it, you edit the draft, and you ask again.
+
+## Batches
+
+To issue several drafts, pass them all at once (`invoice issue --ids 4,5,6`). The person gets one approval listing every invoice, and can untick any to keep it a draft. Report exactly what came back: which were issued, with numbers, and which stayed drafts.
+
+## Things you never do
+
+- Look for a way to approve, or use another command to get the same effect (for example, bringing in a new invoice as a past one).
+- Suggest lowering a level so you can go faster. If the person asks to change one on their own, run `gate set`; that request waits for their approval too.
+- Put payment instructions in an invoice note to get around their gated change.
