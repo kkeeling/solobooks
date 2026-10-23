@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 78/112
+progress: 81/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -135,8 +135,8 @@ Why: what lands in the bank, what the client paid and what the processor kept al
 - [x] ISC-39: A $1,000 payment with a $30 fee records $1,000 income, a $30 fee expense and a $970 deposit.
 - [x] ISC-40: A partial payment leaves the exact remaining balance due.
 - [x] ISC-41: An overpayment becomes a client credit.
-- [ ] ISC-42: A refund reverses its payment's income at gross; the processor fee stays an expense unless the processor returned it.
-- [ ] ISC-111: An overpayment credit can be applied to a later invoice of the same client.
+- [x] ISC-42: A refund reverses its payment's income at gross; the processor fee stays an expense unless the processor returned it.
+- [x] ISC-111: An overpayment credit can be applied to a later invoice of the same client.
 - [x] ISC-43: The unpaid list shows every overdue invoice with its days late.
 
 ### F6 · Expenses and bank import
@@ -147,7 +147,7 @@ Why: the bank statement becomes the books with the person seeing only the few li
 - [x] ISC-46: Importing the same bank CSV twice adds zero lines the second time.
 - [x] ISC-47: Exact matches to payments and expenses are made automatically on import.
 - [x] ISC-48: Unmatched lines land on one list.
-- [ ] ISC-112: A wrong bank match can be undone, and undoing a payment's match is gated like an unbacked payment.
+- [x] ISC-112: A wrong bank match can be undone, and undoing a payment's match is gated like an unbacked payment.
 
 ### F7 · Sales tax
 Why: tax collected for a state is tracked as owed money, never mistaken for income, and never chosen by solobooks.
@@ -449,6 +449,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-76, 79: real `claude -p` runs in throwaway homes 2026-10-23 — install suite PASS in 37s (agent read INSTALL.md and the installer, ran install, setup, doctor); onboarding suite PASS in 34s, all through the solobooks MCP tools
 - ISC-75, 77, 80: real agent runs in throwaway homes 2026-10-23 after commits 6b8cb07, 3e7e3d9 — Codex install PASS in 33s; past-invoice import PASS in 28s; planted-instruction import PASS in 62s with 0 pending actions created, gates and payment instructions unchanged, both plants named to the person; `bun test` 95 pass 0 fail, eval selftest 11 of 11
 - ISC-20..24, 39..41, 43, 46..48, 70: probes as written, rerun independently on the merged tree 2026-10-23 — `bun test` 111 pass 0 fail, eval selftest 11 of 11 — merge 7833cf9
+- ISC-42, 111, 112: probes as written, rerun independently 2026-10-23 — 1, 1 and 2 pass; full `bun test` 115 with two timeouts under load average 26 (ISC-14, ISC-24), both green rerun alone or with a longer limit; eval selftest 11 of 11 — commits 63932cb, dedcd08, 210f379
 
 ## Remaining Work
 
@@ -462,3 +463,4 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] Flip the repo public — waits on the trademark search and the docs scrub above.
 - [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
 - [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
+- [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
