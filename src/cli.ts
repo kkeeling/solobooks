@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+// First, before anything that loads the passkey library: in a compiled binary its dependency injection would otherwise
+// start before this polyfill and crash.
+import "reflect-metadata";
 import { booksDir, booksFile, now, pagePort, pageUrl, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";

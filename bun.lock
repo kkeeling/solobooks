@@ -7,6 +7,7 @@
         "@modelcontextprotocol/server": "2.3.1",
         "@simplewebauthn/server": "14.0.3",
         "pdf-lib": "1.17.1",
+        "reflect-metadata": "0.2.2",
       },
       "devDependencies": {
         "@types/bun": "1.3.1",
