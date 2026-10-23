@@ -3,13 +3,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { approvePending, rejectPending } from "../src/core/approve.ts";
 import type { Books } from "../src/core/db.ts";
-import { ACTIONS, LEVELS } from "../src/core/gate.ts";
+import { ACTIONS, LEVELS, promptFields } from "../src/core/gate.ts";
+import { authenticationOptions, verifyPasskey } from "../src/core/passkey.ts";
 import { OPS } from "../src/core/perform.ts";
 import { clickAcme, draftOctober, json, ok, S, SELLER } from "./support/billing.ts";
 import { cli, dbPath, dumpDb, fileHash, memBooks, ROOT, tempDir } from "./support/books.ts";
 import { must, write } from "./support/gen.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
-import { approveOnPage, approveWithPasskey, asPerson, letAgentDecide, registerTestPasskey, WHEN } from "./support/person.ts";
+import { approveOnPage, approveWithPasskey, asPerson, letAgentDecide, ORIGIN, registerTestPasskey, WHEN } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
 import { startPage } from "../src/page.ts";
 
@@ -447,4 +448,35 @@ test("ISC-68 setting gated: a gate change parked earlier is approved at the leve
     expect(approvePending(db, stale.pending_id, { via }, WHEN)).toMatchObject({ ok: false, refusal: { field: "passkey" } });
   }
   expect(must(db, "gate_list", {}).gate[0].level).toBe("passkey");
+});
+
+test("ISC-63 parks: a request parked in the evening is approved the next morning, dated the day it is approved", async () => {
+  const DAY2 = { ...WHEN, now: "2026-10-23T12:00:00.000Z" };
+  for (const level of ["click", "passkey"]) {
+    const db = coreBooks();
+    const auth = await registerTestPasskey(db);
+    const up = must(db, "gate_set", { invoice_issue: level });
+    if (level === "passkey") await approveWithPasskey(db, auth, up.pending_id);
+    else approveOnPage(db, up.pending_id);
+    const a = draft(db);
+    const pid = must(db, "invoice_issue", { id: a }).pending_id; // day 1, 2026-10-22
+    const shown = must(db, "pending_get", { id: pid }).pending;
+    expect(shown.items[0]).toMatchObject({ terms_days: 30 });
+    let passkey;
+    if (level === "passkey") {
+      const o = await authenticationOptions(db);
+      passkey = await verifyPasskey(db, (await auth.assert(o, ORIGIN)) as any, o.challenge, ORIGIN, pid);
+    }
+    const r = approvePending(db, pid, { via: "page", passkey }, DAY2); // day 2
+    expect(r).toMatchObject({ ok: true, result: { result: { invoice: { status: "issued", invoice_date: "2026-10-23", due_date: "2026-11-22" } } } });
+    db.close();
+  }
+});
+
+test("ISC-69 payment details: the prompt says the invoice is dated the day it is approved, with the due date if approved today", async () => {
+  const db = coreBooks();
+  setLevels(db, ALL("click"));
+  const pid = must(db, "invoice_issue", { id: draft(db) }).pending_id;
+  const p = must(db, "pending_get", { id: pid }).pending;
+  expect(promptFields(p)[0]).toContainEqual(["Terms", "Net 30; dated the day it is approved, so due 2026-11-21 if approved today"]);
 });

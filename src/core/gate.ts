@@ -221,7 +221,7 @@ export function promptFields(p: Pick<PendingAction, "action" | "items">): [strin
     if (d.tax) out.push(["Tax", `${field(d.tax.label)}: ${dollars(d.tax.amount_cents)}`]);
     out.push(["Total", dollars(d.total_cents)]);
     if (d.note) out.push(["Note", field(d.note)]);
-    if (d.kind === "invoice") out.push(["Terms", `${termsText(d.terms_days)}, due ${d.due_date}`]);
+    if (d.kind === "invoice") out.push(["Terms", `${termsText(d.terms_days)}; dated the day it is approved, so due ${d.due_date} if approved today`]);
     out.push(["Payment instructions", d.payment_instructions ? field(d.payment_instructions) : "(none)"]);
     if (d.reason !== undefined) out.push(["Reason", field(d.reason)]);
     return out;
@@ -256,11 +256,13 @@ export function refuseIfHeld(db: Books, op: string, input: Record<string, any>):
 }
 
 /**
- * Whether what an approval would do now is exactly what the person was shown: every line, note, term, date, client
- * and seller detail and payment instruction. Only an invoice number may move, when another invoice was issued first.
+ * Whether what an approval would do now is exactly what the person was shown: every line, note, term, client and
+ * seller detail and payment instruction. The number may move when another invoice was issued first, and an invoice
+ * is dated the day it is approved, so a request parked in the evening can be approved the next morning.
  */
 export function stillAsShown(shown: Record<string, unknown>[], now: Record<string, unknown>[]): boolean {
-  const strip = (xs: Record<string, unknown>[]) => JSON.stringify(xs.map(({ number, ...rest }) => rest));
+  // The number, invoice date and due date follow the day of approval; the terms that set the due date are compared.
+  const strip = (xs: Record<string, unknown>[]) => JSON.stringify(xs.map(({ number, invoice_date, due_date, ...rest }) => rest));
   return strip(shown) === strip(now);
 }
 
