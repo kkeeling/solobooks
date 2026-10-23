@@ -46,8 +46,10 @@ test("ISC-45 pass-through: a pass-through cost links to the invoice that recover
   expect(after[1].recovered_by_invoice).toBeNull(); // November's cost isn't on October's invoice
 
   // Recovered at cost into its own income account, so the expense stays an expense.
+  const reimbursed = (await ok(dir, ["account", "list"])).accounts.find((a: any) => a.name === "Reimbursed expense income").id;
+  const posted = (await ok(dir, ["entry", "list"])).entries.at(-1);
+  expect(posted.lines).toContainEqual({ account_id: reimbursed, debit_cents: 0, credit_cents: 4200 });
   const pnl = await ok(dir, ["report", "pnl"]);
-  expect(pnl.income.find((i: any) => i.name === "Reimbursed expense income").total_cents).toBe(4200);
   expect(pnl.expense.find((e: any) => e.name === "Printing").total_cents).toBe(4200 + 999);
 
   // Voiding the invoice unlinks it, so the cost can be billed again.

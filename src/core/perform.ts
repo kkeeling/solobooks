@@ -13,6 +13,9 @@ import { paymentOps } from "./payments.ts";
 import { profileOps } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
 import { reportOps } from "./reports.ts";
+import { salesTaxOps } from "./salestax.ts";
+import { yearEndOps } from "./yearend.ts";
+import { exportOps } from "./export.ts";
 import { timeOps } from "./time.ts";
 import { validate } from "./validate.ts";
 
@@ -28,6 +31,9 @@ export const OPS: readonly Op[] = [
   ...ownerOps,
   ...bankOps,
   ...reportOps,
+  ...salesTaxOps,
+  ...yearEndOps,
+  ...exportOps,
   ...gateOps,
 ];
 

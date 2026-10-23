@@ -1,0 +1,12 @@
+{
+  "about": "IRS business standard mileage rates, in mills (tenths of a cent) per mile, each in force from its date until the next. Trips after known_through have no rate until this table is updated.",
+  "source": "https://www.irs.gov/tax-professionals/standard-mileage-rates",
+  "known_through": "2026-12-31",
+  "rates": [
+    { "from": "2023-01-01", "mills_per_mile": 655, "source": "https://www.irs.gov/tax-professionals/standard-mileage-rates" },
+    { "from": "2024-01-01", "mills_per_mile": 670, "source": "https://www.irs.gov/tax-professionals/standard-mileage-rates" },
+    { "from": "2025-01-01", "mills_per_mile": 700, "source": "https://www.irs.gov/tax-professionals/standard-mileage-rates" },
+    { "from": "2026-01-01", "mills_per_mile": 725, "source": "https://www.irs.gov/newsroom/irs-sets-2026-business-standard-mileage-rate-at-725-cents-per-mile-up-25-cents" },
+    { "from": "2026-07-01", "mills_per_mile": 760, "source": "https://www.irs.gov/irb/2026-29_irb" }
+  ]
+}

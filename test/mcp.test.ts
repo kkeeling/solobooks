@@ -190,12 +190,14 @@ const READ_ONLY = [
   "profile_get", "client_list", "engagement_list", "time_list", "expense_list", "invoice_list", "invoice_get", "invoice_email",
   "invoice_reminder", "account_list", "entry_list", "report_pnl", "history_list", "gate_list", "pending_list", "pending_get",
   "owner_list", "payment_list", "client_credits", "report_unpaid", "bank_list",
+  "report_ytd", "report_sales_tax", "report_yearend", "mileage_list", "contractor_list", "export",
 ];
 const WRITES = [
   "profile_set", "profile_payment_instructions_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
   "transfer_add", "owner_draw", "owner_contribute", "payment_add", "payment_refund", "bank_import", "bank_match",
+  "account_edit", "sales_tax_payment_add", "mileage_add", "mileage_delete", "home_office_set", "owner_item_add", "contractor_add", "contractor_edit",
 ];
 
 test("ISC-89 annotations: every read-only tool says readOnlyHint true, and no write tool does", async () => {

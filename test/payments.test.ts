@@ -44,7 +44,7 @@ test("ISC-39 gross plus fee: a $1,000 invoice paid with a $30 fee records $1,000
   // The deposit is what reached checking; the fee is an expense; the income stays the full $1,000 the client paid.
   expect(balance(dir, "Checking") - checking).toBe(97000);
   expect(await pnlLine(dir, "Payment processing fees")).toBe(3000);
-  expect(await pnlLine(dir, "Consulting income")).toBe(income);
+  expect(await pnlLine(dir, "Consulting income")).toBe(income + 100000); // cash basis: the full $1,000 the client paid counts the day it was paid
   expect(await open(dir, inv.id)).toBe(0);
   // What the 1099-K reports is the gross: payments total $1,000, not the $970 deposit.
   const payments = (await ok(dir, ["payment", "list", "--invoice-id", String(inv.id)])).payments;
@@ -95,7 +95,7 @@ test("ISC-41 overpay: a payment beyond what is owed becomes a client credit row 
   expect(credits.balances).toEqual([{ client_id: 2, client: "Beta LLC", balance_cents: 20000 }]);
   // Held for the client, owed back to them: a liability, not income.
   expect(balance(dir, "Client credits")).toBe(-20000);
-  expect(await pnlLine(dir, "Consulting income")).toBe(income);
+  expect(await pnlLine(dir, "Consulting income")).toBe(income + 100000); // only what settled the invoice is income; the credit is not
   expect(balance(dir, "Checking")).toBe(-4200 - 999 + 120000);
 
   // Paying an invoice that is already settled adds the whole amount to the credit.

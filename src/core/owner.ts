@@ -27,7 +27,7 @@ export function ownerMoveView(db: Books, id: number) {
   };
 }
 
-function insertMove(db: Books, kind: string, date: string, cents: number, memo: string | null, entryId: number, expenseId: number | null, ctx: Ctx): number {
+export function insertMove(db: Books, kind: string, date: string, cents: number, memo: string | null, entryId: number, expenseId: number | null, ctx: Ctx): number {
   return (
     db
       .query("INSERT INTO owner_moves (kind, date, amount_cents, memo, entry_id, expense_id, source) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id")

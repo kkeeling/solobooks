@@ -19,7 +19,8 @@ export function memBooks(): Books {
 /** Runs the CLI in-process against a books folder and parses its JSON output. */
 export async function cli(dir: string, args: string[]): Promise<{ code: number; out: any }> {
   const r = await run([...args, "--books", dir], { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" });
-  return { code: r.code, out: JSON.parse(r.stdout) };
+  // An export prints its file as it is; everything else is JSON.
+  return { code: r.code, out: r.text ? r.stdout : JSON.parse(r.stdout) };
 }
 
 /** Like cli(), but throws unless the command succeeded. */
