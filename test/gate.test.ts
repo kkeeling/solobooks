@@ -481,3 +481,80 @@ test("ISC-69 payment details: the prompt says the invoice is dated the day it is
   const p = must(db, "pending_get", { id: pid }).pending;
   expect(promptFields(p)[0]).toContainEqual(["Terms", "Net 30; dated the day it is approved, so due 2026-11-21 if approved today"]);
 });
+
+test("ISC-70 mark paid: a payment with no matching bank line is gated by default, and one backed by an imported line isn't", async () => {
+  const dir = tempDir(); // fresh books, every level at its default
+  expect((await ok(dir, ["gate", "list"])).gate).toContainEqual(expect.objectContaining({ action: "payment_unmatched", level: "click", default: "click" }));
+  await ok(dir, json(["profile", "set"], { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "12-3456789" }));
+  await ok(dir, json(["client", "add"], { name: "Acme Corp", address: "500 Market St" }));
+  await ok(dir, ["account", "add", "--name", "Checking", "--type", "asset", ...S]);
+  const invoice = async (cents: number) => {
+    const d = (await ok(dir, json(["invoice", "draft"], { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Work", amount_cents: cents }] }))).invoice;
+    asPerson(dir, (db) => approveOnPage(db, must(db, "invoice_issue", { id: d.id }).pending_id));
+    return (await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice;
+  };
+  const a = await invoice(100000);
+  const pay = (body: Record<string, unknown>) => cli(dir, json(["payment", "add"], { invoice_id: a.id, date: "2026-10-20", deposit_account_id: 1, ...body }));
+
+  // No bank line: it waits for the person, and nothing is recorded meanwhile.
+  const before = asPerson(dir, books);
+  const asked = (await pay({ amount_cents: 100000, fee_cents: 3000 })).out;
+  expect(asked).toMatchObject({ status: "pending", level: "click", title: "Record a payment of $1,000.00 on invoice 1 with no bank line behind it?" });
+  expect(asPerson(dir, books)).toEqual(before);
+  expect((await ok(dir, ["payment", "list"])).payments).toEqual([]);
+  const shown = (await ok(dir, ["pending", "get", "--id", String(asked.pending_id)])).pending;
+  expect(promptFields(shown)[0]).toEqual(expect.arrayContaining([
+    ["Amount paid", "$1,000.00"], ["Processor fee", "$30.00"], ["Deposit", "$970.00 into Checking"], ["Still owed after", "$0.00"],
+    ["Bank line", "none imported; this payment isn't backed by the bank"],
+  ]));
+  // The same through MCP, where the tool asks for the person.
+  const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now });
+  const viaMcp = (await mcp.call("payment_add", { invoice_id: a.id, date: "2026-10-20", amount_cents: 500, deposit_account_id: 1, source: "agent:mcp" })).structuredContent;
+  await mcp.close();
+  expect(viaMcp).toMatchObject({ status: "pending", level: "click" });
+  asPerson(dir, (db) => rejectPending(db, viaMcp.pending_id, "page", WHEN));
+
+  // Approved, it records exactly what was shown.
+  const approved = asPerson(dir, (db) => approveOnPage(db, asked.pending_id));
+  expect(approved.result.payment).toMatchObject({ amount_cents: 100000, fee_cents: 3000, deposit_cents: 97000, invoice_open_cents: 0, bank_line_id: null });
+
+  // Backed by an imported bank line, a payment runs at once and the line is matched to it.
+  const b = await invoice(50000);
+  const csv = join(tempDir(), "oct.csv");
+  await Bun.write(csv, "Date,Description,Amount\n10/21/2026,ACME CORP ACH,485.50\n10/22/2026,ACME CORP ACH,12.34\n");
+  const lines = (await ok(dir, json(["bank", "import"], { account_id: 1, file_path: csv, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" }))).lines;
+  const backed = (await cli(dir, json(["payment", "add"], { invoice_id: b.id, date: "2026-10-21", amount_cents: 50000, fee_cents: 1450, deposit_account_id: 1, bank_line_id: lines[0].id }))).out;
+  expect(backed.status).toBeUndefined();
+  expect(backed.payment).toMatchObject({ amount_cents: 50000, deposit_cents: 48550, invoice_open_cents: 0, bank_line_id: lines[0].id });
+  expect((await ok(dir, ["bank", "list", "--status", "matched"])).lines).toEqual([
+    expect.objectContaining({ id: lines[0].id, match: expect.objectContaining({ kind: "payment", entry_id: backed.payment.entry.id }) }),
+  ]);
+
+  // A bank line that doesn't back the payment is refused outright: never parked, never recorded.
+  await ok(dir, ["account", "add", "--name", "Savings", "--type", "asset", ...S]);
+  const c = await invoice(1234);
+  const pendingBefore = (await ok(dir, ["pending", "list"])).pending.length;
+  for (const [body, field] of [
+    [{ amount_cents: 1300, bank_line_id: lines[1].id }, "bank_line_id"], // the line is $12.34
+    [{ amount_cents: 1234, bank_line_id: lines[1].id, deposit_account_id: 2 }, "deposit_account_id"], // it's on checking
+    [{ amount_cents: 48550, bank_line_id: lines[0].id }, "bank_line_id"], // already backs a payment
+    [{ amount_cents: 1234, bank_line_id: 99 }, "bank_line_id"],
+  ] as const) {
+    expect(await cli(dir, json(["payment", "add"], { invoice_id: c.id, date: "2026-10-22", deposit_account_id: 1, ...body }))).toMatchObject({ code: 2, out: { field } });
+  }
+  expect((await ok(dir, ["pending", "list"])).pending.length).toBe(pendingBefore);
+  expect((await ok(dir, ["invoice", "get", "--id", String(c.id)])).invoice.open_cents).toBe(1234);
+
+  // What the person approves is what runs: a payment that landed since they were asked makes it a different payment.
+  const stale = (await cli(dir, json(["payment", "add"], { invoice_id: c.id, date: "2026-10-22", amount_cents: 1234, deposit_account_id: 1 }))).out;
+  await ok(dir, json(["payment", "add"], { invoice_id: c.id, date: "2026-10-22", amount_cents: 1234, deposit_account_id: 1, bank_line_id: lines[1].id }));
+  asPerson(dir, (db) => expect(approvePending(db, stale.pending_id, { via: "page" }, WHEN)).toMatchObject({ ok: false, refusal: { field: "pending_id" } }));
+
+  // Loosenable like any gate setting, through the person.
+  const loosen = await ok(dir, ["gate", "set", "--payment-unmatched", "agent_decides", ...S]);
+  expect(loosen).toMatchObject({ status: "pending", level: "click" });
+  asPerson(dir, (db) => approveOnPage(db, loosen.pending_id));
+  const d = await invoice(700);
+  const free = (await cli(dir, json(["payment", "add"], { invoice_id: d.id, date: "2026-10-22", amount_cents: 700, deposit_account_id: 1 }))).out;
+  expect(free.payment).toMatchObject({ amount_cents: 700, invoice_open_cents: 0, bank_line_id: null });
+});

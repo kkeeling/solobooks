@@ -89,6 +89,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
     input: { account_id: 1, file_path: STATEMENT, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" },
   },
   { op: "bank_match", input: { line_id: 2, entry_id: 2 } }, // the editor licence, charged two days after its entry
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-20", amount_cents: 25000, deposit_account_id: 1, bank_line_id: 3 } }, // backed by the ACH deposit
   { op: "gate_set", input: { invoice_issue: "click" } },
   { op: "gate_list", input: {} },
   { op: "pending_list", input: {} },

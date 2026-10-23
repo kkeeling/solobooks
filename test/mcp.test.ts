@@ -9,7 +9,7 @@ import { approveOnPage, approveWithPasskey, asPerson, registerTestPasskey, WHEN 
 
 const ENV = { SOLOBOOKS_NOW: WHEN.now };
 const ELICITS = { elicitation: { form: {} } };
-const GATED = ["gate_set", "invoice_credit", "invoice_issue", "invoice_void", "profile_set"];
+const GATED = ["gate_set", "invoice_credit", "invoice_issue", "invoice_void", "payment_add", "profile_set"];
 
 /** A client whose person answers every approval prompt the same way. */
 const answering = (dir: string, action: "accept" | "decline" | "cancel", content: Record<string, unknown> = {}) =>

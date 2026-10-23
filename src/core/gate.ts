@@ -1,6 +1,7 @@
 import type { Books } from "./db.ts";
 import { dollars, termsText } from "./format.ts";
 import { getInvoiceRow, invoiceView } from "./invoices.ts";
+import { getAccount } from "./ledger.ts";
 import type { Ctx, GateAction, Op } from "./op.ts";
 import { getProfile } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
@@ -13,7 +14,7 @@ export const LEVELS = ["agent_decides", "click", "passkey"] as const;
 export type Level = (typeof LEVELS)[number];
 
 /** The gated actions whose level the person sets. Changing a level is gated too, always. */
-export const ACTIONS = ["invoice_issue", "invoice_void", "invoice_credit", "payment_instructions"] as const;
+export const ACTIONS = ["invoice_issue", "invoice_void", "invoice_credit", "payment_instructions", "payment_unmatched"] as const;
 type SetAction = (typeof ACTIONS)[number];
 
 /** A fresh install asks the person before anything reaches a client. */
@@ -31,6 +32,7 @@ const WHAT: Record<SetAction, string> = {
   invoice_void: "voiding invoices and credit notes",
   invoice_credit: "issuing credit notes",
   payment_instructions: "changing the payment instructions printed on invoices",
+  payment_unmatched: "recording an invoice payment with no imported bank line behind it",
 };
 
 export function levelOf(db: Books, action: SetAction): Level {
@@ -183,6 +185,24 @@ export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ct
       }
       case "payment_instructions":
         return { title: "Change the payment instructions printed on invoices?", items: [{ from: instructionsBefore, to: input.payment_instructions }] };
+      case "payment_unmatched": {
+        const p = preview.payment;
+        const item = {
+          invoice_id: p.invoice_id,
+          invoice_number: p.invoice_number,
+          client: getInvoiceRow(db, p.invoice_id)!.client_name,
+          date: p.date,
+          amount_cents: p.amount_cents,
+          fee_cents: p.fee_cents,
+          deposit_cents: p.deposit_cents,
+          deposit_account: getAccount(db, p.deposit_account_id)!.name,
+          applied_cents: p.applied_cents,
+          credit_cents: p.credit_cents,
+          open_after_cents: p.invoice_open_cents,
+          memo: p.memo,
+        };
+        return { title: `Record a payment of ${dollars(p.amount_cents)} on invoice ${p.invoice_number} with no bank line behind it?`, items: [item] };
+      }
       case "gate_settings": {
         const items = ACTIONS.filter((a) => input[a] !== undefined).map((a) => ({ action: a, what: WHAT[a], from: levelsBefore[a], to: input[a] }));
         return { title: "Change approval levels?", items };
@@ -210,6 +230,22 @@ export function promptFields(p: Pick<PendingAction, "action" | "items">): [strin
   }
   if (p.action === "gate_settings") {
     return [(p.items as { what: string; from: string; to: string }[]).map((i) => [i.what, `${i.from} → ${i.to}`] as [string, string])];
+  }
+  if (p.action === "payment_unmatched") {
+    const [i] = p.items as Record<string, any>[];
+    const out: [string, string][] = [
+      ["Invoice", i!.invoice_number],
+      ["Client", field(i!.client)],
+      ["Paid on", i!.date],
+      ["Amount paid", dollars(i!.amount_cents)],
+      ["Processor fee", dollars(i!.fee_cents)],
+      ["Deposit", `${dollars(i!.deposit_cents)} into ${field(i!.deposit_account)}`],
+      ["Settles on the invoice", dollars(i!.applied_cents)],
+    ];
+    if (i!.credit_cents > 0) out.push(["Client credit", dollars(i!.credit_cents)]);
+    out.push(["Still owed after", dollars(i!.open_after_cents)], ["Bank line", "none imported; this payment isn't backed by the bank"]);
+    if (i!.memo) out.push(["Memo", field(i!.memo)]);
+    return [out];
   }
   return (p.items as ReturnType<typeof frozen>[]).map((d) => {
     const out: [string, string][] = [];

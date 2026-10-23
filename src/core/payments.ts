@@ -1,3 +1,4 @@
+import { linkLine, requireUnmatchedLine } from "./bank.ts";
 import type { Books } from "./db.ts";
 import { displayNumber, invoiceAccount, openBalance, requireInvoice } from "./invoices.ts";
 import { getEntry, namedAccount, postEntry, requireOwnAccount } from "./ledger.ts";
@@ -62,6 +63,8 @@ export function paymentView(db: Books, id: number) {
     credit_cents: p.credit_cents,
     client_credit: credit ? { id: credit.id, amount_cents: credit.amount_cents, client_balance_cents: creditBalance(db, inv.client_id) } : null,
     invoice_open_cents: openBalance(db, inv),
+    // The imported bank line the deposit matched, if any: given when it was recorded, or matched on a later import.
+    bank_line_id: (db.query("SELECT line_id FROM bank_matches WHERE entry_id = ? AND account_id = ?").get(p.entry_id, p.deposit_account_id) as { line_id: number } | null)?.line_id ?? null,
     memo: p.memo,
     entry: getEntry(db, p.entry_id),
     refund,
@@ -112,7 +115,7 @@ const paymentAdd: Op = {
   name: "payment_add",
   kind: "write",
   description:
-    "Record a client's payment on an issued invoice, gross plus fee: amount_cents is what the client paid, fee_cents what the processor kept, and the rest is the deposit into deposit_account_id. A partial payment leaves the rest still owed; anything beyond what was owed becomes a client credit.",
+    "Record a client's payment on an issued invoice, gross plus fee: amount_cents is what the client paid, fee_cents what the processor kept, and the rest is the deposit into deposit_account_id. A partial payment leaves the rest still owed; anything beyond what was owed becomes a client credit. Give bank_line_id, the imported bank line the deposit is, to back it with the bank. Gated without one: unless the person lets the agent decide, a payment with no bank line behind it returns a pending action for them to approve.",
   fields: {
     invoice_id: { type: "int", required: true, min: 1, description: "The issued invoice being paid." },
     date: { type: "date", required: true, description: "Day of the payment, YYYY-MM-DD." },
@@ -123,10 +126,27 @@ const paymentAdd: Op = {
       description: "The asset account the money landed in, gross less fee: checking, or a processor balance such as Stripe.",
     },
     memo: { type: "text", description: "Anything worth keeping, such as the check number." },
+    bank_line_id: {
+      type: "int", min: 1,
+      description: "The unmatched imported bank line this deposit is: on deposit_account_id, for amount_cents less fee_cents. Without one the payment waits for the person.",
+    },
     currency,
   },
+  // A receipt or CSV the agent reads could tell it to mark everything paid, so a payment the bank doesn't show is gated.
+  gate: (input) => (input.bank_line_id === undefined ? "payment_unmatched" : null),
   run(db, input, ctx) {
-    return { payment: recordPayment(db, input, ctx).payment };
+    if (input.bank_line_id === undefined) return { payment: recordPayment(db, input, ctx).payment };
+    const line = requireUnmatchedLine(db, input.bank_line_id, "bank_line_id");
+    if (line.account_id !== input.deposit_account_id) {
+      throw new Refusal(`Bank line ${line.id} is on account ${line.account_id}, so the deposit_account_id must be ${line.account_id}.`, "deposit_account_id");
+    }
+    const deposit = input.amount_cents - (input.fee_cents ?? 0);
+    if (line.amount_cents !== deposit) {
+      throw new Refusal(`Bank line ${line.id} is ${line.amount_cents} cents, but amount_cents less fee_cents is ${deposit} cents.`, "bank_line_id");
+    }
+    const r = recordPayment(db, input, ctx);
+    linkLine(db, line, r.entry_id, "payment", ctx, "bank_line_id");
+    return { payment: paymentView(db, r.payment.id) };
   },
 };
 

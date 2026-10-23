@@ -12,7 +12,9 @@ export const NOW = "2026-10-22T12:00:00.000Z";
 export const WHEN = { now: NOW, page: DEFAULT_PAGE };
 export const ORIGIN = "http://localhost:7317";
 
-const OPEN = { invoice_issue: "agent_decides", invoice_void: "agent_decides", invoice_credit: "agent_decides", payment_instructions: "agent_decides" };
+const OPEN = {
+  invoice_issue: "agent_decides", invoice_void: "agent_decides", invoice_credit: "agent_decides", payment_instructions: "agent_decides", payment_unmatched: "agent_decides",
+};
 
 /** The person approves pending action `id` on the page, at click level. */
 export function approveOnPage(db: Books, id: number, exclude?: number[]) {
