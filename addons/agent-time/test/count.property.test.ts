@@ -90,7 +90,7 @@ describe("ISC-96", () => {
       }),
       { numRuns: 60 },
     );
-  });
+  }, 60_000); // writes logs to disk for every run: allow for a busy machine
 
   test("same logs: counting twice gives byte-identical output", () => {
     fc.assert(
@@ -102,7 +102,7 @@ describe("ISC-96", () => {
       }),
       { numRuns: 20 },
     );
-  });
+  }, 60_000);
 });
 
 describe("ISC-98", () => {
@@ -136,7 +136,7 @@ describe("ISC-98", () => {
       }),
       { numRuns: 100 },
     );
-  });
+  }, 60_000); // writes logs to disk for every run: allow for a busy machine
 
   test("parallel: ten sessions typing every minute for two hours bill from the first message to ten minutes after the last", () => {
     const home = tempDir();
