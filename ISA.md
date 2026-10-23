@@ -340,11 +340,11 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-80 | eval | spreadsheet past-invoice import | numbers kept, status sent | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-prior-data | derived: onboarding |
 | ISC-81 | bun-test | historical records | 0 pending, 0 reminders | bun test test/historical.test.ts | derived: onboarding |
 | ISC-82 | bash | skill frontmatter keys | subset of six | `bun scripts/check-skill-fields.ts skills/solobooks/SKILL.md` | derived: standards |
-| ISC-83 | bash | install in env without bun or node | version prints | `env -i HOME=$HOME PATH=/usr/bin:/bin sh -c 'curl -fsSL <installer> \| sh && ~/.local/bin/solobooks --version'` | literal |
+| ISC-83 | bash | install in env without bun or node, loopback mirror of a local release | version prints, tampered binary refused | `bash scripts/install-check.sh` | literal |
 | ISC-85 | bash | setup twice, diff configs | empty diff | `bash scripts/setup-idempotent.sh` | derived: install |
 | ISC-86 | bash | doctor with MCP entry removed | exit non-zero | `bash scripts/doctor-negative.sh` | derived: install |
 | ISC-87 | bash | plugin install from marketplace | MCP and skill listed | `bash scripts/plugin-install-check.sh` | derived: install |
-| ISC-88 | bash | npm wrapper runs binary | version prints | `bunx solobooks --version` | derived: install |
+| ISC-88 | bash | npm wrapper from packed tarballs, registry unreachable | version prints, MCP lists tools | `bash scripts/npm-check.sh` | derived: install |
 | ISC-89 | bun-test | tools/list annotations vs write map | 100% accurate | bun test test/mcp.test.ts -t "annotations" | derived: standards |
 | ISC-90 | bash | README lines present | 3 of 3 | `rg -c "model vendor\|can't reach\|not tax or accounting advice" README.md` | derived: public-repo |
 | ISC-91 | bun-test | clock advanced one day | dated backup exists | bun test test/backup.test.ts -t "daily" | derived: durability |
