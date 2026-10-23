@@ -1,13 +1,33 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { createServer } from "../../src/mcp.ts";
 
-/** A bare JSON-RPC client wired to an in-process solobooks MCP server. */
-export async function inProcessMcp(dir: string, env: Record<string, string> = {}) {
+/**
+ * A bare JSON-RPC client wired to an in-process solobooks MCP server. `capabilities` are what it declares at
+ * initialize; `answer` replies to requests the server sends it (an elicitation is the person answering in chat).
+ */
+export async function inProcessMcp(
+  dir: string,
+  env: Record<string, string> = {},
+  o: { capabilities?: Record<string, unknown>; answer?: (req: { method: string; params: any }) => unknown } = {},
+) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const server = createServer(env, dir);
   await server.connect(serverSide);
   const pending = new Map<number, (m: any) => void>();
-  clientSide.onmessage = (m: any) => pending.get(m.id)?.(m);
+  const asked: { method: string; params: any }[] = [];
+  clientSide.onmessage = (m: any) => {
+    if (m.method !== undefined && m.id !== undefined) {
+      asked.push({ method: m.method, params: m.params });
+      const result = o.answer ? o.answer(m) : undefined;
+      clientSide.send(
+        (result === undefined
+          ? { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not supported" } }
+          : { jsonrpc: "2.0", id: m.id, result }) as any,
+      );
+      return;
+    }
+    pending.get(m.id)?.(m);
+  };
   await clientSide.start();
   let nextId = 1;
   const request = (method: string, params: unknown = {}) =>
@@ -16,10 +36,12 @@ export async function inProcessMcp(dir: string, env: Record<string, string> = {}
       pending.set(id, resolve);
       clientSide.send({ jsonrpc: "2.0", id, method, params } as any);
     });
-  await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+  await request("initialize", { protocolVersion: "2025-06-18", capabilities: o.capabilities ?? {}, clientInfo: { name: "test", version: "0" } });
   await clientSide.send({ jsonrpc: "2.0", method: "notifications/initialized" } as any);
   return {
     request,
+    /** Requests the server sent this client, such as elicitation/create. */
+    asked,
     call: async (name: string, args: Record<string, unknown>) => (await request("tools/call", { name, arguments: args })).result,
     close: () => server.close(),
   };

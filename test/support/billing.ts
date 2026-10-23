@@ -1,5 +1,5 @@
 import { cli, ok, tempDir } from "./books.ts";
-import { letAgentDecideIn } from "./person.ts";
+import { asPerson, letAgentDecideIn, setEveryLevel } from "./person.ts";
 import { RECEIPT } from "./scenario.ts";
 
 export const S = ["--source", "agent:test"];
@@ -48,6 +48,13 @@ export async function acmeBooks(client: Record<string, unknown> = {}) {
   await ok(dir, json(["expense", "add"], {
     date: "2026-11-05", amount_cents: 999, vendor: "Courier", account_id: 2, paid_from_account_id: 1, pass_through_client_id: 1,
   }));
+  return dir;
+}
+
+/** acmeBooks(), after which the person set every gated action to click. */
+export async function clickAcme() {
+  const dir = await acmeBooks();
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
   return dir;
 }
 

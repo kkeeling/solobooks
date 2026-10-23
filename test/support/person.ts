@@ -2,7 +2,7 @@ import { approvePending, registerPasskey } from "../../src/core/approve.ts";
 import { openBooks, type Books } from "../../src/core/db.ts";
 import { DEFAULT_PAGE } from "../../src/core/gate.ts";
 import { perform } from "../../src/core/perform.ts";
-import { registrationOptions, verifyRegistration } from "../../src/core/passkey.ts";
+import { authenticationOptions, registrationOptions, verifyPasskey, verifyRegistration } from "../../src/core/passkey.ts";
 import { SoftAuthenticator } from "./authenticator.ts";
 import { dbPath } from "./books.ts";
 
@@ -18,6 +18,15 @@ const OPEN = { invoice_issue: "agent_decides", invoice_void: "agent_decides", in
 export function approveOnPage(db: Books, id: number, exclude?: number[]) {
   const r = approvePending(db, id, { via: "page", exclude }, WHEN);
   if (!r.ok) throw new Error(`approval refused: ${JSON.stringify(r.refusal)}`);
+  return r.result as any;
+}
+
+/** The person approves pending action `id` on the page with their passkey (Touch ID, here a software authenticator). */
+export async function approveWithPasskey(db: Books, auth: SoftAuthenticator, id: number, exclude?: number[]) {
+  const options = await authenticationOptions(db);
+  const passkey = await verifyPasskey(db, (await auth.assert(options, ORIGIN)) as any, options.challenge, ORIGIN, id);
+  const r = approvePending(db, id, { via: "page", exclude, passkey }, WHEN);
+  if (!r.ok) throw new Error(`passkey approval refused: ${JSON.stringify(r.refusal)}`);
   return r.result as any;
 }
 
@@ -47,6 +56,31 @@ export async function setUpPerson(dir: string): Promise<void> {
   } finally {
     db.close();
   }
+}
+
+/** Opens a books folder for the person's side, then closes it, after the work finishes when it is async. */
+export function asPerson<T>(dir: string, f: (db: Books) => T): T {
+  const db = openBooks(dbPath(dir));
+  let r: T;
+  try {
+    r = f(db);
+  } catch (e) {
+    db.close();
+    throw e;
+  }
+  if (r instanceof Promise) return r.finally(() => db.close()) as T;
+  db.close();
+  return r;
+}
+
+/** Every gated action at one level. */
+export const ALL_AT = (level: string) => Object.fromEntries(Object.keys(OPEN).map((a) => [a, level]));
+
+/** The person sets every gated action to `level` on the page (any level but passkey). */
+export function setEveryLevel(db: Books, level: string): void {
+  const r = perform(db, "gate_set", ALL_AT(level), { source: "agent:test", now: NOW });
+  if (!r.ok) throw new Error(`gate_set refused: ${JSON.stringify(r.refusal)}`);
+  approveOnPage(db, r.result.pending_id as number);
 }
 
 /** Books in a folder where the person let the agent decide everything. */

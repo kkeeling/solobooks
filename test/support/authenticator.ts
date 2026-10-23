@@ -57,7 +57,12 @@ export class SoftAuthenticator {
 
   private constructor(private readonly key: CryptoKey) {}
 
-  static async create(): Promise<SoftAuthenticator> {
+  /** The fixed test passkey, or with `impostor`, one with the same credential id but a different private key. */
+  static async create(o: { impostor?: boolean } = {}): Promise<SoftAuthenticator> {
+    if (o.impostor) {
+      const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+      return new SoftAuthenticator(pair.privateKey);
+    }
     return new SoftAuthenticator(await crypto.subtle.importKey("jwk", TEST_KEY, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]));
   }
 
