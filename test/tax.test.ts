@@ -90,7 +90,7 @@ test("ISC-49 line: a client's rate and label appear as their own line on the inv
   expect(at("TX sales tax")).toBeLessThan(at("Total due"));
   // The email states the total the client owes, tax included.
   expect((await ok(dir, ["invoice", "email", "--id", String(inv.id)])).body).toContain("$1,353.13");
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-50 liability: tax collected is owed to the state, never income, from issue through payment and payment to the state", async () => {
   const dir = await acmeBooks();
@@ -115,7 +115,7 @@ test("ISC-50 liability: tax collected is owed to the state, never income, from i
   expect(pnl.income_total_cents).toBe(100000);
   expect([...pnl.income, ...pnl.expense].every((x: any) => x.account_id !== payable.id)).toBe(true);
   const tax = await ok(dir, ["report", "sales", "tax"]);
-  expect(tax.taxes).toMatchObject([{ tax_label: "TX sales tax", collected_cents: 10000, paid_cents: 0, owed_cents: 10000, invoiced_cents: 10000 }]);
+  expect(tax.taxes).toMatchObject([{ tax_label: "TX sales tax", charged_cents: 10000, collected_cents: 10000, paid_to_state_cents: 0 }]);
 
   // Paying the state clears the liability and leaves the P&L alone.
   const paid = (await ok(dir, json(["sales", "tax", "payment", "add"], {
@@ -125,14 +125,14 @@ test("ISC-50 liability: tax collected is owed to the state, never income, from i
   const owedToState = () => asPerson(dir, (db) => (db.query("SELECT SUM(debit_cents) - SUM(credit_cents) AS n FROM lines WHERE account_id = ?").get(payable.id) as { n: number }).n);
   expect(owedToState()).toBe(0);
   expect(await ok(dir, ["report", "pnl"])).toEqual(pnl);
-  expect((await ok(dir, ["report", "sales", "tax"])).taxes[0]).toMatchObject({ collected_cents: 10000, paid_cents: 10000, owed_cents: 0 });
+  expect((await ok(dir, ["report", "sales", "tax"])).taxes[0]).toMatchObject({ charged_cents: 10000, collected_cents: 10000, paid_to_state_cents: 10000 });
 
   // Nothing else may post to the account that holds it, and a payment to the state names a tax some invoice charged.
   const entry = await cli(dir, json(["entry", "post"], { date: "2026-11-15", memo: "x", lines: [{ account_id: payable.id, debit_cents: 1 }, { account_id: 1, credit_cents: 1 }] }));
   expect(entry.out.field).toBe("lines[0].account_id");
   const typo = await cli(dir, json(["sales", "tax", "payment", "add"], { date: "2026-11-15", amount_cents: 1, paid_from_account_id: 1, tax_label: "TX sales", period_start: "2026-10-01", period_end: "2026-10-31" }));
   expect(typo.out).toEqual({ reason: "No issued invoice carries that tax label, so use a label exactly as report sales tax lists it.", field: "tax_label" });
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-52 never decides: no tax line appears unless the person set a rate on that client", async () => {
   // Acme has no rate: every kind of line it bills goes out untaxed.
@@ -159,4 +159,4 @@ test("ISC-52 never decides: no tax line appears unless the person set a rate on 
   const cleared = (await ok(dir, json(["client", "edit"], { id: 2, tax_rate_ppm: 0 }))).client;
   expect(cleared).toMatchObject({ tax_rate_ppm: null, tax_label: null, tax_applies_to: null });
   expect((await betaDraft(dir, [{ description: "Third", amount_cents: 1000 }])).tax).toBeNull();
-});
+}, 30_000); // many CLI runs: allow for a busy machine

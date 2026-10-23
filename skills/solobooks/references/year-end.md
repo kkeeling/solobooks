@@ -14,7 +14,7 @@ For a year, run these and hand the person the files:
 2. **The year-end report:** `solobooks report yearend --year 2026`. It holds:
    - `pnl`: profit and loss, each account and the totals grouped by Schedule C line (`schedule_c`).
    - `profit_cents`: the year's profit.
-   - `sales_tax`: collected, paid to the state, and owed, per tax label.
+   - `sales_tax`: charged, collected and paid to the state, per tax label (no figure is presented as due).
    - `mileage`: the trip log, each trip at the IRS rate for its date, with total miles and the standard mileage figure.
    - `home_office`: square feet, the office's share of the home, and the home's expenses.
    - `owner_items`: estimated tax payments (by jurisdiction), health insurance and retirement, totalled apart from the P&L.
@@ -47,7 +47,11 @@ Before handing it over, fix what the report shows as missing:
 ## Sales tax
 
 - A client is taxed only where the person set a rate and the line kinds it covers (see onboarding.md). Never set one on your own judgment.
-- **What's owed for a period:** `report sales tax --from 2026-07-01 --to 2026-09-30`. Per tax label: `collected` (the tax inside what clients paid in the period), `paid` (payments to the state for return periods inside the range), `owed` = collected less paid. `invoiced` is the tax on invoices issued in the period, for states that want tax when invoiced rather than when paid; tell the person both figures exist and let their accountant say which their state uses.
+- **A period's figures:** `report sales tax --from 2026-07-01 --to 2026-09-30`, with `--period month` (or `quarter`, `year`) for a row per period. Per tax label it gives three figures:
+  - `charged`: the tax on invoices issued in the period, less credit notes.
+  - `collected`: the tax inside what clients paid in the period.
+  - `paid_to_state`: payments for a return period inside the period.
+- **solobooks never says what is due.** Most states want tax on what was charged when invoiced; some want what was collected. The state's rules decide, and the person or their accountant knows which applies. Show them the figures and don't pick one or subtract one from another for them. If they don't know their state's rule, tell them to ask their accountant.
 - **After the person pays the state:** `sales tax payment add --date 2026-10-20 --amount-cents 51234 --paid-from-account-id 1 --tax-label "IL sales tax" --period-start 2026-07-01 --period-end 2026-09-30`. The label must match the invoices'. It lowers Sales tax payable and doesn't touch the P&L.
 - solobooks files no return. The person files, or their accountant does.
 

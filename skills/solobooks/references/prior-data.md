@@ -4,7 +4,7 @@ solobooks has no importers for other apps. You bring old data in through its nor
 
 ## Past invoices: `invoice import`
 
-A past invoice is one that was already sent before solobooks. It comes in as **historical**: it keeps its original number, posts to the books (income on its invoice date, and money owed until paid), and never waits for approval, because nothing about it reaches a client now. In return:
+A past invoice is one that was already sent before solobooks. It comes in as **historical**: it keeps its original number, posts to the books (owed from its invoice date until paid; the P&L counts it as income on the day it was paid), and never waits for approval, because nothing about it reaches a client now. In return:
 
 - It must be dated **before today**. Anything dated today or later is a new invoice: draft it and issue it.
 - Its number must be a whole number **below the next number solobooks will issue**. Set `next_invoice_number` above the highest old number first (`profile set --next-invoice-number <highest + 1>`).

@@ -88,9 +88,9 @@ test("ISC-110 cash basis: an invoice issued in December and paid in January is J
   expect((await at(dir, "2026-12-31", ["report", "ytd"])).income_cents).toBe(0);
   expect((await at(dir, "2027-01-31", ["report", "ytd"])).income_cents).toBe(200000);
 
-  // Sales tax owed follows the money the same way: collected in January, though charged in December.
-  expect((await ok(dir, ["report", "sales", "tax", "--from", "2026-12-01", "--to", "2026-12-31"])).taxes[0]).toMatchObject({ collected_cents: 0, invoiced_cents: 20000, owed_cents: 0 });
-  expect((await ok(dir, ["report", "sales", "tax", "--from", "2027-01-01", "--to", "2027-01-31"])).taxes[0]).toMatchObject({ collected_cents: 20000, invoiced_cents: 0, owed_cents: 20000 });
+  // Sales tax collected follows the money the same way: collected in January, though charged in December.
+  expect((await ok(dir, ["report", "sales", "tax", "--from", "2026-12-01", "--to", "2026-12-31"])).taxes[0]).toMatchObject({ charged_cents: 20000, collected_cents: 0 });
+  expect((await ok(dir, ["report", "sales", "tax", "--from", "2027-01-01", "--to", "2027-01-31"])).taxes[0]).toMatchObject({ charged_cents: 0, collected_cents: 20000 });
 
   // Paid across the year end, each part counts in the month it arrived, split from its tax; the parts add up exactly.
   const split = await issued(dir, "2026-12-20", 100001, 30); // $1,000.01 plus $100.00 tax

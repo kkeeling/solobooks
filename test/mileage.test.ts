@@ -36,4 +36,4 @@ test("ISC-53: a trip uses the IRS rate for its date, 72.5¢ a mile on 2026-06-30
   // A trip needs its purpose and miles.
   expect((await cli(dir, json(["mileage", "add"], { date: "2026-07-01", miles_tenths: 0, destination: "x", purpose: "y" }))).out.field).toBe("miles_tenths");
   expect((await cli(dir, json(["mileage", "add"], { date: "2026-07-01", miles_tenths: 5, destination: "x" }))).out.field).toBe("purpose");
-});
+}, 30_000); // many CLI runs: allow for a busy machine

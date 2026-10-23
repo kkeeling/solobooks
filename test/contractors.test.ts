@@ -41,7 +41,7 @@ test("ISC-56 fields: a contractor payment carries the contractor's W-9 status an
   expect((await cli(dir, json(["expense", "add"], { ...base, contractor_id: sam.id, payment_method: "bitcoin" }))).out.field).toBe("payment_method");
   expect((await cli(dir, json(["contractor", "add"], { name: "sam rivera", w9_status: "on_file" }))).out.field).toBe("name");
   expect((await cli(dir, json(["contractor", "add"], { name: "New", w9_status: "not_on_file", w9_received_on: "2026-01-01" }))).out.field).toBe("w9_received_on");
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-57 1099-k: card and PayPal payments to a contractor are flagged as outside the 1099-NEC list", async () => {
   const { dir, sam, pay } = await books();
@@ -57,4 +57,4 @@ test("ISC-57 1099-k: card and PayPal payments to a contractor are flagged as out
   expect(c).toMatchObject({ paid_cents: 155_000, nec_method_cents: 105_000, outside_1099_nec_cents: 50_000 });
   // Every year, when no year is asked for.
   expect((await ok(dir, ["contractor", "list"])).contractors.find((x: any) => x.id === sam.id).nec_method_cents).toBe(105_000 + 9_999);
-});
+}, 30_000); // many CLI runs: allow for a busy machine

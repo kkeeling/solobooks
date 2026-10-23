@@ -33,7 +33,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **They have past invoices or expenses somewhere else:** follow [references/prior-data.md](references/prior-data.md).
 - **A client paid, a bank or card statement, or the person's own money moving:** follow [references/money.md](references/money.md). Import the statement first, so payments are backed by the bank.
 - **"Bill everyone for October" and other day-to-day work:** see [references/billing.md](references/billing.md).
-- **Sales tax owed, a trip, estimated taxes, a contractor, or "what does my accountant need?":** follow [references/year-end.md](references/year-end.md).
+- **Sales tax, a trip, estimated taxes, a contractor, or "what does my accountant need?":** follow [references/year-end.md](references/year-end.md).
 
 ## Quick map
 
@@ -52,7 +52,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Move their own money | `transfer add`, `owner draw`, `owner contribute`; personal-card costs are `expense add --paid-personally true` |
 | See who owes what | `report unpaid` |
 | See how they're doing | `report pnl` (cash basis, by Schedule C line), `report ytd`, `invoice list` |
-| Sales tax owed, and paying the state | `report sales tax`, `sales tax payment add` |
+| Sales tax charged, collected and paid to the state | `report sales tax`, `sales tax payment add` |
 | Year-end records | `mileage add`, `home office set`, `owner item add`, `contractor add` |
 | Give the accountant the year | `export --year <y> --format csv` plus `report yearend --year <y>` |
 | Bring in old invoices | `invoice import` |

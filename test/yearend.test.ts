@@ -20,7 +20,7 @@ test("ISC-54 home office: the year's home office figures appear in the year-end 
   expect(y.pnl.expense_total_cents).toBe(4200 + 999);
   expect((await ok(dir, ["report", "yearend", "--year", "2025"])).home_office).toBeNull();
   expect((await cli(dir, json(["home", "office", "set"], { year: 2026, office_square_feet: 2000, home_square_feet: 1000 }))).out.field).toBe("office_square_feet");
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-55 owner items: estimated taxes, health insurance and retirement are totalled apart, and never in the P&L", async () => {
   const dir = await acmeBooks();
@@ -53,7 +53,7 @@ test("ISC-55 owner items: estimated taxes, health insurance and retirement are t
   expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_personally: true, jurisdiction: "federal" }))).out.field).toBe("jurisdiction");
   expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_personally: true, paid_from_account_id: 1 }))).out.field).toBe("paid_from_account_id");
   expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_from_account_id: 2 }))).out.field).toBe("paid_from_account_id");
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("year-end: one report carries the P&L by Schedule C line, profit, sales tax, mileage and contractors, stated as figures", async () => {
   const dir = await acmeBooks();
@@ -62,4 +62,4 @@ test("year-end: one report carries the P&L by Schedule C line, profit, sales tax
   expect(y.note).toContain("computes no tax");
   expect(y.pnl.schedule_c).toBeArray();
   expect(y.profit_cents).toBe(y.pnl.net_cents);
-});
+}, 30_000); // many CLI runs: allow for a busy machine

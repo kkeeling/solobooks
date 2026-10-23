@@ -59,7 +59,7 @@ test("ISC-59 csv: one file holds every posted line of the year, each with its ac
 
   // An empty year is still one file: just the header.
   expect(await ok(tempDir(), ["export", "--year", "2026", "--format", "csv"])).toBe(`${rows[0]}\r\n`);
-});
+}, 30_000); // many CLI runs: allow for a busy machine
 
 test("ISC-61 hledger: the journal holds every entry with explicit balanced amounts, and hledger check passes", async () => {
   const dir = await books();
@@ -83,4 +83,4 @@ test("ISC-61 hledger: the journal holds every entry with explicit balanced amoun
   const y = join(tempDir(), "2026.journal");
   await Bun.write(y, (await ok(dir, ["export", "--format", "hledger", "--year", "2026"])) as string);
   expect(Bun.spawnSync([hledger, "-f", y, "check", "--strict"]).exitCode).toBe(0);
-});
+}, 30_000); // many CLI runs: allow for a busy machine

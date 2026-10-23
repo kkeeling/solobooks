@@ -7,9 +7,10 @@ import { Refusal } from "./refusal.ts";
 import { range } from "./reports.ts";
 import { currency, MAX_CENTS } from "./validate.ts";
 
-// Sales tax is money collected for a state. It is owed from the day the client pays it (cash basis, like income) until
-// the person pays it to the state. solobooks never decides what is taxable or files anything; it reports what was
-// collected and paid, so the person or their accountant can file.
+// Sales tax is money collected for a state. States differ on when it is due: most when the sale is invoiced, some when
+// the client pays. solobooks never decides which rule applies, what is taxable, or what is due, and files nothing. It
+// reports three figures side by side (charged on invoices, collected in payments, paid to the state) for the person
+// or their accountant to file from.
 
 const DEFAULT_LABEL = "Sales tax";
 
@@ -40,7 +41,7 @@ const salesTaxPaymentAdd: Op = {
   name: "sales_tax_payment_add",
   kind: "write",
   description:
-    "Record a payment of collected sales tax to a state: the day paid, the amount, the account it came from, the tax label it pays (as printed on invoices), and the return period it covers. It lowers Sales tax payable and never touches the P&L. solobooks files nothing; this records what the person paid.",
+    "Record a payment of sales tax to a state: the day paid, the amount, the account it came from, the tax label it pays (as printed on invoices), and the return period it covers. It lowers Sales tax payable and never touches the P&L. solobooks files nothing; this records what the person paid.",
   fields: {
     date: { type: "date", required: true, description: "Day it was paid, YYYY-MM-DD." },
     amount_cents: { type: "int", required: true, min: 1, max: MAX_CENTS, unit: "cents", description: "What was paid to the state, in cents." },
@@ -71,44 +72,71 @@ const salesTaxPaymentAdd: Op = {
   },
 };
 
+export const SALES_TAX_NOTE = "Your state's rules decide which of these figures, if any, is due for a period; solobooks doesn't decide that.";
+
+const PERIODS = { month: 1, quarter: 3, year: 12 } as const;
+type Period = keyof typeof PERIODS;
+
+/** The calendar months, quarters or years that overlap a range, each clipped to it; or the range itself. */
+function splitRange(from: string, to: string, by: Period | undefined): [string, string][] {
+  if (by === undefined) return [[from, to]];
+  const step = PERIODS[by];
+  const out: [string, string][] = [];
+  let [y, m] = from.split("-").map(Number) as [number, number];
+  m = Math.floor((m - 1) / step) * step + 1;
+  for (;;) {
+    const start = `${y}-${String(m).padStart(2, "0")}-01`;
+    if (start > to) return out;
+    const end = new Date(Date.UTC(y, m - 1 + step, 0)).toISOString().slice(0, 10);
+    out.push([start > from ? start : from, end < to ? end : to]);
+    m += step;
+    if (m > 12) {
+      m -= 12;
+      y++;
+    }
+  }
+}
+
 /**
- * Sales tax for a period, per tax label: what clients paid in it (collected), what was paid to the state for return
- * periods inside it, and owed, which is collected less paid. Payments for a return period only partly inside the range
- * aren't counted, and are listed so the person can see why.
+ * Sales tax per tax label for a range, and for each month, quarter or year in it when asked: charged (on invoices
+ * issued, less credit notes, with voids undoing either), collected (the tax inside what clients paid, on the day they
+ * paid), and paid to the state (payments for a return period inside the period). No figure is presented as due.
  */
-export function salesTax(db: Books, from: string, to: string) {
+export function salesTax(db: Books, from: string, to: string, by?: Period) {
   const collected = cashEvents(db, from, to);
   const charged = chargeEvents(db, from, to);
-  const pays = db.query("SELECT id FROM sales_tax_payments ORDER BY date, id").all() as { id: number }[];
-  const all = pays.map((p) => paymentView(db, p.id));
-  const inside = all.filter((p) => p.period_start >= from && p.period_end <= to);
-  const partly = all.filter((p) => !inside.includes(p) && p.period_start <= to && p.period_end >= from);
-  const names = [...new Set([...collected.filter((e) => e.tax !== 0).map((e) => e.tax_label ?? DEFAULT_LABEL), ...charged.map((e) => e.tax_label ?? DEFAULT_LABEL), ...inside.map((p) => p.tax_label)])].sort();
-  const taxes = names.map((label) => {
-    const mine = (l: string | null) => (l ?? DEFAULT_LABEL) === label;
-    const collected_cents = collected.filter((e) => mine(e.tax_label)).reduce((s, e) => s + e.tax, 0);
-    const payments = inside.filter((p) => p.tax_label === label);
-    const paid_cents = payments.reduce((s, p) => s + p.amount_cents, 0);
-    return {
-      tax_label: label,
-      collected_cents,
-      paid_cents,
-      owed_cents: collected_cents - paid_cents,
-      // For states where tax is due when invoiced rather than when paid: what invoices charged, less credit notes.
-      invoiced_cents: charged.filter((e) => mine(e.tax_label)).reduce((s, e) => s + e.tax, 0),
-      payments,
-    };
-  });
-  const sum = (k: "collected_cents" | "paid_cents" | "owed_cents" | "invoiced_cents") => taxes.reduce((s, t) => s + t[k], 0);
+  const pays = (db.query("SELECT id FROM sales_tax_payments ORDER BY date, id").all() as { id: number }[]).map((p) => paymentView(db, p.id));
+  const within = (a: string, b: string) => pays.filter((p) => p.period_start >= a && p.period_end <= b);
+  const label = (l: string | null) => l ?? DEFAULT_LABEL;
+  const names = [...new Set([...collected.filter((e) => e.tax !== 0).map((e) => label(e.tax_label)), ...charged.map((e) => label(e.tax_label)), ...within(from, to).map((p) => p.tax_label)])].sort();
+
+  const figures = (a: string, b: string) =>
+    names.map((name) => {
+      const payments = within(a, b).filter((p) => p.tax_label === name);
+      return {
+        tax_label: name,
+        charged_cents: charged.filter((e) => label(e.tax_label) === name && e.date >= a && e.date <= b).reduce((s, e) => s + e.tax, 0),
+        collected_cents: collected.filter((e) => label(e.tax_label) === name && e.date >= a && e.date <= b).reduce((s, e) => s + e.tax, 0),
+        paid_to_state_cents: payments.reduce((s, p) => s + p.amount_cents, 0),
+        payments_to_state: payments,
+      };
+    });
+  const totals = figures(from, to);
+  const periods = splitRange(from, to, by).map(([a, b]) => ({ period_start: a, period_end: b, taxes: figures(a, b) }));
+  const inRows = new Set(periods.flatMap((p) => p.taxes.flatMap((t) => t.payments_to_state.map((x) => x.id))));
+  const sum = (k: "charged_cents" | "collected_cents" | "paid_to_state_cents") => totals.reduce((s, t) => s + t[k], 0);
   return {
-    basis: "cash",
-    basis_note: "Collected is sales tax inside what clients paid in the period, counted on the day they paid; owed is collected less what was paid to the state for return periods inside the range. invoiced is the tax charged on invoices issued in the period, less credit notes, for states that want tax when invoiced.",
-    taxes,
+    note: SALES_TAX_NOTE,
+    figures_note:
+      "charged is the tax on invoices issued in the period, less credit notes; collected is the tax inside what clients paid in the period, counted on the day they paid; paid to the state counts payments whose return period lies inside the period.",
+    period: by ?? null,
+    taxes: totals,
+    periods,
+    charged_cents: sum("charged_cents"),
     collected_cents: sum("collected_cents"),
-    paid_cents: sum("paid_cents"),
-    owed_cents: sum("owed_cents"),
-    invoiced_cents: sum("invoiced_cents"),
-    payments_partly_in_range: partly,
+    paid_to_state_cents: sum("paid_to_state_cents"),
+    // Payments to the state the rows above don't count: their return period runs past the range, or across two rows.
+    payments_to_state_not_in_one_period: pays.filter((p) => p.period_start <= to && p.period_end >= from && !inRows.has(p.id)),
   };
 }
 
@@ -116,15 +144,20 @@ const reportSalesTax: Op = {
   name: "report_sales_tax",
   kind: "read",
   description:
-    "Sales tax owed for a period, per tax label: collected (the tax inside what clients paid in the period), paid (payments to the state for return periods inside it) and owed (collected less paid), plus invoiced, the tax charged on invoices issued in the period. Figures only: solobooks never decides what is taxable and files nothing.",
+    "Sales tax per tax label for a range, and for each month, quarter or year in it when period is given: the tax charged on invoices issued (less credit notes), the tax collected in what clients paid, and payments to the state. It presents no figure as due, because the state's rules decide which applies; solobooks never decides what is taxable or due, and files nothing.",
   fields: {
-    from: { type: "date", description: "First day of the period, YYYY-MM-DD. Default: the beginning." },
-    to: { type: "date", description: "Last day of the period, YYYY-MM-DD. Default: the end." },
+    from: { type: "date", description: "First day, YYYY-MM-DD. Default: the beginning; required with period." },
+    to: { type: "date", description: "Last day, YYYY-MM-DD. Default: the end; required with period." },
+    period: { type: "enum", values: Object.keys(PERIODS), description: "Also break the range into calendar month, quarter or year rows." },
   },
   run(db, input) {
+    if (input.period !== undefined && (input.from === undefined || input.to === undefined)) {
+      throw new Refusal("Give from and to along with period, so solobooks knows which periods to list.", input.from === undefined ? "from" : "to");
+    }
     const { from, to } = range(input);
-    return { from: input.from ?? null, to: input.to ?? null, ...salesTax(db, from, to) };
+    return { from: input.from ?? null, to: input.to ?? null, ...salesTax(db, from, to, input.period) };
   },
 };
 
 export const salesTaxOps: Op[] = [salesTaxPaymentAdd, reportSalesTax];
+
