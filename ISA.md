@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 95/112
+progress: 106/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -220,21 +220,21 @@ Why: whatever local agent someone already uses, solobooks connects to it in one 
 ### F12 · Durability
 Why: seven years of records survive dead laptops, synced folders and every future release.
 
-- [ ] ISC-91: A dated backup is written daily to the folder the person picked.
-- [ ] ISC-92: A backup is written before every migration.
-- [ ] ISC-93: solobooks warns when the live file sits inside iCloud, Dropbox or OneDrive.
-- [ ] ISC-94: A saved file from every earlier release opens and passes `solobooks doctor`.
-- [ ] ISC-95: `solobooks move` into a fresh folder reproduces identical reports.
+- [x] ISC-91: A dated backup is written daily to the folder the person picked.
+- [x] ISC-92: A backup is written before every migration.
+- [x] ISC-93: solobooks warns when the live file sits inside iCloud, Dropbox or OneDrive.
+- [x] ISC-94: A saved file from every earlier release opens and passes `solobooks doctor`.
+- [x] ISC-95: `solobooks move` into a fresh folder reproduces identical reports.
 
 ### F13 · Agent-time add-on
 Why: people who bill for work done by directing coding agents get honest, explainable hours without the core learning how time is tracked.
 
-- [ ] ISC-96: The same session logs always produce the same hours.
-- [ ] ISC-97: Time past 10 minutes after the person's last action counts zero.
-- [ ] ISC-98: Parallel sessions never bill more than 60 minutes in any hour.
-- [ ] ISC-99: Re-running for the same period adds no new entries.
-- [ ] ISC-100: The counter script runs through the solobooks binary with no bun on PATH.
-- [ ] ISC-101: Anti: `solobooks setup` doesn't install the add-on unless asked.
+- [x] ISC-96: The same session logs always produce the same hours.
+- [x] ISC-97: Time past 10 minutes after the person's last action counts zero.
+- [x] ISC-98: Parallel sessions never bill more than 60 minutes in any hour.
+- [x] ISC-99: Re-running for the same period adds no new entries.
+- [x] ISC-100: The counter script runs through the solobooks binary with no bun on PATH.
+- [x] ISC-101: Anti: `solobooks setup` doesn't install the add-on unless asked.
 
 ### F14 · The human page
 Why: the person can see the books and approve things when their agent's app can't, without a second app to learn.
@@ -452,6 +452,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-20..24, 39..41, 43, 46..48, 70: probes as written, rerun independently on the merged tree 2026-10-23 — `bun test` 111 pass 0 fail, eval selftest 11 of 11 — merge 7833cf9
 - ISC-42, 111, 112: probes as written, rerun independently 2026-10-23 — 1, 1 and 2 pass; full `bun test` 115 with two timeouts under load average 26 (ISC-14, ISC-24), both green rerun alone or with a longer limit; eval selftest 11 of 11 — commits 63932cb, dedcd08, 210f379
 - ISC-49..61, 110: probes as written, rerun independently on the merged tree 2026-10-23 — all pass; `bash scripts/export-check.sh` 62 CSV rows and `hledger check` on 26 transactions; full `bun test` 132 of 133 with ISC-6 timing out under load, green alone in 14s; eval selftest 11 of 11; 2026 IRS mileage rates confirmed on irs.gov by the builder
+- ISC-91..101: probes as written, rerun independently on merge 9579949 2026-10-23 — all pass; `bash scripts/addon-no-bun.sh` PASS with no bun or node on PATH; full `bun test` 177 pass 0 fail in 73s after the migrated-image speed-up (was 280 to 440s with timeouts); eval selftest 11 of 11; exports pass
 
 ## Remaining Work
 
@@ -466,3 +467,5 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
 - [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
 - [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
+- [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
+- [ ] `backup set` and `move` are CLI-only, so an MCP-only app such as Claude Desktop can't pick a backup folder or move the books.
