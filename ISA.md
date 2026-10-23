@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 62/109
+progress: 65/109
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -185,7 +185,7 @@ Why: the person decides how much their agent may do, and that choice holds even 
 - [x] ISC-72: An invoice pulled from a batch stays a draft.
 - [x] ISC-73: The local-page fallback link approves the pending action.
 - [x] ISC-74: Passkey-level approval completes only with a WebAuthn assertion.
-- [ ] ISC-75: Anti: instructions planted in an imported CSV never complete a gated action.
+- [x] ISC-75: Anti: instructions planted in an imported CSV never complete a gated action.
 - [x] ISC-106: Anti: a draft waiting for approval refuses every change to what would be issued.
 - [x] ISC-107: The approval prompt shows every line, the note, terms, payment instructions and any reason, in fixed wording the agent can't write.
 - [x] ISC-108: Anti: a raw ledger entry on the accounts invoices post to is refused.
@@ -195,10 +195,10 @@ Why: the person decides how much their agent may do, and that choice holds even 
 Why: a stranger goes from one pasted prompt to a first draft invoice without a tutorial or a form.
 
 - [x] ISC-76: The README prompt in Claude Code on a clean machine ends with `solobooks doctor` passing.
-- [ ] ISC-77: The README prompt in Codex on a clean machine ends with `solobooks doctor` passing.
+- [x] ISC-77: The README prompt in Codex on a clean machine ends with `solobooks doctor` passing.
 - [ ] ISC-78: [DROPPED — see Decisions 2026-10-22; Grok Build and Muse Code install tests moved to Remaining Work]
 - [x] ISC-79: An agent with only solobooks' guide gets from "my first client is Acme at $150/hr" to a draft invoice.
-- [ ] ISC-80: Past invoices from a spreadsheet import as already-sent with their original numbers.
+- [x] ISC-80: Past invoices from a spreadsheet import as already-sent with their original numbers.
 - [x] ISC-81: Anti: imported already-happened records never hit the gate or trigger reminders.
 - [x] ISC-82: The skill's frontmatter uses only the six Agent Skills fields.
 
@@ -411,6 +411,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: The default books folder is `~/solobooks`, recorded by `solobooks setup` in a config file. Precedence: `--books`, then SOLOBOOKS_DIR, then the config, then refuse. Setup warns when the folder sits in iCloud, Dropbox, OneDrive or Google Drive. Settles the open call from step 1a.
 - 2026-10-23: Historical (already-happened) invoices must be dated before today and are marked historical wherever invoices are listed, so "historical" can't be used to skip the gate on a new invoice.
 - 2026-10-23: While the repo is private, ISC-83 is proven against a loopback mirror of a local release build. The run against the real GitHub Releases URL waits for the repo going public.
+- 2026-10-23: refined: payment instructions moved from `profile set` to their own gated command, `profile payment instructions set`, because the MCP requiresUserInteraction flag is per tool. The Codex eval runs with full access in its throwaway home, standing in for the person approving setup outside the sandbox, and INSTALL.md tells sandboxed agents to ask.
 
 ## Learning
 
@@ -438,6 +439,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-81..83, 85, 86, 88..90: probes as written, rerun independently 2026-10-23 — `bun test` 93 pass 0 fail; setup and doctor rerun from the compiled binary in a clean home (Claude Code and Codex both answered with 37 tools) — commits dbb4110..a2ad0e7
 - ISC-87: `bash scripts/plugin-install-check.sh` run with the real claude CLI in a throwaway home 2026-10-23 — marketplace added, plugin installed and enabled, skill in the plugin cache, `claude mcp list` shows solobooks connected; setup-written entries also listed by real `claude mcp list` (connected) and `codex mcp list` (enabled)
 - ISC-76, 79: real `claude -p` runs in throwaway homes 2026-10-23 — install suite PASS in 37s (agent read INSTALL.md and the installer, ran install, setup, doctor); onboarding suite PASS in 34s, all through the solobooks MCP tools
+- ISC-75, 77, 80: real agent runs in throwaway homes 2026-10-23 after commits 6b8cb07, 3e7e3d9 — Codex install PASS in 33s; past-invoice import PASS in 28s; planted-instruction import PASS in 62s with 0 pending actions created, gates and payment instructions unchanged, both plants named to the person; `bun test` 95 pass 0 fail, eval selftest 11 of 11
 
 ## Remaining Work
 
