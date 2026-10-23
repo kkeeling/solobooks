@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { install } from "../src/cli.ts";
+import { install, run } from "../src/cli.ts";
 import { OPS } from "../src/core/perform.ts";
 import { cli, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
@@ -49,20 +49,23 @@ describe("ISC-1", () => {
     expect(trap.attempts).toEqual([]);
   });
 
-  test("no network: setup and doctor connect agents and check them with zero outbound connections", async () => {
+  test("no network: setup, doctor and backup set run with zero outbound connections", async () => {
     const home = tempDir();
     mkdirSync(join(home, ".claude"));
     mkdirSync(join(home, ".codex"));
     const trap = trapNetwork();
-    let setup, doctor;
+    let setup, doctor, backup, write;
     try {
       setup = await install("setup", [], { HOME: home });
       doctor = await install("doctor", [], { HOME: home });
+      backup = await install("backup", ["set", "--folder", join(home, "backups")], { HOME: home });
+      write = await run(["client", "add", "--name", "Acme", "--source", "test", "--books", join(home, "solobooks")], { HOME: home, SOLOBOOKS_NOW: "2026-10-23T12:00:00.000Z" });
     } finally {
       trap.release();
     }
     expect(trap.attempts).toEqual([]);
     expect(setup.code).toBe(0);
     expect(JSON.parse(doctor.stdout)).toMatchObject({ ok: true });
+    expect([backup.code, write.code]).toEqual([0, 0]);
   }, 30_000);
 });

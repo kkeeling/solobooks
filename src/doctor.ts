@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { knownAgents, mcpCommand, readEntry } from "./agents.ts";
 import { booksDir, booksFile, type Env } from "./config.ts";
+import { backupFolder, syncedWarning } from "./durability.ts";
 import { OPS } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { MIGRATIONS } from "./db/migrations.ts";
@@ -178,5 +179,30 @@ export async function doctor(argv: string[], env: Env) {
   for (const folder of skillDirs(env, agents)) checks.push(checkSkill(join(folder, SKILL_NAME)));
 
   const ok = checks.every((c) => c.ok);
-  return { ok, version: VERSION, checks, ...(ok ? {} : { next: "Fix each failed check as its fix says, then run solobooks doctor again." }) };
+  const warnings = durabilityWarnings(argv, env);
+  return {
+    ok,
+    version: VERSION,
+    checks,
+    ...(warnings.length > 0 && { warnings }),
+    ...(ok ? {} : { next: "Fix each failed check as its fix says, then run solobooks doctor again." }),
+  };
+}
+
+/** What doctor warns about without failing: live books in a synced folder, and books with no backup folder. */
+function durabilityWarnings(argv: string[], env: Env): string[] {
+  const i = argv.indexOf("--books");
+  let dir: string;
+  try {
+    dir = booksDir(i === -1 ? undefined : argv[i + 1], env);
+  } catch {
+    return []; // the books check already says so
+  }
+  const out: string[] = [];
+  const synced = syncedWarning(dir, env);
+  if (synced) out.push(synced);
+  const folder = backupFolder(env);
+  if (!folder) out.push("No backup folder is chosen, so solobooks writes no daily backups; pick one with solobooks backup set --folder <dir>.");
+  else if (!existsSync(folder)) out.push(`The backup folder ${folder} isn't there, so today's backup can't be written; plug in its drive or pick another with solobooks backup set --folder <dir>.`);
+  return out;
 }

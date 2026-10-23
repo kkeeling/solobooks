@@ -3,6 +3,7 @@ import type { Server } from "bun";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
 import { openBooks, type Books } from "./core/db.ts";
+import { openOptions } from "./durability.ts";
 import { field, getPending, hasPasskey, levelToApprove, type PendingAction, promptFields } from "./core/gate.ts";
 import { authenticationOptions, registrationOptions, verifyPasskey, verifyRegistration } from "./core/passkey.ts";
 import { Refusal } from "./core/refusal.ts";
@@ -48,7 +49,7 @@ export function startPage(o: { books: string; port: number; env: Env }): Page {
   const origin = () => `http://localhost:${port}`;
   const when = () => ({ now: now(o.env), page: pageUrl(o.env, port) });
   const withBooks = async <T>(f: (db: Books) => T | Promise<T>): Promise<T> => {
-    const db = openBooks(file);
+    const db = openBooks(file, openOptions(o.env));
     try {
       return await f(db);
     } finally {

@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
 import { existsSync, linkSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { migrate } from "../db/migrations.ts";
+import { dirname, join } from "node:path";
+import { migrate, MIGRATIONS } from "../db/migrations.ts";
+import { backupAs } from "./backup.ts";
+import { today } from "./format.ts";
+import { Refusal } from "./refusal.ts";
 
 export type Books = Database;
 
@@ -35,12 +38,41 @@ function placeFresh(path: string): void {
   }
 }
 
+export interface OpenOptions {
+  /** The folder the person picked for backups. Without one, a backup before an upgrade goes in the books folder's backups/. */
+  backups?: string | null;
+  /** The clock, which dates a backup's file name. */
+  now?: string;
+}
+
+const version = (db: Database) => (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
+
 /**
- * Opens a books file (or ":memory:"), applying any pending migrations.
+ * Before books saved by an older solobooks are upgraded, a dated copy of them as they were is written. If that copy
+ * can't be written, the books are left exactly as they were and nothing is upgraded.
+ */
+function backUpBeforeUpgrade(db: Database, path: string, o: OpenOptions): void {
+  const from = version(db);
+  if (from === 0 || from >= MIGRATIONS.length) return;
+  const folder = o.backups || join(dirname(path), "backups");
+  try {
+    backupAs(db, folder, `solobooks-${today(o.now ?? new Date().toISOString())}-before-upgrade-from-v${from}`);
+  } catch (e) {
+    db.close();
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Refusal(
+      `solobooks couldn't back up these books into ${folder} before upgrading them (${why}), so it left them as they were; choose a backup folder it can write to with solobooks backup set --folder <dir>.`,
+      "backups",
+    );
+  }
+}
+
+/**
+ * Opens a books file (or ":memory:"), applying any pending migrations, after backing up books from an older solobooks.
  * The default rollback journal is kept on purpose: a rolled-back dry run then leaves the file byte-identical,
  * with no -wal or -shm files beside it.
  */
-export function openBooks(path: string): Books {
+export function openBooks(path: string, o: OpenOptions = {}): Books {
   let db: Database;
   if (path === ":memory:") {
     db = Database.deserialize(freshImage(), { strict: true });
@@ -51,11 +83,29 @@ export function openBooks(path: string): Books {
   }
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA busy_timeout = 5000");
+  if (path !== ":memory:") backUpBeforeUpgrade(db, path, o);
   migrate(db);
   return db;
 }
 
-/** A dry run against books that don't exist yet runs on an empty in-memory copy, so no file appears. */
-export function openForRun(path: string, dryRun: boolean): Books {
-  return dryRun && !existsSync(path) ? openBooks(":memory:") : openBooks(path);
+/**
+ * Opens the books for one command. A dry run never changes the folder: against books that don't exist yet it runs on
+ * empty books in memory, and against books an older solobooks saved it upgrades a copy in memory, so the file stays
+ * byte-identical and no backup is written.
+ */
+export function openForRun(path: string, dryRun: boolean, o: OpenOptions = {}): Books {
+  if (!dryRun) return openBooks(path, o);
+  if (!existsSync(path)) return openBooks(":memory:");
+  const file = new Database(path, { readonly: true, strict: true });
+  let old: Uint8Array | null;
+  try {
+    old = version(file) < MIGRATIONS.length ? file.serialize() : null; // SQLite's own consistent read of the file
+  } finally {
+    file.close();
+  }
+  if (!old) return openBooks(path, o);
+  const db = Database.deserialize(old, { strict: true });
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db);
+  return db;
 }

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { DEFAULT_PORT } from "./core/gate.ts";
 import { Refusal } from "./core/refusal.ts";
 
@@ -19,7 +19,8 @@ export function configFile(env: Env): string | null {
   return base ? join(base, "solobooks", "config.json") : null;
 }
 
-export type Config = { books?: string };
+/** What setup and the durability commands record: the books folder, and the folder daily backups go to. */
+export type Config = { books?: string; backups?: string };
 
 /** The recorded settings, or none when setup hasn't run. */
 export function readConfig(env: Env): Config {
@@ -46,6 +47,14 @@ export function booksDir(flag: string | undefined, env: Env): string {
   return dir;
 }
 
+/** Records settings, keeping the ones not given. Returns the settings file, or null when there is no home folder. */
+export function saveConfig(env: Env, patch: Config): string | null {
+  const file = configFile(env);
+  if (!file) return null;
+  writeIfChanged(file, JSON.stringify({ ...readConfig(env), ...patch }, null, 2) + "\n");
+  return file;
+}
+
 export function booksFile(dir: string): string {
   return join(dir, DB_FILE);
 }
@@ -67,4 +76,50 @@ export function pagePort(env: Env): number {
 /** The approval page's address, which pending actions point the person to. */
 export function pageUrl(env: Env, port = pagePort(env)): string {
   return `http://localhost:${port}/`;
+}
+
+/** Expands a leading ~ and makes the path absolute. */
+export function absolute(p: string, home: string): string {
+  return resolve(p === "~" ? home : p.startsWith("~/") ? join(home, p.slice(2)) : p);
+}
+
+/** Folders that sync files while solobooks writes them, which can corrupt a live SQLite file. */
+export function syncedFolder(dir: string, home: string): string | null {
+  const real = (p: string) => {
+    let at = p;
+    while (!existsSync(at) && dirname(at) !== at) at = dirname(at);
+    try {
+      return join(realpathSync(at), p.slice(at.length));
+    } catch {
+      return p;
+    }
+  };
+  const under = (p: string, base: string) => p === base || p.startsWith(base + sep);
+  const h = (...parts: string[]) => join(home, ...parts);
+  const named: [string, string][] = [
+    [h("Library", "Mobile Documents"), "iCloud Drive"],
+    [h("Library", "CloudStorage"), "a cloud drive (Dropbox, OneDrive or Google Drive)"],
+    [h("Dropbox"), "Dropbox"],
+    [h("Google Drive"), "Google Drive"],
+    [h("My Drive"), "Google Drive"],
+    [h("iCloudDrive"), "iCloud Drive"],
+  ];
+  // iCloud's Desktop & Documents option on a Mac, and OneDrive's folder backup on Windows, sync these two.
+  if (process.platform !== "linux") named.push([h("Documents"), "Documents, which iCloud or OneDrive may sync"], [h("Desktop"), "Desktop, which iCloud or OneDrive may sync"]);
+  for (const p of new Set([dir, real(dir)])) {
+    for (const [base, what] of named) if (under(p, base)) return what;
+    const rel = p.startsWith(home + sep) ? p.slice(home.length + 1) : "";
+    if (/^OneDrive( |-|$)/.test(rel.split(sep)[0] ?? "")) return "OneDrive";
+  }
+  return null;
+}
+
+/** Writes a file whole (a temporary file, then a rename), only when its text changes. Returns whether it did. */
+export function writeIfChanged(file: string, text: string): boolean {
+  if (existsSync(file) && readFileSync(file, "utf8") === text) return false;
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.solobooks-${process.pid}.tmp`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, file);
+  return true;
 }

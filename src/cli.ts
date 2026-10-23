@@ -7,6 +7,7 @@ import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
+import { beforeWrite, openOptions, withWarnings } from "./durability.ts";
 import { startPage } from "./page.ts";
 import { VERSION } from "./version.ts";
 
@@ -33,6 +34,12 @@ const COMMANDS = [
     kind: "install",
     description:
       "Check the install: opens the books, and for each agent app found, checks the MCP server is registered and answers, and the skill is in place. Exits non-zero, saying how to fix it, when something is wrong.",
+  },
+  {
+    command: "backup set",
+    kind: "install",
+    description:
+      "Pick the folder backups go to (--folder <dir>). solobooks then writes a dated copy of the books there once a day, the first time they change that day, and keeps every one; it writes today's at once.",
   },
   { command: "mcp", kind: "install", description: "Serve the MCP tools over stdio. Agent apps start this; you don't run it by hand." },
   { command: "version", kind: "install", description: "Print the solobooks version (also --version)." },
@@ -99,8 +106,10 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
     for (const [k, v] of Object.entries(flags)) if (!ENVELOPE.has(k)) fieldFlags[k.replaceAll("-", "_")] = v;
     const input = { ...(json as object), ...coerceFlags(fieldFlags, op.fields) };
 
-    const db = openForRun(booksFile(booksDir(flags.books, env)), dryRun);
+    const dir = booksDir(flags.books, env);
+    const db = openForRun(booksFile(dir), dryRun, openOptions(env));
     try {
+      const warnings = op.kind === "write" ? beforeWrite(db, dir, env, dryRun) : [];
       const r = await performAsync(db, op.name, input, {
         source: flags.source,
         idempotency_key: flags["idempotency-key"],
@@ -110,7 +119,7 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
       });
       // A file, such as an export, prints as itself so it can be redirected into a file; everything else is JSON.
       if (r.ok && op.text !== undefined && typeof r.result[op.text] === "string") return { code: 0, stdout: r.result[op.text] as string, text: true };
-      return r.ok ? out(0, r.result) : out(2, r.refusal);
+      return r.ok ? out(0, withWarnings(r.result, warnings)) : out(2, r.refusal);
     } finally {
       db.close();
     }
@@ -127,11 +136,15 @@ export async function serve(argv: string[], env: Env = process.env) {
   return startPage({ books: booksDir(flags.books, env), port, env });
 }
 
-/** Runs setup or doctor and prints its JSON; doctor exits 1 when a check failed. */
+/** Runs setup, doctor or backup set and prints its JSON; doctor exits 1 when a check failed. */
 export async function install(word: string, argv: string[], env: Env = process.env): Promise<{ code: number; stdout: string }> {
   const out = (code: number, v: unknown) => ({ code, stdout: JSON.stringify(v, null, 2) });
   try {
     if (word === "setup") return out(0, (await import("./setup.ts")).setup(argv, env));
+    if (word === "backup") {
+      if (argv[0] !== "set") throw new Refusal("There is no such command; run solobooks help for the list.", "command");
+      return out(0, (await import("./durability.ts")).backupSet(argv.slice(1), env));
+    }
     const r = await (await import("./doctor.ts")).doctor(argv, env);
     return out(r.ok ? 0 : 1, r);
   } catch (e) {
@@ -144,7 +157,7 @@ if (import.meta.main && (word === "--version" || word === "version")) {
   process.stdout.write(`solobooks ${VERSION}\n`);
 } else if (import.meta.main && word === "mcp") {
   (await import("./mcp.ts")).serveMcp(process.argv.slice(3));
-} else if (import.meta.main && (word === "setup" || word === "doctor")) {
+} else if (import.meta.main && (word === "setup" || word === "doctor" || word === "backup")) {
   const r = await install(word, process.argv.slice(3));
   process.stdout.write(r.stdout + "\n");
   process.exit(r.code);

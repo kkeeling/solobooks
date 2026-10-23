@@ -12,6 +12,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { booksDir, booksFile, now, pageUrl, type Env } from "./config.ts";
+import { beforeWrite, openOptions, withWarnings } from "./durability.ts";
 import { approvePending } from "./core/approve.ts";
 import { type Books, openForRun } from "./core/db.ts";
 import { dollars } from "./core/format.ts";
@@ -168,11 +169,13 @@ export function createServer(env: Env, books?: string): McpServer {
         const { source, idempotency_key, dry_run, ...input } = args ?? {};
         try {
           const dryRun = dry_run === true;
-          const db = openForRun(booksFile(booksDir(books, env)), dryRun);
+          const dir = booksDir(books, env);
+          const db = openForRun(booksFile(dir), dryRun, openOptions(env));
           try {
             const state = op.gate ? ctx.mcpReq.requestState<{ pending_id: number }>() : undefined;
             if (state !== undefined && Number.isInteger(state?.pending_id)) return answered(db, state.pending_id, ctx);
 
+            const warnings = op.kind === "write" ? beforeWrite(db, dir, env, dryRun) : [];
             const r = await performAsync(db, op.name, input, { source, idempotency_key, dry_run: dryRun, now: now(env), page: page() });
             if (!r.ok) return reply(r.refusal, true);
             // Click level: ask the person right here when the app can. Passkey level only ever goes to the page.
@@ -183,7 +186,7 @@ export function createServer(env: Env, books?: string): McpServer {
                 return inputRequired({ inputRequests: { approval: approvalForm(p) }, requestState: await approvals.mint({ pending_id: p.id }, ctx) });
               }
             }
-            return reply(asked);
+            return reply(withWarnings(asked, warnings));
           } finally {
             db.close();
           }
