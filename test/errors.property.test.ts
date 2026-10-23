@@ -192,6 +192,10 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["bank_import", { account_id: 4, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "account_id"],
     ["bank_import", { account_id: 1, file_path: "/no/such/file", date_column: "Date", date_format: "MM/DD/YYYY", description_column: "D", amount_column: "A" }, {}, "file_path"],
     ["bank_match", { line_id: 99, entry_id: 1 }, {}, "line_id"],
+    ["client_credit_apply", { client_id: 9, invoice_id: 2, date: "2026-10-01" }, {}, "client_id"],
+    ["client_credit_apply", { client_id: 2, invoice_id: 99, date: "2026-10-01" }, {}, "invoice_id"],
+    ["client_credit_apply", { client_id: 1, invoice_id: 2, date: "2026-10-01" }, {}, "client_id"], // Acme holds no credit
+    ["client_credit_apply", { client_id: 2, invoice_id: 2, date: "2026-10-01" }, {}, "invoice_id"], // invoice 2 is Acme's
   ];
   for (const [op, input, env, field] of cases) {
     const r = write(db, op, input, env);

@@ -121,21 +121,29 @@ function creditsOf(db: Books, invoiceId: number): InvoiceRow[] {
     .all(invoiceId) as InvoiceRow[];
 }
 
-/** What payments still standing have settled on an invoice: a refunded payment settles nothing. */
+/** What payments have settled on an invoice, less what refunds took back off it, so it is owed again. */
 export function paidCents(db: Books, invoiceId: number): number {
   const { n } = db
-    .query("SELECT COALESCE(SUM(p.applied_cents), 0) AS n FROM payments p WHERE p.invoice_id = ? AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = p.id)")
+    .query(
+      `SELECT (SELECT COALESCE(SUM(applied_cents), 0) FROM payments WHERE invoice_id = ?1)
+            - (SELECT COALESCE(SUM(r.applied_cents), 0) FROM refunds r JOIN payments p ON p.id = r.payment_id WHERE p.invoice_id = ?1) AS n`,
+    )
     .get(invoiceId) as { n: number };
   return n;
 }
 
+/** What client credit applied to an invoice has settled on it. */
+export function creditAppliedCents(db: Books, invoiceId: number): number {
+  return (db.query("SELECT COALESCE(SUM(amount_cents), 0) AS n FROM credit_applications WHERE invoice_id = ?").get(invoiceId) as { n: number }).n;
+}
+
 /**
- * What is still owed on an invoice: its total less the credit notes against it and the payments on it, or nothing
- * for a past invoice brought in as paid.
+ * What is still owed on an invoice: its total less the credit notes against it, the payments on it and any client
+ * credit applied to it, or nothing for a past invoice brought in as paid.
  */
 export function openBalance(db: Books, r: InvoiceRow): number {
   if (r.paid_on !== null) return 0;
-  return amounts(db, r).total - creditsOf(db, r.id).reduce((s, c) => s + amounts(db, c).total, 0) - paidCents(db, r.id);
+  return amounts(db, r).total - creditsOf(db, r.id).reduce((s, c) => s + amounts(db, c).total, 0) - paidCents(db, r.id) - creditAppliedCents(db, r.id);
 }
 
 export function invoiceView(db: Books, id: number) {
@@ -540,6 +548,9 @@ const invoiceVoid: Op = {
     if (r.kind === "invoice" && paidCents(db, r.id) > 0) {
       throw new Refusal(`Invoice ${r.number} has payments on it, so refund them with payment refund before voiding it.`, "id");
     }
+    if (r.kind === "invoice" && creditAppliedCents(db, r.id) > 0) {
+      throw new Refusal(`Invoice ${r.number} has client credit applied to it, so credit the rest with invoice credit instead of voiding it.`, "id");
+    }
     db.query("UPDATE invoices SET status = 'void', voided_at = ?, void_reason = ? WHERE id = ?").run(ctx.now, input.reason, r.id);
     const label = r.kind === "credit" ? `credit note ${displayNumber(r)}` : `invoice ${r.number}`;
     post(db, r, r.kind === "invoice" ? "reverse" : "forward", today(ctx.now), `Void ${label}: ${input.reason}`, ctx);
@@ -622,7 +633,7 @@ const invoiceCredit: Op = {
     );
     const credit = requireInvoice(db, id);
     if (openBalance(db, orig) < 0) {
-      if (paidCents(db, orig.id) > 0) {
+      if (paidCents(db, orig.id) + creditAppliedCents(db, orig.id) > 0) {
         throw new Refusal(`That credits more than is still owed on invoice ${orig.number} after its payments, so credit at most what is still open.`, "amount_cents");
       }
       throw new Refusal(`Tax rounding would credit more than is still owed on invoice ${orig.number}, so credit a little less.`, "amount_cents");

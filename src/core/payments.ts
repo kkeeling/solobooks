@@ -8,7 +8,9 @@ import { currency, MAX_CENTS } from "./validate.ts";
 
 // Payments on issued invoices, recorded gross plus fee: a $1,000 invoice paid through a processor that kept $30 is
 // $1,000 settled on the invoice, a $30 fee expense and a $970 deposit, which matches the 1099-K. A payment beyond
-// what the invoice still owed leaves the rest as a client credit. A refund reverses its payment with a reversing entry.
+// what the invoice still owed leaves the rest as a client credit, which can pay down a later invoice of that client.
+// A refund is a new entry that gives back gross: the invoice is owed again, and the processor's fee stays an expense
+// unless the refund says the processor returned it, which Stripe, for one, doesn't.
 
 export const FEE_ACCOUNT = { name: "Payment processing fees", type: "expense" } as const;
 
@@ -36,7 +38,30 @@ function requirePayment(db: Books, id: number, field = "payment_id"): PaymentRow
   return p;
 }
 
-/** A client's credit balance: overpayments held for them, less any refunded since. */
+/** What refunds of a payment have given back so far, and how each part of it was split. */
+function refundedOf(db: Books, paymentId: number) {
+  return db
+    .query(
+      `SELECT COALESCE(SUM(amount_cents), 0) AS amount, COALESCE(SUM(fee_returned_cents), 0) AS fee,
+              COALESCE(SUM(applied_cents), 0) AS applied, COALESCE(SUM(credit_cents), 0) AS credit
+       FROM refunds WHERE payment_id = ?`,
+    )
+    .get(paymentId) as { amount: number; fee: number; applied: number; credit: number };
+}
+
+/**
+ * How a refund of a payment splits, given what it already gave back: client credit the payment made comes back first,
+ * as far as the client still holds it, then what it settled on the invoice. A credit already applied to another
+ * invoice can't be refunded from here, so it caps what is left.
+ */
+function refundable(db: Books, p: PaymentRow, clientId: number) {
+  const done = refundedOf(db, p.id);
+  const credit = Math.max(0, Math.min(p.credit_cents - done.credit, creditBalance(db, clientId)));
+  const applied = p.applied_cents - done.applied;
+  return { credit, applied, total: credit + applied, fee: p.fee_cents - done.fee, refunded: done.amount };
+}
+
+/** A client's credit balance: overpayments held for them, less what was refunded or applied to invoices since. */
 export function creditBalance(db: Books, clientId: number): number {
   return (db.query("SELECT COALESCE(SUM(amount_cents), 0) AS n FROM client_credits WHERE client_id = ?").get(clientId) as { n: number }).n;
 }
@@ -44,7 +69,10 @@ export function creditBalance(db: Books, clientId: number): number {
 export function paymentView(db: Books, id: number) {
   const p = requirePayment(db, id);
   const inv = requireInvoice(db, p.invoice_id);
-  const refund = db.query("SELECT id, date, reason, entry_id, source FROM refunds WHERE payment_id = ?").get(p.id) as Record<string, unknown> | null;
+  const refunds = db
+    .query("SELECT id, date, reason, amount_cents, fee_returned_cents, applied_cents, credit_cents, entry_id, source FROM refunds WHERE payment_id = ? ORDER BY id")
+    .all(p.id);
+  const left = refundable(db, p, inv.client_id);
   const credit = db.query("SELECT id, amount_cents FROM client_credits WHERE payment_id = ? AND refund_id IS NULL").get(p.id) as
     | { id: number; amount_cents: number }
     | null;
@@ -67,7 +95,10 @@ export function paymentView(db: Books, id: number) {
     bank_line_id: (db.query("SELECT line_id FROM bank_matches WHERE entry_id = ? AND account_id = ?").get(p.entry_id, p.deposit_account_id) as { line_id: number } | null)?.line_id ?? null,
     memo: p.memo,
     entry: getEntry(db, p.entry_id),
-    refund,
+    // Each refund of it, what they gave back in all, and what could still be refunded.
+    refunds,
+    refunded_cents: left.refunded,
+    refundable_cents: left.total,
     source: p.source,
   };
 }
@@ -154,34 +185,112 @@ const paymentRefund: Op = {
   name: "payment_refund",
   kind: "write",
   description:
-    "Refund a payment in full: a reversing entry undoes its deposit, fee and what it settled, so the invoice is owed again, and any client credit it made is taken back. The payment itself is kept, never edited.",
+    "Refund a payment, in full or in part, as a new entry; the payment itself is never edited. amount_cents is the gross given back to the client, by default all that is still refundable. It comes out of any client credit the payment made first, then off the invoice, which is owed again by that much. The processor's fee stays an expense unless fee_returned_cents says the processor gave some back; Stripe, for one, keeps it. What leaves deposit_account_id is amount_cents less fee_returned_cents. A payment can be refunded more than once, up to what was paid.",
   fields: {
     payment_id: { type: "int", required: true, min: 1, description: "The payment being refunded." },
     date: { type: "date", required: true, description: "Day of the refund, YYYY-MM-DD." },
     reason: { type: "text", required: true, description: "Why it was refunded." },
+    amount_cents: {
+      type: "int", min: 1, max: MAX_CENTS, unit: "cents",
+      description: "Gross given back to the client. Default: all of the payment still refundable.",
+    },
+    fee_returned_cents: {
+      type: "int", min: 0, max: MAX_CENTS, unit: "cents",
+      description: "Processor fee the processor gave back with this refund. Default 0, which is what Stripe does.",
+    },
   },
   run(db, input, ctx) {
     const p = requirePayment(db, input.payment_id);
-    if (db.query("SELECT 1 FROM refunds WHERE payment_id = ?").get(p.id)) throw new Refusal(`Payment ${p.id} was already refunded.`, "payment_id");
     if (input.date < p.date) throw new Refusal(`The refund can't be dated before the payment it refunds, on ${p.date}.`, "date");
     const inv = requireInvoice(db, p.invoice_id);
-    // The reversing entry: every line of the payment's entry, debit and credit swapped.
-    const lines = db.query("SELECT account_id, debit_cents, credit_cents FROM lines WHERE entry_id = ? ORDER BY id").all(p.entry_id) as {
-      account_id: number;
-      debit_cents: number;
-      credit_cents: number;
-    }[];
-    const legs: [number, number][] = lines.map((l) => [l.account_id, l.credit_cents - l.debit_cents]);
+    const left = refundable(db, p, inv.client_id);
+    if (left.total === 0) {
+      const why = left.refunded === p.amount_cents ? "was already refunded in full" : "has nothing left to refund, because its client credit was applied to an invoice";
+      throw new Refusal(`Payment ${p.id} ${why}.`, "payment_id");
+    }
+    const amount: number = input.amount_cents ?? left.total;
+    if (amount > left.total) {
+      throw new Refusal(`amount_cents can be at most ${left.total}, what is still refundable on payment ${p.id}.`, "amount_cents");
+    }
+    const fee: number = input.fee_returned_cents ?? 0;
+    if (fee > left.fee) throw new Refusal(`fee_returned_cents can be at most ${left.fee}, the fee on payment ${p.id} not yet returned.`, "fee_returned_cents");
+    if (fee > 0 && fee >= amount) throw new Refusal("fee_returned_cents must be less than amount_cents, the gross given back.", "fee_returned_cents");
+    const credit = Math.min(amount, left.credit);
+    const applied = amount - credit;
+
+    // The client gets gross back: the invoice is owed again and their credit shrinks, and the deposit account pays
+    // all of it except any fee the processor returned.
+    const legs: [number, number][] = [
+      [invoiceAccount(db, "receivable", ctx), applied],
+      [invoiceAccount(db, "clientCredits", ctx), credit],
+      [p.deposit_account_id, -(amount - fee)],
+      [namedAccount(db, FEE_ACCOUNT, ctx.source, "fee_returned_cents"), -fee],
+    ];
     const entry = postEntry(db, input.date, `Refund of payment ${p.id} on invoice ${inv.number}: ${input.reason}`, legs, ctx.source);
     const { id } = db
-      .query("INSERT INTO refunds (payment_id, date, reason, entry_id, source) VALUES (?, ?, ?, ?, ?) RETURNING id")
-      .get(p.id, input.date, input.reason, entry, ctx.source) as { id: number };
-    if (p.credit_cents > 0) {
+      .query(
+        `INSERT INTO refunds (payment_id, date, reason, amount_cents, fee_returned_cents, applied_cents, credit_cents, entry_id, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      )
+      .get(p.id, input.date, input.reason, amount, fee, applied, credit, entry, ctx.source) as { id: number };
+    if (credit > 0) {
       db.query("INSERT INTO client_credits (client_id, date, amount_cents, payment_id, refund_id, source) VALUES (?, ?, ?, ?, ?, ?)").run(
-        inv.client_id, input.date, -p.credit_cents, p.id, id, ctx.source,
+        inv.client_id, input.date, -credit, p.id, id, ctx.source,
       );
     }
-    return { payment: paymentView(db, p.id) };
+    return { payment: paymentView(db, p.id), refund_id: id };
+  },
+};
+
+const clientCreditApply: Op = {
+  name: "client_credit_apply",
+  kind: "write",
+  description:
+    "Apply a client's credit, held from an overpayment, to one of that client's issued invoices. The invoice's open balance and the client's credit balance both drop by the amount, posted as one entry; the money never leaves the books, so this isn't gated. amount_cents defaults to as much as the credit and the invoice allow.",
+  fields: {
+    client_id: { type: "int", required: true, min: 1, description: "The client whose credit is used." },
+    invoice_id: { type: "int", required: true, min: 1, description: "That client's issued invoice the credit pays down." },
+    date: { type: "date", required: true, description: "Day the credit is applied, YYYY-MM-DD." },
+    amount_cents: {
+      type: "int", min: 1, max: MAX_CENTS, unit: "cents",
+      description: "How much credit to apply. Default: the smaller of the client's credit and what the invoice still owes.",
+    },
+  },
+  run(db, input, ctx) {
+    const client = db.query("SELECT id, name FROM clients WHERE id = ?").get(input.client_id) as { id: number; name: string } | null;
+    if (!client) throw new Refusal(`There is no client with id ${input.client_id}.`, "client_id");
+    const inv = requireInvoice(db, input.invoice_id, "invoice_id");
+    if (inv.kind !== "invoice") throw new Refusal(`Credit note ${displayNumber(inv)} is owed to the client, so credit can't be applied to it.`, "invoice_id");
+    if (inv.status === "draft") throw new Refusal(`Draft invoice ${inv.id} hasn't been issued, so credit can't be applied to it yet.`, "invoice_id");
+    if (inv.status === "void") throw new Refusal(`Invoice ${inv.number} is void, so nothing on it can be paid.`, "invoice_id");
+    if (inv.client_id !== client.id) {
+      throw new Refusal(`Invoice ${inv.number} belongs to another client, and a client's credit only pays their own invoices.`, "invoice_id");
+    }
+    const balance = creditBalance(db, client.id);
+    if (balance <= 0) throw new Refusal(`${client.name} has no client credit to apply.`, "client_id");
+    const open = openBalance(db, inv);
+    if (open <= 0) throw new Refusal(`Invoice ${inv.number} has nothing left owing, so there is nothing to apply credit to.`, "invoice_id");
+    const amount: number = input.amount_cents ?? Math.min(balance, open);
+    if (amount > balance) throw new Refusal(`amount_cents can be at most ${balance}, the credit ${client.name} holds.`, "amount_cents");
+    if (amount > open) throw new Refusal(`amount_cents can be at most ${open}, what invoice ${inv.number} still owes.`, "amount_cents");
+
+    // What was held for the client settles what they owe.
+    const legs: [number, number][] = [
+      [invoiceAccount(db, "clientCredits", ctx), amount],
+      [invoiceAccount(db, "receivable", ctx), -amount],
+    ];
+    const entry = postEntry(db, input.date, `Client credit applied to invoice ${inv.number} for ${client.name}`, legs, ctx.source);
+    const { id } = db
+      .query("INSERT INTO credit_applications (client_id, invoice_id, date, amount_cents, entry_id, source) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
+      .get(client.id, inv.id, input.date, amount, entry, ctx.source) as { id: number };
+    db.query("INSERT INTO client_credits (client_id, date, amount_cents, application_id, source) VALUES (?, ?, ?, ?, ?)").run(
+      client.id, input.date, -amount, id, ctx.source,
+    );
+    return {
+      applied: { id, client_id: client.id, invoice_id: inv.id, invoice_number: String(inv.number), date: input.date, amount_cents: amount, entry_id: entry },
+      invoice_open_cents: openBalance(db, inv),
+      client_balance_cents: creditBalance(db, client.id),
+    };
   },
 };
 
@@ -207,11 +316,15 @@ const paymentList: Op = {
 const clientCredits: Op = {
   name: "client_credits",
   kind: "read",
-  description: "Show money held for clients from overpayments: each credit row, and each client's balance.",
+  description:
+    "Show money held for clients from overpayments: each credit row (an overpayment adds, a refund of it or applying it to an invoice takes away), and each client's balance.",
   fields: { client_id: { type: "int", min: 1, description: "Only this client." } },
   run(db, input) {
     const credits = db
-      .query("SELECT id, client_id, date, amount_cents, payment_id, refund_id, source FROM client_credits WHERE ?1 IS NULL OR client_id = ?1 ORDER BY id")
+      .query(
+        `SELECT x.id, x.client_id, x.date, x.amount_cents, x.payment_id, x.refund_id, x.application_id, a.invoice_id AS applied_to_invoice_id, x.source
+         FROM client_credits x LEFT JOIN credit_applications a ON a.id = x.application_id WHERE ?1 IS NULL OR x.client_id = ?1 ORDER BY x.id`,
+      )
       .all(input.client_id ?? null);
     const balances = db
       .query(
@@ -223,4 +336,4 @@ const clientCredits: Op = {
   },
 };
 
-export const paymentOps: Op[] = [paymentAdd, paymentRefund, paymentList, clientCredits];
+export const paymentOps: Op[] = [paymentAdd, paymentRefund, paymentList, clientCredits, clientCreditApply];

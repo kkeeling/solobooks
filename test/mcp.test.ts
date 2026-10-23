@@ -196,6 +196,7 @@ const WRITES = [
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
   "transfer_add", "owner_draw", "owner_contribute", "payment_add", "payment_refund", "bank_import", "bank_match",
+  "client_credit_apply",
 ];
 
 test("ISC-89 annotations: every read-only tool says readOnlyHint true, and no write tool does", async () => {
