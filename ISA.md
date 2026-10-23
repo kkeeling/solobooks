@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 22/104
+progress: 36/105
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -112,22 +112,22 @@ Why: solobooks keeps time from any source and never decides how it was tracked.
 
 - [x] ISC-25: A time entry carries client, date, duration and a note.
 - [x] ISC-26: Anti: the core contains no code that reads agent logs or runs timers.
-- [ ] ISC-27: Editing a time entry on an issued invoice is refused with a reason.
+- [x] ISC-27: Editing a time entry on an issued invoice is refused with a reason.
 - [x] ISC-28: Unbilled time entries can be edited and deleted freely.
 
 ### F4 · Invoices and client documents
 Why: what reaches a client is always correct, numbered without gaps, and never sent final before approval.
 
-- [ ] ISC-29: A period's draft includes its unbilled time, fixed fees, recurring fees and pass-through costs.
-- [ ] ISC-30: A draft invoice PDF is stamped DRAFT and carries no final number.
-- [ ] ISC-31: An issued PDF carries every standard field (seller name, address, EIN, client, number, invoice date, service period, lines, subtotal, tax, total, terms, due date).
-- [ ] ISC-32: Invoice numbers continue from the configured next number with no gaps.
-- [ ] ISC-33: Anti: deleting an issued invoice is refused; voiding keeps the record.
-- [ ] ISC-34: A credit note references the original invoice number.
-- [ ] ISC-35: The invoice email text carries the invoice number, amount and due date.
-- [ ] ISC-36: The overdue reminder text carries the unpaid balance and days late.
-- [ ] ISC-37: An invoice is marked sent only when the agent reports sending it.
-- [ ] ISC-38: Draft invoices can be edited and deleted freely.
+- [x] ISC-29: A period's draft includes its unbilled time, fixed fees, recurring fees and pass-through costs.
+- [x] ISC-30: A draft invoice PDF is stamped DRAFT and carries no final number.
+- [x] ISC-31: An issued PDF carries every standard field (seller name, address, EIN, client, number, invoice date, service period, lines, subtotal, tax, total, terms, due date).
+- [x] ISC-32: Invoice numbers continue from the configured next number with no gaps.
+- [x] ISC-33: Anti: deleting an issued invoice is refused; voiding keeps the record.
+- [x] ISC-34: A credit note references the original invoice number.
+- [x] ISC-35: The invoice email text carries the invoice number, amount and due date.
+- [x] ISC-36: The overdue reminder text carries the unpaid balance and days late.
+- [x] ISC-37: An invoice is marked sent only when the agent reports sending it.
+- [x] ISC-38: Draft invoices can be edited and deleted freely.
 
 ### F5 · Payments
 Why: what lands in the bank, what the client paid and what the processor kept always reconcile to the 1099-K.
@@ -141,8 +141,8 @@ Why: what lands in the bank, what the client paid and what the processor kept al
 ### F6 · Expenses and bank import
 Why: the bank statement becomes the books with the person seeing only the few lines that need a human.
 
-- [ ] ISC-44: An expense carries an attached receipt file.
-- [ ] ISC-45: A pass-through cost links to the invoice that recovers it.
+- [x] ISC-44: An expense carries an attached receipt file.
+- [x] ISC-45: A pass-through cost links to the invoice that recovers it.
 - [ ] ISC-46: Importing the same bank CSV twice adds zero lines the second time.
 - [ ] ISC-47: Exact matches to payments and expenses are made automatically on import.
 - [ ] ISC-48: Unmatched lines land on one list.
@@ -154,6 +154,7 @@ Why: tax collected for a state is tracked as owed money, never mistaken for inco
 - [ ] ISC-50: Tax collected is recorded as owed and excluded from income.
 - [ ] ISC-51: The owed-by-period report matches tax collected minus payments to the state.
 - [ ] ISC-52: Anti: no tax line appears on an invoice unless the person set a rate on that client.
+- [x] ISC-105: A tax rate applies only to the line kinds the person listed for that client.
 
 ### F8 · Year-end records and reports
 Why: a full year goes to an accountant with nothing missing, so there are no follow-up questions.
@@ -302,6 +303,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-50 | bun-test | tax collected | liability, not income | bun test test/tax.test.ts -t "liability" | derived: sales-tax |
 | ISC-51 | bun-property | owed report vs collected minus paid | equal | bun test test/tax.property.test.ts | derived: sales-tax |
 | ISC-52 | bun-test | client without rate | no tax line | bun test test/tax.test.ts -t "never decides" | derived: not-an-accountant |
+| ISC-105 | bun-test | pass-through taxed only when listed | untaxed unless listed | bun test test/tax.test.ts -t "applies to" | derived: not-an-accountant |
 | ISC-53 | bun-test | trips on 2026-06-30 and 2026-07-01 | 72.5¢ and 76¢ | bun test test/mileage.test.ts | derived: year-end |
 | ISC-54 | bun-test | year-end export | home office present | bun test test/yearend.test.ts -t "home office" | derived: year-end |
 | ISC-55 | bun-test | owner items | separate totals, not in P&L | bun test test/yearend.test.ts -t "owner items" | derived: year-end |
@@ -391,11 +393,22 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Climb order: (1) bill one client, (2) gate, (3) install and onboarding, (4) money reconciles, (5) tax and year-end, (6) durability, add-on, page.
 - 2026-10-23: Build calls accepted from step 1a: every write requires `--source` (no default, since a default explains nothing); no default books folder yet, decided in step 3 with `solobooks setup`; a generic `entry post` and `account add`/`list` ledger primitive exists; MCP input validation is left to the core so CLI and MCP refuse identically; `SOLOBOOKS_NOW` pins the clock for parity tests.
 - 2026-10-23: refined: ISC-2 probe pointed at `src/db` (the schema lives in migrations) and given an exit check; ISC-26 and ISC-104 probe cells rewritten so the whole command sits in one code span.
+- 2026-10-23: Build calls accepted from step 1b: credit notes have their own CN- number series so invoice numbers stay gap-free; issuing refuses until all 13 invoice fields exist; the business profile's next invoice number freezes after the first issue; credit notes issue at once, so the step-2 gate must wrap invoice credit and invoice void as well as issue; voiding releases billed items to be billed again; returned file paths are relative to the books folder.
+- 2026-10-23: refined: the first build taxed whole subtotals including pass-throughs, which made solobooks decide taxability. Setting a client tax rate now requires the line kinds it covers, with no default (ISC-105 added).
+- 2026-10-23: refined: a period's draft now pulls every unbilled item dated on or before the period end and marks earlier ones carried over, so a late-entered entry is never left unbilled.
 - 2026-10-22: Named solobooks. It was free on npm and Homebrew that day, and the only GitHub match was a 2-star repo. No trademark search yet.
+
+## Learning
+
+- 2026-10-23 | conjectured: a period's invoice draft should hold only items dated inside that period
+  refuted by: a September entry recorded in October lands on no draft, ever; it would go unbilled silently
+  learned: billing periods are labels, not filters; the unbilled set is what must drain
+  criterion now: ISC-29's test covers a carried-over late entry and a skipped month's milestone and recurring fee
 
 ## Verification
 
 - ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
+- ISC-27, 29..38, 44, 45, 105: probes as written, rerun independently 2026-10-23 — `bun test` 51 pass 0 fail; issued and draft PDFs from a hand-run CLI billing viewed as rendered images — commits 463e5e5, 3eef074, 0ae1816
 
 ## Remaining Work
 
@@ -405,4 +418,5 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
+- [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
 - [ ] Flip the repo public — waits on the trademark search and the docs scrub above.
