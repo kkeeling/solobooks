@@ -6,6 +6,8 @@ dist/
 .DS_Store
 *.sqlite
 *.sqlite-*
+# books saved by each schema version, which every release must open (ISC-94)
+!test/fixtures/books/*.sqlite
 .env
 
 # Beads / Dolt files (added by bd init)
