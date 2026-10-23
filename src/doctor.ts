@@ -141,6 +141,15 @@ export async function doctor(argv: string[], env: Env) {
 
   for (const a of detected) {
     const check = `${a.name} MCP`;
+    if (a.plugin) {
+      const problem = answered(await ask([join(a.plugin, "plugin", "mcp.sh")]));
+      checks.push(
+        problem === null
+          ? { check, ok: true, detail: `the solobooks plugin's server answered with all ${OPS.length} tools` }
+          : { check, ok: false, detail: `The solobooks plugin's server doesn't work: ${problem}.`, fix: "Run claude plugin update solobooks@solobooks, and install the solobooks app if it's missing." },
+      );
+      continue;
+    }
     let e: Record<string, unknown> | null;
     try {
       e = readEntry(a);

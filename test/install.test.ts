@@ -83,3 +83,24 @@ test("setup edits a Codex config table by table, and leaves a config it can't re
   expect(readFileSync(join(home, ".claude.json"), "utf8")).toBe("{ not json");
   expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe('mcp_servers = { solobooks = { command = "x" } }\n');
 });
+
+test("with the solobooks plugin in Claude Code, setup adds no second entry, and doctor checks the plugin's server", async () => {
+  const home = tempDir();
+  mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+  // This checkout stands in for the plugin's install folder; a wrapper stands in for the installed binary.
+  writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "solobooks@solobooks": [{ scope: "user", installPath: ROOT }] } }));
+  const bin = join(home, "solobooks-bin");
+  writeFileSync(bin, `#!/bin/sh\nexec "${process.execPath}" "${join(ROOT, "src", "cli.ts")}" "$@"\n`, { mode: 0o755 });
+
+  const r = await setupIn(home);
+  expect(r.agents[0]).toEqual({ agent: "Claude Code", detected: true, mcp: "plugin", plugin: ROOT });
+  expect(r.skills.map((s: any) => s.folder)).toEqual([join(home, ".agents", "skills", "solobooks")]);
+  expect(statSync(join(home, ".claude.json"), { throwIfNoEntry: false })).toBeUndefined();
+
+  const env = { HOME: home, SOLOBOOKS_BIN: bin, PATH: "/usr/bin:/bin" };
+  const ok = JSON.parse((await install("doctor", [], env)).stdout);
+  expect(ok.ok).toBe(true);
+  expect(ok.checks.find((c: any) => c.check === "Claude Code MCP").detail).toContain("the solobooks plugin's server answered");
+  const broken = await install("doctor", [], { ...env, SOLOBOOKS_BIN: "/nonexistent" });
+  expect(broken.code).toBe(1); // the launcher finds no binary, so the plugin's server can't answer
+}, 30_000);

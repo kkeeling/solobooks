@@ -63,7 +63,7 @@ export function installSkill(skillsDir: string): boolean {
 
 /** Where the guide goes: the shared folder, plus each detected agent's own. */
 export function skillDirs(env: Env, agents: Agent[]): string[] {
-  return [sharedSkillDir(env), ...agents.filter((a) => a.detected).flatMap((a) => a.skillDirs)];
+  return [sharedSkillDir(env), ...agents.filter((a) => a.detected && !a.plugin).flatMap((a) => a.skillDirs)];
 }
 
 export function setup(argv: string[], env: Env) {
@@ -90,6 +90,7 @@ export function setup(argv: string[], env: Env) {
   const command = mcpCommand();
   const connected = agents.map((a) => {
     if (!a.detected) return { agent: a.name, detected: false };
+    if (a.plugin) return { agent: a.name, detected: true, mcp: "plugin", plugin: a.plugin };
     try {
       return { agent: a.name, detected: true, config: a.config, mcp: writeEntry(a, command) };
     } catch (e) {

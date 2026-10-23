@@ -23,6 +23,28 @@ export interface Agent {
   entry(command: string[]): Record<string, unknown>;
   /** Skill folders this agent reads, besides the shared ~/.agents/skills. */
   skillDirs: string[];
+  /**
+   * Where the solobooks Claude Code plugin is installed, when it is. The plugin carries its own MCP server and skill,
+   * so setup adds no second entry beside it.
+   */
+  plugin?: string;
+}
+
+/** The install folder of the solobooks plugin in Claude Code's plugin list, or undefined. */
+function pluginInstall(claudeDir: string): string | undefined {
+  const file = join(claudeDir, "plugins", "installed_plugins.json");
+  if (!existsSync(file)) return undefined;
+  try {
+    const list = JSON.parse(readFileSync(file, "utf8")).plugins ?? {};
+    for (const [key, installs] of Object.entries(list)) {
+      if (!key.startsWith(`${SERVER}@`) || !Array.isArray(installs)) continue;
+      const path = installs.find((i: any) => typeof i?.installPath === "string")?.installPath;
+      if (path) return path;
+    }
+  } catch {
+    // An unreadable plugin list means no plugin solobooks can rely on.
+  }
+  return undefined;
 }
 
 const exists = (p: string) => existsSync(p);
@@ -44,6 +66,7 @@ export function knownAgents(env: Env): Agent[] {
       format: "json",
       entry: ([command, ...args]) => ({ type: "stdio", command, args, env: {} }),
       skillDirs: [join(claudeDir, "skills")],
+      plugin: pluginInstall(claudeDir),
     },
     {
       name: "Codex",

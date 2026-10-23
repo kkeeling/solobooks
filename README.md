@@ -25,11 +25,14 @@ curl -fsSL https://raw.githubusercontent.com/kkeeling/solobooks/main/install.sh 
 ~/.local/bin/solobooks doctor
 ```
 
-or install the plugin, which carries the MCP server and the skill (use one route, not both):
+or, to get updates through Claude Code, install the plugin, which carries the MCP server and the skill. Install it before running setup: setup sees the plugin and adds no second connection, and still picks your books folder.
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/kkeeling/solobooks/main/install.sh | sh
 claude plugin marketplace add kkeeling/solobooks
 claude plugin install solobooks@solobooks
+~/.local/bin/solobooks setup
+~/.local/bin/solobooks doctor
 ```
 
 Restart Claude Code so it loads the solobooks tools.
