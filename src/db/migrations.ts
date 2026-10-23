@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import m001 from "./001_init.sql" with { type: "text" };
 import m002 from "./002_invoices.sql" with { type: "text" };
+import m003 from "./003_tax_scope.sql" with { type: "text" };
 
 /** Numbered migrations, applied in order. The file's PRAGMA user_version is the last one applied. */
-export const MIGRATIONS: readonly string[] = [m001, m002];
+export const MIGRATIONS: readonly string[] = [m001, m002, m003];
 
 export function migrate(db: Database): void {
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };

@@ -1,4 +1,4 @@
-import { requireClient } from "./clients.ts";
+import { parseKinds, requireClient, TAX_KINDS, type TaxKind } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { addDays, monthName, taxCents, today } from "./format.ts";
 import type { Ctx, Op } from "./op.ts";
@@ -24,6 +24,7 @@ export type InvoiceRow = {
   due_date: string | null;
   tax_rate_ppm: number | null;
   tax_label: string | null;
+  tax_applies_to: string | null;
   seller_legal_name: string | null;
   seller_address: string | null;
   seller_ein: string | null;
@@ -51,6 +52,8 @@ export type LineRow = {
   engagement_id: number | null;
   cycle_start: string | null;
   expense_id: number | null;
+  /** The date of what the line bills: the time entry's day, the milestone's billable day, the cycle start, the cost's day. */
+  item_date: string | null;
 };
 
 export function getInvoiceRow(db: Books, id: number): InvoiceRow | null {
@@ -66,7 +69,7 @@ export function requireInvoice(db: Books, id: number, field = "id"): InvoiceRow 
 export function linesOf(db: Books, invoiceId: number): LineRow[] {
   return db
     .query(
-      `SELECT id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id
+      `SELECT id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, item_date
        FROM invoice_lines WHERE invoice_id = ? ORDER BY id`,
     )
     .all(invoiceId) as LineRow[];
@@ -84,14 +87,25 @@ export function docName(r: InvoiceRow): string {
   return r.kind === "credit" ? `credit note ${displayNumber(r)}` : `invoice ${r.number}`;
 }
 
-/** Sums, computed from the lines every time. A draft uses the client's current tax rate; an issued one its own. */
+/**
+ * Sums, computed from the lines every time. Tax applies only to the kinds of line the person listed for the client.
+ * A draft uses the client's current rate; an issued document the rate it was issued with.
+ */
 export function amounts(db: Books, r: InvoiceRow) {
   const lines = linesOf(db, r.id);
-  const rate = r.status === "draft" && r.kind === "invoice" ? requireClient(db, r.client_id).tax_rate_ppm : r.tax_rate_ppm;
-  const label = r.status === "draft" && r.kind === "invoice" ? requireClient(db, r.client_id).tax_label : r.tax_label;
-  const subtotal = lines.reduce((s, l) => s + l.amount_cents, 0);
-  const passThrough = lines.filter((l) => l.kind === "pass_through").reduce((s, l) => s + l.amount_cents, 0);
-  const tax = rate === null ? null : { label: label ?? "Sales tax", rate_ppm: rate, amount_cents: taxCents(subtotal, rate) };
+  const live = r.status === "draft" && r.kind === "invoice" ? requireClient(db, r.client_id) : null;
+  const rate = live ? live.tax_rate_ppm : r.tax_rate_ppm;
+  const label = live ? live.tax_label : r.tax_label;
+  const kinds = live ? live.tax_applies_to : parseKinds(r.tax_applies_to);
+  const sum = (ls: LineRow[]) => ls.reduce((s, l) => s + l.amount_cents, 0);
+  const subtotal = sum(lines);
+  const passThrough = sum(lines.filter((l) => l.kind === "pass_through"));
+  const taxable = rate === null || kinds === null ? 0 : sum(lines.filter((l) => kinds.includes(l.kind)));
+  // No taxable lines, no tax line.
+  const tax =
+    rate === null || taxable === 0
+      ? null
+      : { label: label ?? "Sales tax", rate_ppm: rate, applies_to: kinds, taxable_cents: taxable, amount_cents: taxCents(taxable, rate) };
   return { lines, subtotal, passThrough, tax, total: subtotal + (tax?.amount_cents ?? 0) };
 }
 
@@ -123,7 +137,8 @@ export function invoiceView(db: Books, id: number) {
     terms_days: r.terms_days,
     invoice_date: r.invoice_date,
     due_date: r.due_date,
-    lines: a.lines,
+    // A line dated before the period was unbilled when the draft was made, so it was carried over.
+    lines: a.lines.map((l) => ({ ...l, carried_over: l.item_date !== null && l.item_date < r.period_start })),
     subtotal_cents: a.subtotal,
     tax: a.tax,
     total_cents: a.total,
@@ -191,9 +206,9 @@ const ON_LIVE_INVOICE = (col: string) =>
 
 type NewLine = Omit<LineRow, "id">;
 
-const blank = { time_entry_id: null, milestone_id: null, engagement_id: null, cycle_start: null, expense_id: null };
+const blank = { time_entry_id: null, milestone_id: null, engagement_id: null, cycle_start: null, expense_id: null, item_date: null };
 
-/** First days of the recurring-fee cycles that start inside a period. */
+/** First days of the recurring-fee cycles that start between two days. */
 function cycleStarts(interval: string, start: string, end: string): string[] {
   const step = interval === "monthly" ? 1 : interval === "quarterly" ? 3 : 12;
   const out: string[] = [];
@@ -218,61 +233,75 @@ function cycleName(interval: string, d: string): string {
   return String(y);
 }
 
-/** Everything unbilled for a client dated within a period: time, fixed fees, recurring fees and pass-through costs. */
+/**
+ * Everything unbilled for a client dated on or before the period's end: time, billable milestones, recurring cycles
+ * and pass-through costs. Items from before the period are carried over, so nothing billable is left behind.
+ */
 function unbilled(db: Books, clientId: number, start: string, end: string): NewLine[] {
   const lines: NewLine[] = [];
   const time = db
     .query(
-      `SELECT x.id FROM time_entries x WHERE x.client_id = ? AND x.date BETWEEN ? AND ? AND NOT ${ON_LIVE_INVOICE("time_entry_id")}
+      `SELECT x.id, x.date FROM time_entries x WHERE x.client_id = ? AND x.date <= ? AND NOT ${ON_LIVE_INVOICE("time_entry_id")}
        ORDER BY x.date, x.id`,
     )
-    .all(clientId, start, end) as { id: number }[];
-  for (const { id } of time) lines.push({ ...blank, kind: "time", ...timeLine(db, getTimeEntry(db, id)!), time_entry_id: id });
+    .all(clientId, end) as { id: number; date: string }[];
+  for (const t of time) {
+    lines.push({ ...blank, kind: "time", ...timeLine(db, getTimeEntry(db, t.id)!), time_entry_id: t.id, item_date: t.date });
+  }
 
   const fixed = db
     .query(
-      `SELECT x.id, x.name, x.amount_cents, e.name AS engagement FROM milestones x JOIN engagements e ON e.id = x.engagement_id
-       WHERE e.client_id = ? AND x.billable_on BETWEEN ? AND ? AND NOT ${ON_LIVE_INVOICE("milestone_id")} ORDER BY x.billable_on, x.id`,
+      `SELECT x.id, x.name, x.amount_cents, x.billable_on, e.name AS engagement FROM milestones x JOIN engagements e ON e.id = x.engagement_id
+       WHERE e.client_id = ? AND x.billable_on <= ? AND NOT ${ON_LIVE_INVOICE("milestone_id")} ORDER BY x.billable_on, x.id`,
     )
-    .all(clientId, start, end) as { id: number; name: string; amount_cents: number; engagement: string }[];
+    .all(clientId, end) as { id: number; name: string; amount_cents: number; billable_on: string; engagement: string }[];
   for (const f of fixed) {
-    lines.push({ ...blank, kind: "fixed", description: `${f.engagement}: ${f.name}`, amount_cents: f.amount_cents, milestone_id: f.id });
+    lines.push({
+      ...blank, kind: "fixed", description: `${f.engagement}: ${f.name}`, amount_cents: f.amount_cents, milestone_id: f.id, item_date: f.billable_on,
+    });
   }
 
   const recurring = db
     .query("SELECT id, name, recurring_amount_cents AS amt, recurring_interval AS iv FROM engagements WHERE client_id = ? AND recurring_amount_cents IS NOT NULL ORDER BY id")
     .all(clientId) as { id: number; name: string; amt: number; iv: string }[];
-  const billedCycle = db.query(
-    `SELECT 1 FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
-     WHERE l.engagement_id = ? AND l.cycle_start = ? AND l.kind = 'recurring' AND i.status <> 'void'`,
-  );
+  const liveCycles = `FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+     WHERE l.engagement_id = ? AND l.kind = 'recurring' AND i.status <> 'void'`;
+  const billedCycle = db.query(`SELECT 1 ${liveCycles} AND l.cycle_start = ?`);
+  const firstBilled = db.query(`SELECT MIN(l.cycle_start) AS d ${liveCycles}`);
   for (const e of recurring) {
-    for (const d of cycleStarts(e.iv, start, end)) {
+    // An engagement has no start date, so cycles are owed from the first one ever billed; before any is billed,
+    // the period's own cycles are where billing starts.
+    const first = (firstBilled.get(e.id) as { d: string | null }).d;
+    for (const d of cycleStarts(e.iv, first !== null && first < start ? first : start, end)) {
       if (billedCycle.get(e.id, d)) continue;
-      lines.push({ ...blank, kind: "recurring", description: `${e.name}, ${cycleName(e.iv, d)}`, amount_cents: e.amt, engagement_id: e.id, cycle_start: d });
+      lines.push({
+        ...blank, kind: "recurring", description: `${e.name}, ${cycleName(e.iv, d)}`, amount_cents: e.amt, engagement_id: e.id, cycle_start: d, item_date: d,
+      });
     }
   }
 
   const costs = db
     .query(
       `SELECT x.id, x.date, x.vendor, x.memo, x.amount_cents FROM expenses x
-       WHERE x.pass_through_client_id = ? AND x.date BETWEEN ? AND ? AND NOT ${ON_LIVE_INVOICE("expense_id")} ORDER BY x.date, x.id`,
+       WHERE x.pass_through_client_id = ? AND x.date <= ? AND NOT ${ON_LIVE_INVOICE("expense_id")} ORDER BY x.date, x.id`,
     )
-    .all(clientId, start, end) as { id: number; date: string; vendor: string; memo: string | null; amount_cents: number }[];
+    .all(clientId, end) as { id: number; date: string; vendor: string; memo: string | null; amount_cents: number }[];
   for (const c of costs) {
     const what = c.memo ? `${c.vendor}, ${c.memo}` : c.vendor;
-    lines.push({ ...blank, kind: "pass_through", description: `${c.date} ${what} (pass-through cost)`, amount_cents: c.amount_cents, expense_id: c.id });
+    lines.push({
+      ...blank, kind: "pass_through", description: `${c.date} ${what} (pass-through cost)`, amount_cents: c.amount_cents, expense_id: c.id, item_date: c.date,
+    });
   }
   return lines;
 }
 
 function insertLines(db: Books, invoiceId: number, lines: NewLine[], ctx: Ctx): void {
   const ins = db.query(
-    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, item_date, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lines) {
-    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, ctx.source);
+    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, l.item_date, ctx.source);
   }
 }
 
@@ -303,7 +332,7 @@ const invoiceDraft: Op = {
   name: "invoice_draft",
   kind: "write",
   description:
-    "Draft an invoice for a client and service period. It pulls in everything unbilled dated in the period: time, fixed-fee milestones billable then, recurring fees whose cycle starts then, and pass-through costs. A draft holds no number and can be edited or deleted freely.",
+    "Draft an invoice for a client and service period. It pulls in everything unbilled dated on or before the period's end: time, fixed-fee milestones billable by then, recurring fee cycles starting by then, and pass-through costs. Lines from before the period are marked carried_over. A draft holds no number and can be edited or deleted freely.",
   fields: {
     client_id: { type: "int", required: true, min: 1, description: "Client id." },
     period_start: { type: "date", required: true, description: "First day of the service period, YYYY-MM-DD." },
@@ -317,7 +346,7 @@ const invoiceDraft: Op = {
     if (input.period_start > input.period_end) throw new Refusal("period_start must be on or before period_end.", "period_start");
     const lines = [...unbilled(db, client.id, input.period_start, input.period_end), ...manual(input.lines)];
     if (lines.length === 0) {
-      throw new Refusal("Nothing unbilled for this client is dated in that period, so there is nothing to draft.", "period_end");
+      throw new Refusal("Nothing unbilled for this client is dated on or before period_end, so there is nothing to draft.", "period_end");
     }
     const { id } = db
       .query(
@@ -408,7 +437,7 @@ export function issueInvoice(db: Books, id: number, ctx: Ctx) {
   const number = nextInvoiceNumber(db);
   const date = today(ctx.now);
   db.query(
-    `UPDATE invoices SET status = 'issued', number = ?, invoice_date = ?, due_date = ?, tax_rate_ppm = ?, tax_label = ?,
+    `UPDATE invoices SET status = 'issued', number = ?, invoice_date = ?, due_date = ?, tax_rate_ppm = ?, tax_label = ?, tax_applies_to = ?,
        seller_legal_name = ?, seller_address = ?, seller_ein = ?, seller_email = ?, payment_instructions = ?,
        client_name = ?, client_address = ?, client_email = ?, issued_at = ? WHERE id = ?`,
   ).run(
@@ -417,6 +446,7 @@ export function issueInvoice(db: Books, id: number, ctx: Ctx) {
     addDays(date, r.terms_days),
     client.tax_rate_ppm,
     client.tax_label,
+    client.tax_applies_to?.join(",") ?? null,
     p.legal_name,
     p.address,
     p.ein,
@@ -485,11 +515,15 @@ const invoiceCredit: Op = {
   name: "invoice_credit",
   kind: "write",
   description:
-    "Issue a credit note against an issued invoice, reducing what the client owes. With no amount it credits everything still open; amount_cents is before tax, and tax is credited at the invoice's rate.",
+    "Issue a credit note against an issued invoice, reducing what the client owes. With no amount it credits everything still open; amount_cents is before tax. Tax is credited at the invoice's rate when line_kind is one the tax applied to.",
   fields: {
     invoice_id: { type: "int", required: true, min: 1, description: "The issued invoice being credited." },
     reason: { type: "text", required: true, description: "Why, printed on the credit note." },
     amount_cents: { type: "int", min: 1, max: MAX_CENTS, unit: "cents", description: "Amount to credit before tax. Default: all that is still open." },
+    line_kind: {
+      type: "enum", values: TAX_KINDS,
+      description: "The kind of line a partial credit reduces, which decides whether tax is credited with it. Required when the invoice carries a tax rate; otherwise manual.",
+    },
   },
   run(db, input, ctx) {
     const orig = requireInvoice(db, input.invoice_id, "invoice_id");
@@ -505,11 +539,18 @@ const invoiceCredit: Op = {
     if (amount > openSubtotal) {
       throw new Refusal(`That is more than the ${openSubtotal} cents still open on invoice ${orig.number}, before tax.`, "amount_cents");
     }
-    // A full first credit mirrors the invoice line by line; anything else is one line.
-    const lines: NewLine[] =
-      prior.length === 0 && amount === a.subtotal
-        ? a.lines.map((l) => ({ ...blank, kind: l.kind, description: l.description, amount_cents: l.amount_cents }))
-        : [{ ...blank, kind: "manual", description: `Credit against invoice ${orig.number}: ${input.reason}`, amount_cents: amount }];
+    // A full first credit mirrors the invoice line by line; anything else is one line, of the kind the person names.
+    const mirror = prior.length === 0 && amount === a.subtotal;
+    if (!mirror && input.line_kind === undefined && orig.tax_rate_ppm !== null) {
+      throw new Refusal(
+        `Invoice ${orig.number} carries sales tax, so say in line_kind which kind of line this credit reduces.`,
+        "line_kind",
+      );
+    }
+    const kind: TaxKind = input.line_kind ?? "manual";
+    const lines: NewLine[] = mirror
+      ? a.lines.map((l) => ({ ...blank, kind: l.kind, description: l.description, amount_cents: l.amount_cents, item_date: l.item_date }))
+      : [{ ...blank, kind, description: `Credit against invoice ${orig.number}: ${input.reason}`, amount_cents: amount }];
     const { id } = db
       .query(
         `INSERT INTO invoices (kind, status, client_id, credits_invoice_id, period_start, period_end, terms_days, note, created_at, source)
@@ -521,7 +562,7 @@ const invoiceCredit: Op = {
     const { n } = db.query("SELECT MAX(number) AS n FROM invoices WHERE kind = 'credit'").get() as { n: number | null };
     const date = today(ctx.now);
     db.query(
-      `UPDATE invoices SET status = 'issued', number = ?, invoice_date = ?, tax_rate_ppm = ?, tax_label = ?,
+      `UPDATE invoices SET status = 'issued', number = ?, invoice_date = ?, tax_rate_ppm = ?, tax_label = ?, tax_applies_to = ?,
          seller_legal_name = ?, seller_address = ?, seller_ein = ?, seller_email = ?, payment_instructions = ?,
          client_name = ?, client_address = ?, client_email = ?, issued_at = ? WHERE id = ?`,
     ).run(
@@ -529,6 +570,7 @@ const invoiceCredit: Op = {
       date,
       orig.tax_rate_ppm,
       orig.tax_label,
+      orig.tax_applies_to,
       orig.seller_legal_name,
       orig.seller_address,
       orig.seller_ein,

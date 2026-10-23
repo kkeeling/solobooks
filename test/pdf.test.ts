@@ -36,7 +36,7 @@ test("ISC-30 draft: a draft invoice PDF is stamped DRAFT and carries no final nu
 });
 
 test("ISC-31 standard fields: an issued PDF carries all 13 standard fields and the payment instructions", async () => {
-  const dir = await acmeBooks({ tax_rate_ppm: 62500, tax_label: "IL sales tax" });
+  const dir = await acmeBooks({ tax_rate_ppm: 62500, tax_label: "IL sales tax", tax_applies_to: ["time", "fixed", "recurring", "pass_through"] });
   const d = await draftOctober(dir);
   await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
   const { lines } = await pdf(dir, d.id);

@@ -137,9 +137,10 @@ const timeEdit: Op = {
         db.query("DELETE FROM invoice_lines WHERE id = ?").run(draft.line_id);
       } else {
         const line = timeLine(db, entry);
-        db.query("UPDATE invoice_lines SET description = ?, amount_cents = ?, source = ? WHERE id = ?").run(
+        db.query("UPDATE invoice_lines SET description = ?, amount_cents = ?, item_date = ?, source = ? WHERE id = ?").run(
           line.description,
           line.amount_cents,
+          entry.date,
           ctx.source,
           draft.line_id,
         );

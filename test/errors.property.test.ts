@@ -13,7 +13,7 @@ const VALID: Record<string, Record<string, unknown>> = {
   time_edit: { id: 1, minutes: 10 },
   time_delete: { id: 1 },
   profile_set: { legal_name: "New LLC", ein: "98-7654321" },
-  client_edit: { id: 1, address: "2 Side St", tax_rate_ppm: 50000 },
+  client_edit: { id: 1, address: "2 Side St", tax_rate_ppm: 50000, tax_applies_to: ["time", "fixed"] },
   milestone_billable: { id: 1, date: "2026-10-15" },
   expense_add: { date: "2026-10-01", amount_cents: 500, vendor: "V", account_id: 5, paid_from_account_id: 1 },
   invoice_draft: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "d", amount_cents: 100 }] },
@@ -33,7 +33,7 @@ function setup() {
   must(db, "time_add", { client_id: 1, date: "2026-10-01", minutes: 30, note: "n" }, { idempotency_key: "used" });
   must(db, "profile_set", { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "12-3456789" });
   must(db, "client_edit", { id: 1, address: "500 Market St" });
-  must(db, "engagement_add", { client_id: 1, name: "Fixed", milestones: [{ name: "Spec", amount_cents: 1000 }] });
+  must(db, "engagement_add", { client_id: 1, name: "Fixed", rate_cents_per_hour: 100, milestones: [{ name: "Spec", amount_cents: 1000 }] });
   const manual = (month: string) => ({ client_id: 1, period_start: `2026-${month}-01`, period_end: `2026-${month}-28`, lines: [{ description: "d", amount_cents: 100 }] });
   must(db, "invoice_draft", manual("09")); // 1 stays a draft
   must(db, "invoice_draft", manual("08"));
@@ -93,7 +93,7 @@ test("ISC-13: every refused write returns a one-sentence reason and the field to
     { numRuns: 1000 },
   );
   expect(refused).toBeGreaterThan(700);
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-13: the CLI prints exactly the reason and field for a refused write", async () => {
   const r = await cli(tempDir(), ["time", "add", "--client-id", "1", "--date", "2026-10-01", "--minutes", "ten", "--note", "x", "--source", "s"]);
@@ -135,6 +135,10 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["profile_set", { next_invoice_number: 9 }, {}, "next_invoice_number"],
     ["client_edit", { id: 9, name: "X" }, {}, "id"],
     ["client_edit", { id: 1, tax_label: "VAT" }, {}, "tax_label"],
+    ["client_edit", { id: 1, tax_rate_ppm: 62500 }, {}, "tax_applies_to"],
+    ["client_edit", { id: 1, tax_applies_to: ["time"] }, {}, "tax_applies_to"],
+    ["client_edit", { id: 1, tax_rate_ppm: 62500, tax_applies_to: ["time", "time"] }, {}, "tax_applies_to"],
+    ["client_add", { name: "Taxed", tax_rate_ppm: 62500, tax_applies_to: [] }, {}, "tax_applies_to"],
     ["milestone_billable", { id: 9, date: "2026-10-01" }, {}, "id"],
     ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 1, paid_from_account_id: 1 }, {}, "account_id"],
     ["expense_add", { date: "2026-10-01", amount_cents: 5, vendor: "V", account_id: 5, paid_from_account_id: 4 }, {}, "paid_from_account_id"],

@@ -122,7 +122,10 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
     y -= size + 5;
   };
   row("Subtotal", doc.subtotal_cents);
-  if (doc.tax) row(`${doc.tax.label} (${percent(doc.tax.rate_ppm)})`, doc.tax.amount_cents);
+  if (doc.tax) {
+    const base = doc.tax.taxable_cents === doc.subtotal_cents ? "" : ` of ${dollars(doc.tax.taxable_cents)}`;
+    row(`${doc.tax.label} (${percent(doc.tax.rate_ppm)}${base})`, doc.tax.amount_cents);
+  }
   row(doc.kind === "credit" ? "Total credit" : "Total due", doc.total_cents, bold, 12);
 
   // Payment instructions and note.

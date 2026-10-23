@@ -4,18 +4,18 @@ import { acmeBooks, cli, issueOctober, ok, S } from "./support/billing.ts";
 import { pdfLines } from "./support/pdf-text.ts";
 
 test("ISC-34: a credit note references the original invoice number", async () => {
-  const dir = await acmeBooks({ tax_rate_ppm: 62500, tax_label: "IL sales tax" });
+  const dir = await acmeBooks({ tax_rate_ppm: 62500, tax_label: "IL sales tax", tax_applies_to: ["time", "fixed", "recurring", "pass_through"] });
   const inv = await issueOctober(dir);
   expect(inv.number).toBe("7001");
 
-  const cn = (await ok(dir, ["invoice", "credit", "--invoice-id", String(inv.id), "--amount-cents", "10000", "--reason", "Goodwill discount", ...S])).credit_note;
+  const cn = (await ok(dir, ["invoice", "credit", "--invoice-id", String(inv.id), "--amount-cents", "10000", "--reason", "Goodwill discount", "--line-kind", "time", ...S])).credit_note;
   expect(cn).toMatchObject({
     kind: "credit",
     status: "issued",
     number: "CN-1",
     credits_invoice: { id: inv.id, number: "7001" },
     subtotal_cents: 10000,
-    tax: { label: "IL sales tax", rate_ppm: 62500, amount_cents: 625 },
+    tax: { label: "IL sales tax", rate_ppm: 62500, taxable_cents: 10000, amount_cents: 625 },
     total_cents: 10625,
   });
   expect(cn.lines.map((l: any) => l.description)).toEqual(["Credit against invoice 7001: Goodwill discount"]);
@@ -40,7 +40,7 @@ test("ISC-34: a credit note references the original invoice number", async () =>
   expect(memo).toBe("Credit note CN-1 for invoice 7001 to Acme Corp");
 
   // Crediting the rest with no amount clears the balance; a third credit is refused, and so is voiding a credited invoice.
-  const rest = (await ok(dir, ["invoice", "credit", "--invoice-id", String(inv.id), "--reason", "Project cancelled", ...S])).credit_note;
+  const rest = (await ok(dir, ["invoice", "credit", "--invoice-id", String(inv.id), "--reason", "Project cancelled", "--line-kind", "time", ...S])).credit_note;
   expect(rest).toMatchObject({ number: "CN-2", credits_invoice: { number: "7001" } });
   expect((await ok(dir, ["invoice", "get", "--id", String(inv.id)])).invoice.open_cents).toBe(0);
   expect((await cli(dir, ["invoice", "credit", "--invoice-id", String(inv.id), "--reason", "x", ...S])).out.reason).toBe(

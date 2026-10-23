@@ -15,13 +15,25 @@ export type Client = {
   terms_days: number;
   tax_rate_ppm: number | null;
   tax_label: string | null;
+  /** The kinds of invoice line the tax applies to, as the person listed them. */
+  tax_applies_to: TaxKind[] | null;
   source: string;
 };
 
-const CLIENT_COLS = "id, name, increment_minutes, minimum_minutes, address, email, terms_days, tax_rate_ppm, tax_label, source";
+/** Kinds of invoice line a sales tax rate can apply to. */
+export const TAX_KINDS = ["time", "fixed", "recurring", "pass_through", "manual"] as const;
+export type TaxKind = (typeof TAX_KINDS)[number];
+
+export const parseKinds = (s: string | null): TaxKind[] | null => (s === null ? null : (s.split(",") as TaxKind[]));
+
+const CLIENT_COLS =
+  "id, name, increment_minutes, minimum_minutes, address, email, terms_days, tax_rate_ppm, tax_label, tax_applies_to, source";
+
+const toClient = (row: any): Client => ({ ...row, tax_applies_to: parseKinds(row.tax_applies_to) });
 
 export function getClient(db: Books, id: number): Client | null {
-  return db.query(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?`).get(id) as Client | null;
+  const row = db.query(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?`).get(id);
+  return row ? toClient(row) : null;
 }
 
 /** Billing details a client can carry; all optional. */
@@ -34,16 +46,32 @@ const billingFields = {
     description: "Sales tax rate the person set for this client, in parts per million (6.25% is 62500). 0 removes it. No rate, no tax line.",
   },
   tax_label: { type: "text", description: "Name of the tax line, such as IL sales tax. Default Sales tax." },
+  tax_applies_to: {
+    type: "set", values: TAX_KINDS,
+    description:
+      "Which kinds of invoice line the tax rate applies to: time, fixed, recurring, pass_through, manual. Required whenever tax_rate_ppm is set; there is no default, because solobooks never decides what is taxable.",
+  },
 } as const;
 
-/** The tax columns for a requested rate: 0 clears both, and a rate without a label gets the default one. */
-function taxColumns(rate: number | undefined, label: string | undefined, old: { tax_rate_ppm: number | null; tax_label: string | null }) {
+type TaxInput = { tax_rate_ppm?: number; tax_label?: string; tax_applies_to?: TaxKind[] };
+
+/**
+ * The tax columns for a request. A rate always comes with the line kinds it applies to, from the person; 0 clears
+ * all three. A rate without a label gets the default label.
+ */
+function taxColumns(input: TaxInput, old: Pick<Client, "tax_rate_ppm" | "tax_label" | "tax_applies_to">) {
+  const { tax_rate_ppm: rate, tax_label: label, tax_applies_to: kinds } = input;
+  if (rate !== undefined && rate !== 0 && kinds === undefined) {
+    throw new Refusal("A tax rate needs the kinds of line it applies to, so list them in tax_applies_to.", "tax_applies_to");
+  }
   const r = rate === undefined ? old.tax_rate_ppm : rate === 0 ? null : rate;
   if (r === null) {
     if (label !== undefined) throw new Refusal("A tax label needs a tax rate, so set tax_rate_ppm too.", "tax_label");
-    return { tax_rate_ppm: null, tax_label: null };
+    if (kinds !== undefined) throw new Refusal("Taxable line kinds need a tax rate, so set tax_rate_ppm too.", "tax_applies_to");
+    return { tax_rate_ppm: null, tax_label: null, tax_applies_to: null };
   }
-  return { tax_rate_ppm: r, tax_label: label ?? old.tax_label ?? "Sales tax" };
+  const applies = kinds ?? old.tax_applies_to!;
+  return { tax_rate_ppm: r, tax_label: label ?? old.tax_label ?? "Sales tax", tax_applies_to: applies.join(",") };
 }
 
 export function getEngagement(db: Books, id: number) {
@@ -101,11 +129,11 @@ const clientAdd: Op = {
     if (db.query("SELECT 1 FROM clients WHERE name = ?").get(input.name)) {
       throw new Refusal("A client with this name already exists.", "name");
     }
-    const tax = taxColumns(input.tax_rate_ppm, input.tax_label, { tax_rate_ppm: null, tax_label: null });
+    const tax = taxColumns(input, { tax_rate_ppm: null, tax_label: null, tax_applies_to: null });
     const { id } = db
       .query(
-        `INSERT INTO clients (name, increment_minutes, minimum_minutes, address, email, terms_days, tax_rate_ppm, tax_label, source)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO clients (name, increment_minutes, minimum_minutes, address, email, terms_days, tax_rate_ppm, tax_label, tax_applies_to, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
         input.name,
@@ -116,6 +144,7 @@ const clientAdd: Op = {
         input.terms_days ?? 30,
         tax.tax_rate_ppm,
         tax.tax_label,
+        tax.tax_applies_to,
         ctx.source,
       ) as { id: number };
     return { client: getClient(db, id) };
@@ -138,11 +167,11 @@ const clientEdit: Op = {
     if (input.name !== undefined && db.query("SELECT 1 FROM clients WHERE name = ? AND id <> ?").get(input.name, old.id)) {
       throw new Refusal("A client with this name already exists.", "name");
     }
-    const { tax_rate_ppm, tax_label, ...rest } = input;
-    const next = { ...old, ...rest, ...taxColumns(tax_rate_ppm, tax_label, old), source: ctx.source };
+    const { tax_rate_ppm, tax_label, tax_applies_to, ...rest } = input;
+    const next = { ...old, ...rest, ...taxColumns(input, old), source: ctx.source };
     db.query(
       `UPDATE clients SET name = ?, increment_minutes = ?, minimum_minutes = ?, address = ?, email = ?, terms_days = ?,
-         tax_rate_ppm = ?, tax_label = ?, source = ? WHERE id = ?`,
+         tax_rate_ppm = ?, tax_label = ?, tax_applies_to = ?, source = ? WHERE id = ?`,
     ).run(
       next.name,
       next.increment_minutes,
@@ -152,6 +181,7 @@ const clientEdit: Op = {
       next.terms_days,
       next.tax_rate_ppm,
       next.tax_label,
+      next.tax_applies_to,
       next.source,
       old.id,
     );
@@ -165,7 +195,7 @@ const clientList: Op = {
   description: "List clients.",
   fields: {},
   run(db) {
-    return { clients: db.query(`SELECT ${CLIENT_COLS} FROM clients ORDER BY id`).all() };
+    return { clients: db.query(`SELECT ${CLIENT_COLS} FROM clients ORDER BY id`).all().map(toClient) };
   },
 };
 

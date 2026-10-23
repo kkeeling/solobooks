@@ -44,7 +44,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   },
   {
     op: "client_edit",
-    input: { id: 1, address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", tax_rate_ppm: 62500, tax_label: "IL sales tax" },
+    input: { id: 1, address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", tax_rate_ppm: 62500, tax_label: "IL sales tax", tax_applies_to: ["time", "recurring", "manual"] },
   },
   { op: "client_edit", input: { id: 2, address: "9 Elm Rd\nAustin, TX 78701", terms_days: 15 } },
   { op: "milestone_billable", input: { id: 1, date: "2026-10-15" } },
@@ -61,7 +61,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_delete", input: { id: 2 } },
   { op: "invoice_issue", input: { id: 1 } },
   { op: "invoice_sent", input: { id: 1 } },
-  { op: "invoice_credit", input: { invoice_id: 1, amount_cents: 1000, reason: "Goodwill discount" } },
+  { op: "invoice_credit", input: { invoice_id: 1, amount_cents: 1000, reason: "Goodwill discount", line_kind: "time" } },
   { op: "invoice_draft", input: { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31" } },
   { op: "invoice_issue", input: { id: 4 } },
   { op: "invoice_void", input: { id: 4, reason: "Wrong period" } },

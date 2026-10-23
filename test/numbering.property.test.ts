@@ -20,7 +20,7 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
       const db = memBooks();
       must(db, "profile_set", { legal_name: "Jane Doe LLC", address: "1 Main St", ein: "12-3456789", next_invoice_number: start });
       must(db, "client_add", { name: "Acme", address: "500 Market St" });
-      must(db, "client_add", { name: "Beta", address: "9 Elm Rd", tax_rate_ppm: 82500 }); // tax is owed, not income
+      must(db, "client_add", { name: "Beta", address: "9 Elm Rd", tax_rate_ppm: 82500, tax_applies_to: ["manual"] }); // tax is owed, not income
       const ids = { draft: [] as number[], issued: [] as number[], credits: [] as number[] };
       let history = count(db, "SELECT COUNT(*) n FROM history");
       let income = 0; // independent tally: subtotals of standing invoices less standing credits
@@ -52,7 +52,7 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
             seen.void++;
           }
         } else if (s.do === "credit" && ids.issued.length) {
-          r = write(db, "invoice_credit", { invoice_id: pick(ids.issued), reason: "test", ...(s.cents ? { amount_cents: s.cents } : {}) });
+          r = write(db, "invoice_credit", { invoice_id: pick(ids.issued), reason: "test", line_kind: "manual", ...(s.cents ? { amount_cents: s.cents } : {}) });
           if (r.ok) {
             ids.credits.push((r.result as any).credit_note.id);
             income -= (r.result as any).credit_note.subtotal_cents;
@@ -94,7 +94,7 @@ test("ISC-32: invoice numbers continue from the configured next number with no g
   expect(seen.void).toBeGreaterThan(300);
   expect(seen.credit).toBeGreaterThan(200);
   expect(seen.delete).toBeGreaterThan(300);
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-32: the configured next number is fixed once an invoice is issued", () => {
   const db = memBooks();

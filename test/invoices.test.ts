@@ -7,30 +7,41 @@ const kinds = (inv: any) => inv.lines.map((l: any) => l.kind);
 
 test("ISC-29 draft sources: a period's draft pulls in its unbilled time, fixed fees, recurring fees and pass-through costs", async () => {
   const dir = await acmeBooks();
+  // Entered late: September work nobody billed. October's draft must carry it over, not leave it behind.
+  await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-09-29", "--minutes", "30", "--note", "Kickoff call", ...S]);
   const d = await draftOctober(dir);
   expect(d).toMatchObject({ status: "draft", number: null, period_start: "2026-10-01", period_end: "2026-10-31" });
 
   expect(new Set(kinds(d))).toEqual(new Set(["time", "fixed", "recurring", "pass_through"]));
-  expect(d.lines.map((l: any) => [l.kind, l.description, l.amount_cents])).toEqual([
-    ["time", "2026-10-03 API design (37 min at $150.00/hr)", 9250],
-    ["time", "2026-10-20 Load testing (90 min at $150.00/hr)", 22500],
-    ["fixed", "Build: Spec", 250000],
-    ["recurring", "Build, October 2026", 50000],
-    ["pass_through", "2026-10-05 Print shop, Workshop handouts (pass-through cost)", 4200],
+  expect(d.lines.map((l: any) => [l.kind, l.description, l.amount_cents, l.item_date, l.carried_over])).toEqual([
+    ["time", "2026-09-29 Kickoff call (30 min at $150.00/hr)", 7500, "2026-09-29", true],
+    ["time", "2026-10-03 API design (37 min at $150.00/hr)", 9250, "2026-10-03", false],
+    ["time", "2026-10-20 Load testing (90 min at $150.00/hr)", 22500, "2026-10-20", false],
+    ["fixed", "Build: Spec", 250000, "2026-10-15", false],
+    ["recurring", "Build, October 2026", 50000, "2026-10-01", false],
+    ["pass_through", "2026-10-05 Print shop, Workshop handouts (pass-through cost)", 4200, "2026-10-05", false],
   ]);
   // Each line points back at what it bills.
-  expect(d.lines.map((l: any) => l.time_entry_id ?? l.milestone_id ?? l.cycle_start ?? l.expense_id)).toEqual([1, 2, 1, "2026-10-01", 1]);
-  expect(d.subtotal_cents).toBe(9250 + 22500 + 250000 + 50000 + 4200);
+  expect(d.lines.map((l: any) => l.time_entry_id ?? l.milestone_id ?? l.cycle_start ?? l.expense_id)).toEqual([4, 1, 2, 1, "2026-10-01", 1]);
+  expect(d.subtotal_cents).toBe(7500 + 9250 + 22500 + 250000 + 50000 + 4200);
 
-  // Items dated outside the period stay out, and nothing is drafted twice.
+  // Items dated after the period stay out, and nothing is drafted twice.
   const again = await cli(dir, ["invoice", "draft", ...OCTOBER, ...S]);
   expect(again.code).toBe(2);
   expect(again.out.field).toBe("period_end");
   const nov = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2026-11-01", "--period-end", "2026-11-30", ...S])).invoice;
-  expect(nov.lines.map((l: any) => [l.kind, l.amount_cents])).toEqual([
-    ["time", 15000],
-    ["recurring", 50000],
-    ["pass_through", 999],
+  expect(nov.lines.map((l: any) => [l.kind, l.amount_cents, l.carried_over])).toEqual([
+    ["time", 15000, false],
+    ["recurring", 50000, false],
+    ["pass_through", 999, false],
+  ]);
+
+  // Skip December, then draft January: the Ship milestone (billable December 1) and December's fee carry over.
+  const jan = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2027-01-01", "--period-end", "2027-01-31", ...S])).invoice;
+  expect(jan.lines.map((l: any) => [l.description, l.carried_over])).toEqual([
+    ["Build: Ship", true],
+    ["Build, December 2026", true],
+    ["Build, January 2027", false],
   ]);
 
   // A quarterly and a yearly fee bill once per cycle that starts in the period.
@@ -38,7 +49,7 @@ test("ISC-29 draft sources: a period's draft pulls in its unbilled time, fixed f
   await ok(dir, json(["engagement", "add"], { client_id: 1, name: "Licence", recurring_amount_cents: 120000, recurring_interval: "yearly" }));
   const year = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2027-01-01", "--period-end", "2027-12-31", ...S])).invoice;
   expect(year.lines.map((l: any) => l.description)).toEqual([
-    ...["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map(
+    ...["February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map(
       (m) => `Build, ${m} 2027`,
     ),
     "Care, Q1 2027", "Care, Q2 2027", "Care, Q3 2027", "Care, Q4 2027",

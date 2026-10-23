@@ -26,7 +26,7 @@ export interface InvoiceDocument {
   terms: string | null;
   lines: { description: string; amount_cents: number }[];
   subtotal_cents: number;
-  tax: { label: string; rate_ppm: number; amount_cents: number } | null;
+  tax: { label: string; rate_ppm: number; taxable_cents: number; amount_cents: number } | null;
   total_cents: number;
   payment_instructions: string | null;
   note: string | null;

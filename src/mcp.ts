@@ -25,6 +25,8 @@ function jsonSchema(f: Field): Record<string, unknown> {
       return { ...base, type: "string", enum: [...f.values] };
     case "list":
       return { ...base, type: "array", items: objectSchema(f.of) };
+    case "set":
+      return { ...base, type: "array", items: { type: "string", enum: [...f.values] }, uniqueItems: true };
   }
 }
 
