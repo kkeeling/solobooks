@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 81/112
+progress: 95/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -152,25 +152,25 @@ Why: the bank statement becomes the books with the person seeing only the few li
 ### F7 · Sales tax
 Why: tax collected for a state is tracked as owed money, never mistaken for income, and never chosen by solobooks.
 
-- [ ] ISC-49: A client's tax rate and label appear as a separate invoice line.
-- [ ] ISC-50: Tax collected is recorded as owed and excluded from income.
-- [ ] ISC-51: The sales tax report shows, per period, tax charged on issued invoices, tax collected and payments to the state, each matching the ledger, and never names one of them as the amount due.
-- [ ] ISC-52: Anti: no tax line appears on an invoice unless the person set a rate on that client.
+- [x] ISC-49: A client's tax rate and label appear as a separate invoice line.
+- [x] ISC-50: Tax collected is recorded as owed and excluded from income.
+- [x] ISC-51: The sales tax report shows, per period, tax charged on issued invoices, tax collected and payments to the state, each matching the ledger, and never names one of them as the amount due.
+- [x] ISC-52: Anti: no tax line appears on an invoice unless the person set a rate on that client.
 - [x] ISC-105: A tax rate applies only to the line kinds the person listed for that client.
 
 ### F8 · Year-end records and reports
 Why: a full year goes to an accountant with nothing missing, so there are no follow-up questions.
 
-- [ ] ISC-53: A mileage trip uses the IRS rate for its date (72.5¢ on 2026-06-30, 76¢ on 2026-07-01).
-- [ ] ISC-54: Home office figures appear in the year-end export.
-- [ ] ISC-55: Estimated taxes, health insurance and retirement are totalled separately as owner items.
-- [ ] ISC-56: A contractor payment carries W-9 status and payment method.
-- [ ] ISC-57: Card and PayPal contractor payments are flagged as outside the 1099-NEC list.
-- [ ] ISC-58: The P&L groups by Schedule C category.
-- [ ] ISC-110: The P&L and year-to-date profit count income when it is paid, not when it is invoiced (cash basis).
-- [ ] ISC-59: One command exports a year's transactions as a single CSV.
-- [ ] ISC-60: Year-to-date profit is available as one number.
-- [ ] ISC-61: The hledger export passes `hledger check`.
+- [x] ISC-53: A mileage trip uses the IRS rate for its date (72.5¢ on 2026-06-30, 76¢ on 2026-07-01).
+- [x] ISC-54: Home office figures appear in the year-end export.
+- [x] ISC-55: Estimated taxes, health insurance and retirement are totalled separately as owner items.
+- [x] ISC-56: A contractor payment carries W-9 status and payment method.
+- [x] ISC-57: Card and PayPal contractor payments are flagged as outside the 1099-NEC list.
+- [x] ISC-58: The P&L groups by Schedule C category.
+- [x] ISC-110: The P&L and year-to-date profit count income when it is paid, not when it is invoiced (cash basis).
+- [x] ISC-59: One command exports a year's transactions as a single CSV.
+- [x] ISC-60: Year-to-date profit is available as one number.
+- [x] ISC-61: The hledger export passes `hledger check`.
 - [ ] ISC-62: [DROPPED — see Decisions 2026-10-22; CPA review moved to Remaining Work for April tax season]
 
 ### F9 · The approval gate
@@ -320,9 +320,9 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-57 | bun-test | card-paid contractor | flagged outside 1099-NEC | bun test test/contractors.test.ts -t "1099-k" | derived: year-end |
 | ISC-58 | bun-test | P&L categories | Schedule C lines | bun test test/reports.test.ts -t "schedule c" | derived: year-end |
 | ISC-110 | bun-test | issued in one year, paid in the next | income in the paid year | bun test test/reports.test.ts -t "cash basis" | derived: out-of-scope accrual |
-| ISC-59 | bash | year CSV export | one file, all rows | `solobooks export --year 2026 --format csv > /tmp/y.csv && test -s /tmp/y.csv` | literal |
+| ISC-59 | bash | year CSV export | one file, all rows | `bash scripts/export-check.sh` | literal |
 | ISC-60 | bun-test | YTD profit vs fixture | exact | bun test test/reports.test.ts -t "ytd" | derived: year-end |
-| ISC-61 | bash | hledger check on export | exit 0 | `solobooks export --format hledger > /tmp/j.journal && hledger -f /tmp/j.journal check` | derived: export |
+| ISC-61 | bash | hledger check on export | exit 0 | `bash scripts/export-check.sh` | derived: export |
 | ISC-63 | bun-test | gated action | pending, no effect | bun test test/gate.test.ts -t "parks" | derived: gate |
 | ISC-64 | bun-test | gate levels per action | 3 of 3 | bun test test/gate.test.ts -t "levels" | derived: gate |
 | ISC-65 | bun-test | fresh install defaults | click-in-chat | bun test test/gate.test.ts -t "defaults" | derived: gate |
@@ -451,6 +451,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-75, 77, 80: real agent runs in throwaway homes 2026-10-23 after commits 6b8cb07, 3e7e3d9 — Codex install PASS in 33s; past-invoice import PASS in 28s; planted-instruction import PASS in 62s with 0 pending actions created, gates and payment instructions unchanged, both plants named to the person; `bun test` 95 pass 0 fail, eval selftest 11 of 11
 - ISC-20..24, 39..41, 43, 46..48, 70: probes as written, rerun independently on the merged tree 2026-10-23 — `bun test` 111 pass 0 fail, eval selftest 11 of 11 — merge 7833cf9
 - ISC-42, 111, 112: probes as written, rerun independently 2026-10-23 — 1, 1 and 2 pass; full `bun test` 115 with two timeouts under load average 26 (ISC-14, ISC-24), both green rerun alone or with a longer limit; eval selftest 11 of 11 — commits 63932cb, dedcd08, 210f379
+- ISC-49..61, 110: probes as written, rerun independently on the merged tree 2026-10-23 — all pass; `bash scripts/export-check.sh` 62 CSV rows and `hledger check` on 26 transactions; full `bun test` 132 of 133 with ISC-6 timing out under load, green alone in 14s; eval selftest 11 of 11; 2026 IRS mileage rates confirmed on irs.gov by the builder
 
 ## Remaining Work
 
