@@ -158,3 +158,29 @@ test("elicitation: the chat prompt is a fixed question with labeled one-line fie
   const LABELS = /^(Current|New|Invoice|Credit note|Client|Client address|Line|Tax|Total|Note|Terms|Payment instructions|Reason): /;
   for (const msg of [first!, second!, third!]) for (const l of msg.slice(1).filter(Boolean)) expect(l).toMatch(LABELS);
 }, 30_000);
+
+/**
+ * Every tool, classified by hand. A new operation fails this test until someone decides which list it belongs on.
+ * invoice_pdf only reads the books but saves a file into the books folder, so to an agent app it is a write.
+ */
+const READ_ONLY = [
+  "profile_get", "client_list", "engagement_list", "time_list", "expense_list", "invoice_list", "invoice_get", "invoice_email",
+  "invoice_reminder", "account_list", "entry_list", "report_pnl", "history_list", "gate_list", "pending_list", "pending_get",
+];
+const WRITES = [
+  "profile_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
+  "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
+  "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
+];
+
+test("ISC-89 annotations: every read-only tool says readOnlyHint true, and no write tool does", async () => {
+  const mcp = await stdioMcp(tempDir(), ENV); // over the real wire, so the hints survive serialization
+  const tools = (await mcp.request("tools/list")).result.tools as { name: string; annotations?: Record<string, unknown> }[];
+  await mcp.close();
+  const names = tools.map((t) => t.name).sort();
+  expect(READ_ONLY.filter((n) => WRITES.includes(n))).toEqual([]);
+  expect([...READ_ONLY, ...WRITES].sort()).toEqual(names); // nothing unclassified, nothing missing
+  const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort();
+  expect(readOnly).toEqual([...READ_ONLY].sort());
+  for (const t of tools.filter((t) => WRITES.includes(t.name))) expect(t.annotations?.readOnlyHint).toBe(false);
+}, 30_000);
