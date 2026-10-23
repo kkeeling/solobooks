@@ -77,7 +77,7 @@ test("ISC-95: move refuses a folder that isn't empty, one inside the books, and 
   mkdirSync(busy);
   writeFileSync(join(busy, "notes.txt"), "mine");
 
-  const refusal = async (argv: string[], e = env) => JSON.parse((await install("move", argv, e)).stdout);
+  const refusal = async (argv: string[], e: Record<string, string> = env) => JSON.parse((await install("move", argv, e)).stdout);
   expect(await refusal(["--to", busy])).toEqual({ reason: `The folder ${busy} isn't empty, so choose an empty or new folder for the books.`, field: "to" });
   expect(await refusal(["--to", join(from, "inner")])).toMatchObject({ field: "to" });
   expect(await refusal([])).toEqual({ reason: "Say which empty folder the books move to with --to <dir>.", field: "to" });
