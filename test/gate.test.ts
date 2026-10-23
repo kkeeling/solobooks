@@ -165,9 +165,10 @@ test("ISC-66 no self approval: no CLI command or MCP tool approves a pending act
   const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id;
 
   // Every command there is: the operations, plus serve, which only starts the page, and the install commands, which
-  // connect agents and check the install but never open a pending action.
+  // connect agents and check the install but never open a pending action, and addon run, which hands a script only
+  // these same commands (in the compiled binary the script can reach run, serve and install, nothing inside them).
   const commands = (await ok(dir, ["help"])).commands.map((c: any) => c.command);
-  expect(commands).toEqual([...OPS.map((o) => o.name.replaceAll("_", " ")), "serve", "setup", "doctor", "mcp", "version"]);
+  expect(commands).toEqual([...OPS.map((o) => o.name.replaceAll("_", " ")), "serve", "setup", "doctor", "addon run", "mcp", "version"]);
   const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now });
   const tools = (await mcp.request("tools/list")).result.tools.map((t: any) => t.name);
   expect(tools).toEqual(OPS.map((o) => o.name));
