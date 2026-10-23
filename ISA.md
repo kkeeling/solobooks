@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 50/109
+progress: 51/109
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -184,7 +184,7 @@ Why: the person decides how much their agent may do, and that choice holds even 
 - [x] ISC-71: One batch approval issues every invoice left in the batch.
 - [x] ISC-72: An invoice pulled from a batch stays a draft.
 - [x] ISC-73: The local-page fallback link approves the pending action.
-- [ ] ISC-74: Passkey-level approval completes only with a WebAuthn assertion.
+- [x] ISC-74: Passkey-level approval completes only with a WebAuthn assertion.
 - [ ] ISC-75: Anti: instructions planted in an imported CSV never complete a gated action.
 - [x] ISC-106: Anti: a draft waiting for approval refuses every change to what would be issued.
 - [x] ISC-107: The approval prompt shows every line, the note, terms, payment instructions and any reason, in fixed wording the agent can't write.
@@ -426,6 +426,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
 - ISC-27, 29..38, 44, 45, 105: probes as written, rerun independently 2026-10-23 — `bun test` 51 pass 0 fail; issued and draft PDFs from a hand-run CLI billing viewed as rendered images — commits 463e5e5, 3eef074, 0ae1816
 - ISC-63..69, 71..73, 106..109: probes as written, rerun independently 2026-10-23 — `bun test` 79 pass 0 fail; ISC-73 approved in real Brave via Interceptor (draft to issued 1001); audit swap and hidden-note attacks replayed by hand and refused — commits 60b265b, ed7e037, 51e70e2, f4bd5f6
+- ISC-74: real Touch ID in Brave via Interceptor 2026-10-23 — passkey registered (Passwords), gate change click→passkey and invoice 1001 ($905.00) each stayed pending until the Touch ID assertion, then approved; `invoice get` shows issued
 
 ## Remaining Work
 
