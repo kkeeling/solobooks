@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 60/109
+progress: 62/109
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -194,10 +194,10 @@ Why: the person decides how much their agent may do, and that choice holds even 
 ### F10 · Onboarding and the agent guide
 Why: a stranger goes from one pasted prompt to a first draft invoice without a tutorial or a form.
 
-- [ ] ISC-76: The README prompt in Claude Code on a clean machine ends with `solobooks doctor` passing.
+- [x] ISC-76: The README prompt in Claude Code on a clean machine ends with `solobooks doctor` passing.
 - [ ] ISC-77: The README prompt in Codex on a clean machine ends with `solobooks doctor` passing.
 - [ ] ISC-78: [DROPPED — see Decisions 2026-10-22; Grok Build and Muse Code install tests moved to Remaining Work]
-- [ ] ISC-79: An agent with only solobooks' guide gets from "my first client is Acme at $150/hr" to a draft invoice.
+- [x] ISC-79: An agent with only solobooks' guide gets from "my first client is Acme at $150/hr" to a draft invoice.
 - [ ] ISC-80: Past invoices from a spreadsheet import as already-sent with their original numbers.
 - [x] ISC-81: Anti: imported already-happened records never hit the gate or trigger reminders.
 - [x] ISC-82: The skill's frontmatter uses only the six Agent Skills fields.
@@ -329,15 +329,15 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-72 | bun-test | pulled invoice | still draft | bun test test/gate.test.ts -t "batch exclude" | derived: batch |
 | ISC-73 | screenshot | fallback link approves | action completes | Interceptor on the local approval page | derived: gate |
 | ISC-74 | screenshot | passkey approval | completes only after Touch ID | Interceptor on the local approval page | derived: gate |
-| ISC-75 | eval | agent imports a CSV with planted instructions | 0 gated actions completed | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-injection | derived: injection |
+| ISC-75 | eval | agent imports a CSV with planted instructions | 0 gated actions completed | `bun scripts/eval/run.ts injection --agent claude --work $(mktemp -d)` | derived: injection |
 | ISC-106 | bun-test | edits to a held draft at click and passkey | all refused | bun test test/gate.test.ts -t "refuses every change" | derived: gate |
 | ISC-107 | bun-test | page card and chat prompt contents | every field shown, fixed question | bun test test/gate.test.ts -t "show every line" | derived: gate |
 | ISC-108 | bun-test | entry post on invoice accounts | refused | bun test test/gate.test.ts -t "accounts invoices post to" | derived: gate |
 | ISC-109 | bun-test | park day 1, approve day 2 | issued, dated day 2 | bun test test/gate.test.ts -t "next morning" | derived: gate |
-| ISC-76 | eval | README prompt, Claude Code, clean machine | doctor passes | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-install-claude | literal |
-| ISC-77 | eval | README prompt, Codex, clean machine | doctor passes | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-install-codex | literal |
-| ISC-79 | eval | guide-only onboarding to draft invoice | draft exists | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-onboarding | literal |
-| ISC-80 | eval | spreadsheet past-invoice import | numbers kept, status sent | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-prior-data | derived: onboarding |
+| ISC-76 | eval | README prompt, Claude Code, clean machine | doctor passes | `bun scripts/eval/run.ts install --agent claude --work $(mktemp -d)` | literal |
+| ISC-77 | eval | README prompt, Codex, clean machine | doctor passes | `bun scripts/eval/run.ts install --agent codex --work $(mktemp -d)` | literal |
+| ISC-79 | eval | guide-only onboarding to draft invoice | draft exists | `bun scripts/eval/run.ts onboarding --agent claude --work $(mktemp -d)` | literal |
+| ISC-80 | eval | spreadsheet past-invoice import | numbers kept, status sent | `bun scripts/eval/run.ts prior-data --agent claude --work $(mktemp -d)` | derived: onboarding |
 | ISC-81 | bun-test | historical records | 0 pending, 0 reminders | bun test test/historical.test.ts | derived: onboarding |
 | ISC-82 | bash | skill frontmatter keys | subset of six | `bun scripts/check-skill-fields.ts skills/solobooks/SKILL.md` | derived: standards |
 | ISC-83 | bash | install in env without bun or node, loopback mirror of a local release | version prints, tampered binary refused | `bash scripts/install-check.sh` | literal |
@@ -424,6 +424,11 @@ Why: the person can see the books and approve things when their agent's app can'
   learned: what the person approves is the whole document that reaches the client, not its headline; the gate has to freeze and show everything issue would send
   criterion now: ISC-106 holds a waiting draft against edits, ISC-107 shows every line, note, terms and payment instructions in fixed wording
 
+- 2026-10-23 | conjectured: putting the MCP requiresUserInteraction flag on any tool that has a gated field is enough to route approvals into chat
+  refuted by: a real `claude -p` past-invoice import was refused "MCPTool requires permission" for `profile_set` setting only the next invoice number, so the import and the planted-instruction eval both stalled
+  learned: the flag is per tool, not per call, so a tool mixing gated and ungated fields makes every call need the person
+  criterion now: the payment-instructions change is its own gated tool, and a test holds that the flag sits only on tools whose every call can be gated
+
 ## Verification
 
 - ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
@@ -432,6 +437,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-74: real Touch ID in Brave via Interceptor 2026-10-23 — passkey registered (Passwords), gate change click→passkey and invoice 1001 ($905.00) each stayed pending until the Touch ID assertion, then approved; `invoice get` shows issued
 - ISC-81..83, 85, 86, 88..90: probes as written, rerun independently 2026-10-23 — `bun test` 93 pass 0 fail; setup and doctor rerun from the compiled binary in a clean home (Claude Code and Codex both answered with 37 tools) — commits dbb4110..a2ad0e7
 - ISC-87: `bash scripts/plugin-install-check.sh` run with the real claude CLI in a throwaway home 2026-10-23 — marketplace added, plugin installed and enabled, skill in the plugin cache, `claude mcp list` shows solobooks connected; setup-written entries also listed by real `claude mcp list` (connected) and `codex mcp list` (enabled)
+- ISC-76, 79: real `claude -p` runs in throwaway homes 2026-10-23 — install suite PASS in 37s (agent read INSTALL.md and the installer, ran install, setup, doctor); onboarding suite PASS in 34s, all through the solobooks MCP tools
 
 ## Remaining Work
 
