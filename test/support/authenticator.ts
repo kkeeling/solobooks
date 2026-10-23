@@ -53,15 +53,19 @@ function der(raw: Uint8Array): Uint8Array {
 
 export class SoftAuthenticator {
   private counter = 0;
-  readonly credentialId = new Uint8Array(16).fill(7);
+  private constructor(
+    private readonly key: CryptoKey,
+    readonly credentialId = new Uint8Array(16).fill(7),
+  ) {}
 
-  private constructor(private readonly key: CryptoKey) {}
-
-  /** The fixed test passkey, or with `impostor`, one with the same credential id but a different private key. */
-  static async create(o: { impostor?: boolean } = {}): Promise<SoftAuthenticator> {
+  /**
+   * The fixed test passkey, or with `impostor`, one with a different private key: by default under the same
+   * credential id, or with `ownId` under a credential id of its own.
+   */
+  static async create(o: { impostor?: boolean; ownId?: boolean } = {}): Promise<SoftAuthenticator> {
     if (o.impostor) {
       const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
-      return new SoftAuthenticator(pair.privateKey);
+      return new SoftAuthenticator(pair.privateKey, new Uint8Array(16).fill(o.ownId ? 9 : 7));
     }
     return new SoftAuthenticator(await crypto.subtle.importKey("jwk", TEST_KEY, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]));
   }

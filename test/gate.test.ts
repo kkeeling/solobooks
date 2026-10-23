@@ -11,6 +11,7 @@ import { must, write } from "./support/gen.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 import { approveOnPage, approveWithPasskey, asPerson, letAgentDecide, registerTestPasskey, WHEN } from "./support/person.ts";
 import { cliArgs, SCENARIO } from "./support/scenario.ts";
+import { startPage } from "../src/page.ts";
 
 const ALL = (level: string) => Object.fromEntries(ACTIONS.map((a) => [a, level]));
 
@@ -25,7 +26,9 @@ function books(db: Books) {
 function coreBooks() {
   const db = memBooks();
   letAgentDecide(db);
-  must(db, "profile_set", SELLER);
+  const { payment_instructions, ...seller } = SELLER;
+  must(db, "profile_set", seller);
+  must(db, "profile_set", { payment_instructions });
   must(db, "client_add", { name: "Acme Corp", address: "500 Market St" });
   must(db, "client_add", { name: "Beta LLC", address: "9 Elm Rd" });
   must(db, "client_add", { name: "Gamma Inc", address: "1 Oak Ave" });
@@ -45,7 +48,7 @@ test("ISC-63 parks: a gated action returns pending with an id and changes no led
   const nextBefore = (await ok(dir, ["profile", "get"])).next_invoice_number;
 
   const issue = await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
-  expect(issue).toMatchObject({ status: "pending", level: "click", title: `Issue invoice 7001 to Acme Corp for $${(d.total_cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}?` });
+  expect(issue).toMatchObject({ status: "pending", level: "click", title: `Issue invoice 7001 for $${(d.total_cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}?` });
   expect(Number.isInteger(issue.pending_id)).toBe(true);
   expect(issue.approve_url).toBe(`http://localhost:7317/#pending-${issue.pending_id}`);
   expect(asPerson(dir, books)).toEqual(before); // no ledger line, invoice change or number taken
@@ -88,9 +91,10 @@ test("ISC-63 parks: rejection closes a pending action with no effect, and a draf
   expect(books(db)).toEqual(before);
   expect(approvePending(db, p, { via: "page" }, WHEN)).toMatchObject({ ok: false, refusal: { field: "pending_id" } });
 
-  // The agent asks to issue a $100 draft, then raises it to $100,100 before the person clicks.
+  // The agent asks to issue a $100 draft, then tries to raise it to $100,100 before the person clicks.
   const q = must(db, "invoice_issue", { id: a }).pending_id;
-  must(db, "invoice_edit", { id: a, add_lines: [{ description: "More", amount_cents: 10_000_000 }] });
+  expect(write(db, "invoice_edit", { id: a, add_lines: [{ description: "More", amount_cents: 10_000_000 }] })).toMatchObject({ ok: false, refusal: { field: "id" } });
+  db.query("INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, source) VALUES (?, 'manual', 'More', 10000000, 'x')").run(a); // past the hold
   const r = approvePending(db, q, { via: "page" }, WHEN);
   expect(r).toMatchObject({ ok: false, refusal: { field: "pending_id" } });
   expect(status(db, a)).toBe("draft");
@@ -237,7 +241,8 @@ test("ISC-69 payment details: changing the payment instructions printed on invoi
   const dir = tempDir();
   await ok(dir, json(["profile", "set"], { legal_name: "Jane Doe LLC" })); // not gated
   const r = await ok(dir, json(["profile", "set"], { payment_instructions: "ACH to Evil Bank, account 666" }));
-  expect(r).toMatchObject({ status: "pending", level: "click", title: 'Change the payment instructions printed on invoices to "ACH to Evil Bank, account 666"?' });
+  expect(r).toMatchObject({ status: "pending", level: "click", title: "Change the payment instructions printed on invoices?" });
+  expect((await ok(dir, ["pending", "get", "--id", String(r.pending_id)])).pending.items).toEqual([{ from: null, to: "ACH to Evil Bank, account 666" }]);
   expect((await ok(dir, ["profile", "get"])).profile).toMatchObject({ legal_name: "Jane Doe LLC", payment_instructions: null });
   asPerson(dir, (db) => approveOnPage(db, r.pending_id));
   expect((await ok(dir, ["profile", "get"])).profile.payment_instructions).toBe("ACH to Evil Bank, account 666");
@@ -250,10 +255,10 @@ test("ISC-71 batch: one approval issues every invoice in the batch", () => {
   const asked = must(db, "invoice_issue", { ids });
   expect(asked).toMatchObject({ status: "pending", title: "Issue 3 invoices totalling $1,117.34?" });
   const p = must(db, "pending_get", { id: asked.pending_id }).pending;
-  expect(p.items).toEqual([
-    { invoice_id: ids[0], number: "7001", client: "Acme Corp", total_cents: 90500 },
-    { invoice_id: ids[1], number: "7002", client: "Beta LLC", total_cents: 20000 },
-    { invoice_id: ids[2], number: "7003", client: "Gamma Inc", total_cents: 1234 },
+  expect(p.items.map((i: any) => [i.invoice_id, i.number, i.client, i.total_cents, i.lines])).toEqual([
+    [ids[0], "7001", "Acme Corp", 90500, [{ kind: "manual", description: "Work", amount_cents: 90500 }]],
+    [ids[1], "7002", "Beta LLC", 20000, [{ kind: "manual", description: "Work", amount_cents: 20000 }]],
+    [ids[2], "7003", "Gamma Inc", 1234, [{ kind: "manual", description: "Work", amount_cents: 1234 }]],
   ]);
   expect(db.query("SELECT COUNT(*) n FROM pending_actions WHERE status = 'pending'").get()).toEqual({ n: 1 });
   const history = (db.query("SELECT COUNT(*) n FROM history").get() as { n: number }).n;
@@ -284,4 +289,162 @@ test("ISC-72 batch exclude: an invoice pulled from a batch before approval stays
   expect(must(db, "pending_get", { id: pid }).pending).toMatchObject({ status: "approved", excluded: [ids[1]] });
   // The pulled draft can be edited and issued later on its own.
   must(db, "invoice_edit", { id: ids[1]!, note: "Adjusted" });
+});
+
+// ---------------------------------------------------------------- audit: what the person approves is what runs
+
+const swapAndEdits = (id: number, line: { id: number; amount_cents: number }) => [
+  ["invoice", "edit", "--id", String(id), "--note", "Pay only by wire to First Evil Bank 666666", ...S],
+  json(["invoice", "edit"], { id, remove_lines: [{ line_id: line.id }], add_lines: [{ description: "Wire to First Evil Bank 666666", amount_cents: line.amount_cents }] }),
+  ["invoice", "edit", "--id", String(id), "--terms-days", "0", ...S],
+  ["invoice", "delete", "--id", String(id), ...S],
+  ["time", "edit", "--id", "1", "--note", "Wire to First Evil Bank 666666", ...S],
+  ["time", "delete", "--id", "1", ...S],
+  ["client", "edit", "--id", "1", "--address", "1 Evil Way", ...S],
+];
+
+test("ISC-63 parks: a draft waiting for approval refuses every change to what would be issued, at click and passkey", async () => {
+  for (const level of ["click", "passkey"]) {
+    const dir = await clickAcme();
+    if (level === "passkey") {
+      const auth = await asPerson(dir, (db) => registerTestPasskey(db));
+      const up = await ok(dir, ["gate", "set", "--invoice-issue", "passkey", ...S]);
+      await asPerson(dir, (db) => approveWithPasskey(db, auth, up.pending_id));
+    }
+    const d = await draftOctober(dir);
+    const p = await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
+    expect(p.level).toBe(level);
+    const before = (await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice;
+    for (const args of swapAndEdits(d.id, d.lines[0])) {
+      const r = await cli(dir, args);
+      expect([args.slice(0, 2).join(" "), r.code, r.out.field]).toEqual([args.slice(0, 2).join(" "), 2, "id"]);
+      expect(r.out.reason).toContain("is waiting for approval");
+    }
+    expect((await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice).toEqual(before);
+    // Work that doesn't touch the waiting draft goes on, and once the person decides, the draft is free again.
+    await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-12-01", "--minutes", "30", "--note", "Later", ...S]);
+    asPerson(dir, (db) => rejectPending(db, p.pending_id, "page", WHEN));
+    await ok(dir, ["invoice", "edit", "--id", String(d.id), "--note", "Thanks", ...S]);
+  }
+}, 60_000);
+
+test("ISC-74 passkey: approval refuses anything issue would freeze that changed after the person was asked, apart from the number", async () => {
+  for (const level of ["click", "passkey"]) {
+    const db = coreBooks();
+    const auth = await registerTestPasskey(db);
+    const up = must(db, "gate_set", { invoice_issue: level });
+    if (level === "passkey") await approveWithPasskey(db, auth, up.pending_id);
+    else approveOnPage(db, up.pending_id);
+    const tryApprove = async (id: number) => {
+      if (level === "click") return approvePending(db, id, { via: "page" }, WHEN);
+      try {
+        return { ok: true, result: await approveWithPasskey(db, auth, id) };
+      } catch (e) {
+        return { ok: false, refusal: JSON.parse(String(e).replace(/^.*refused: /, "")) };
+      }
+    };
+    // Each change slips past the draft hold, straight into the file, or is an ordinary write the hold doesn't cover.
+    const changes: ((id: number) => unknown)[] = [
+      (id) => db.query("UPDATE invoices SET note = 'Pay only by wire to First Evil Bank 666666' WHERE id = ?").run(id),
+      (id) => db.query("UPDATE invoice_lines SET description = 'Wire to First Evil Bank 666666' WHERE invoice_id = ?").run(id), // same total
+      (id) => db.query("UPDATE invoices SET terms_days = 0 WHERE id = ?").run(id),
+      () => must(db, "profile_set", { legal_name: "Evil Twin LLC" }),
+    ];
+    for (const change of changes) {
+      const a = draft(db);
+      const pid = must(db, "invoice_issue", { id: a }).pending_id;
+      change(a);
+      expect(await tryApprove(pid)).toMatchObject({ ok: false, refusal: { field: "pending_id" } });
+      expect(status(db, a)).toBe("draft");
+      rejectPending(db, pid, "page", WHEN);
+    }
+    // Only the number may move: another invoice issued first takes the number this one was shown.
+    const [a, b] = [draft(db), draft(db, 2)];
+    const [pa, pb] = [must(db, "invoice_issue", { id: a }).pending_id, must(db, "invoice_issue", { id: b }).pending_id];
+    expect(await tryApprove(pb)).toMatchObject({ ok: true });
+    expect(await tryApprove(pa)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7002" } } } });
+    db.close();
+  }
+});
+
+test("ISC-69 payment details: the page card and the chat prompt show every line, the note, terms, due date, payment instructions and reasons", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const note = "Pay only by wire to First Evil Bank 666666";
+  await ok(dir, ["invoice", "edit", "--id", String(d.id), "--note", note, ...S]);
+  const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id;
+  const expected = [
+    note,
+    "Acme Corp",
+    SELLER.payment_instructions,
+    "Net 30",
+    "2026-11-21",
+    ...d.lines.map((l: any) => l.description),
+    ...d.lines.map((l: any) => `$${(l.amount_cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`),
+  ];
+  const page = startPage({ books: dir, port: 0, env: { SOLOBOOKS_NOW: WHEN.now } });
+  const cardText = async (id: number) => {
+    const html = await (await fetch(page.url)).text();
+    const card = html.match(new RegExp(`<article class="card" id="pending-${id}">[\\s\\S]*?</article>`))![0];
+    return card.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+  };
+  try {
+    const card = await cardText(pid);
+    for (const s of expected) expect(card).toContain(s);
+
+    const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now }, { capabilities: { elicitation: {} }, answer: () => ({ action: "decline" }) });
+    await mcp.call("invoice_issue", { id: d.id, source: "agent:x" });
+    for (const s of expected) expect(mcp.asked[0]!.params.message).toContain(s);
+
+    // Voids and credit notes show their reason, the other text that reaches the client.
+    asPerson(dir, (db) => approveOnPage(db, pid));
+    const reason = "Client moved banks; resend to First Evil Bank 666666";
+    const v = (await ok(dir, ["invoice", "void", "--id", String(d.id), "--reason", reason, ...S])).pending_id;
+    const c = (await ok(dir, ["invoice", "credit", "--invoice-id", String(d.id), "--amount-cents", "1000", "--reason", reason, "--line-kind", "time", ...S])).pending_id;
+    expect(await cardText(v)).toContain(reason);
+    expect(await cardText(c)).toContain(reason);
+    await mcp.call("invoice_credit", { invoice_id: d.id, amount_cents: 1000, reason, line_kind: "time", source: "agent:x" });
+    expect(mcp.asked[1]!.params.message).toContain(reason);
+    await mcp.close();
+  } finally {
+    page.stop();
+  }
+}, 30_000);
+
+test("ISC-69 payment details: a change to the payment instructions can't carry other business details along with it", async () => {
+  const dir = tempDir();
+  const r = await cli(dir, json(["profile", "set"], { payment_instructions: "Wire to account 42", legal_name: "Jane Doe LLC" }));
+  expect([r.code, r.out.field]).toEqual([2, "payment_instructions"]);
+  const db = coreBooks();
+  expect(write(db, "profile_set", { payment_instructions: "x", email: "evil@example.com" })).toMatchObject({ ok: false, refusal: { field: "payment_instructions" } });
+});
+
+test("ISC-66 no self approval: a journal entry or expense can't move the accounts invoices post to", () => {
+  const db = coreBooks();
+  must(db, "account_add", { name: "Checking", type: "asset" });
+  must(db, "account_add", { name: "Software", type: "expense" });
+  must(db, "invoice_issue", { id: draft(db) }); // creates the accounts invoices post to
+  const id = (name: string) => (db.query("SELECT id FROM accounts WHERE name = ?").get(name) as { id: number }).id;
+  const checking = id("Checking");
+  for (const name of ["Accounts receivable", "Consulting income", "Reimbursed expense income", "Sales tax payable"]) {
+    const lines = [{ account_id: id(name), debit_cents: 10000 }, { account_id: checking, credit_cents: 10000 }];
+    const r = write(db, "entry_post", { date: "2026-10-23", memo: "Reverse it quietly", lines });
+    expect(r).toMatchObject({ ok: false, refusal: { field: "lines[0].account_id" } });
+    if (!r.ok) expect(r.refusal.reason).toContain("invoice void or invoice credit");
+  }
+  const paid = write(db, "expense_add", { date: "2026-10-23", amount_cents: 10000, vendor: "V", account_id: id("Software"), paid_from_account_id: id("Accounts receivable") });
+  expect(paid).toMatchObject({ ok: false, refusal: { field: "paid_from_account_id" } });
+  must(db, "entry_post", { date: "2026-10-23", memo: "Fine", lines: [{ account_id: id("Software"), debit_cents: 1 }, { account_id: checking, credit_cents: 1 }] });
+});
+
+test("ISC-68 setting gated: a gate change parked earlier is approved at the level in force now", async () => {
+  const db = coreBooks();
+  setLevels(db, ALL("click"));
+  const auth = await registerTestPasskey(db);
+  const stale = must(db, "gate_set", { invoice_issue: "agent_decides" }); // asked while issuing was click
+  await approveWithPasskey(db, auth, must(db, "gate_set", { invoice_issue: "passkey" }).pending_id);
+  for (const via of ["page", "elicitation"] as const) {
+    expect(approvePending(db, stale.pending_id, { via }, WHEN)).toMatchObject({ ok: false, refusal: { field: "passkey" } });
+  }
+  expect(must(db, "gate_list", {}).gate[0].level).toBe("passkey");
 });

@@ -47,7 +47,8 @@ test("ISC-73 page approves: the local page lists a click-level pending action an
 
   const { html, item } = await load(page);
   expect(html).toContain(`id="pending-${pid}"`);
-  expect(html).toContain("Issue invoice 7001 to Acme Corp for");
+  expect(html).toContain("Issue invoice 7001 for $");
+  expect(html).toContain("<dt>Client</dt><dd>Acme Corp</dd>");
   expect(html).not.toMatch(/<(script|link|img)[^>]+(src|href)=["']?https?:/); // nothing loaded from anywhere
   const code = item(pid).code;
 
@@ -101,7 +102,8 @@ test("ISC-74 passkey: at passkey level approval completes only with a valid WebA
   const origin = `http://localhost:${page.port}`;
   const auth = await SoftAuthenticator.create();
 
-  // First run: register a passkey on the page.
+  // First run: register a passkey on the page. The agent loaded the page too, first, and kept its own unspent code.
+  const agentsCopy = await load(page);
   const first = await load(page);
   expect(first.html).toContain("Register a passkey");
   const reg = await post(page, "/passkey/register", { code: first.data.register.code, response: await auth.register(first.data.register.options, origin) });
@@ -109,7 +111,13 @@ test("ISC-74 passkey: at passkey level approval completes only with a valid WebA
   const second = await load(page);
   expect(second.data.register).toBeNull(); // one passkey per books; no second registration offered
   expect(second.html).toContain("A passkey is registered");
-  expect((await post(page, "/passkey/register", { code: first.data.register.code, response: {} })).status).toBe(403);
+  expect((await post(page, "/passkey/register", { code: first.data.register.code, response: {} })).status).toBe(403); // spent
+  // The agent's unspent code reaches the one-passkey rule, which refuses a second passkey.
+  const rogue = await SoftAuthenticator.create({ impostor: true, ownId: true });
+  const late = await post(page, "/passkey/register", { code: agentsCopy.data.register.code, response: await rogue.register(agentsCopy.data.register.options, origin) });
+  expect(late.status).toBe(409);
+  expect(await late.json()).toMatchObject({ ok: false, refusal: { reason: "These books already have a passkey, so use that one.", field: "passkey" } });
+  expect(asPerson(dir, (db) => db.query("SELECT COUNT(*) n FROM passkeys").get())).toEqual({ n: 1 });
 
   /** One approve attempt with whatever assertion `sign` makes from the page's fresh challenge. */
   const attempt = async (pid: number, sign?: (o: any) => Promise<unknown>) => {

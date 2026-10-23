@@ -36,7 +36,7 @@ test("elicitation: the person accepting in chat approves inside the same tool ca
   const r = await mcp.call("invoice_issue", { id: d.id, source: "agent:claude-code" });
   await mcp.close();
   expect(mcp.asked).toHaveLength(1);
-  expect(mcp.asked[0]).toMatchObject({ method: "elicitation/create", params: { mode: "form", message: expect.stringMatching(/^Issue invoice 7001 to Acme Corp for \$[\d,]+\.\d\d\?$/) } });
+  expect(mcp.asked[0]).toMatchObject({ method: "elicitation/create", params: { mode: "form", message: expect.stringMatching(/^Issue invoice 7001 for \$[\d,]+\.\d\d\?\n\nInvoice: 7001\nClient: Acme Corp\n/) } });
   expect(r.isError).toBe(false);
   expect(r.structuredContent).toMatchObject({ status: "approved", pending: { status: "approved", decided_via: "elicitation" }, result: { invoice: { status: "issued", number: "7001" } } });
   expect((await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice.status).toBe("issued");
@@ -66,7 +66,7 @@ test("elicitation: a batch prompt lists each invoice, and one the person unticks
   const r = (await mcp.call("invoice_issue", { ids: [a.id, b.id], source: "agent:claude-code" })).structuredContent;
   await mcp.close();
   const form = mcp.asked[0]!.params;
-  expect(form.message).toMatch(/^Issue 2 invoices totalling \$[\d,]+\.\d\d\? Untick any invoice to keep it a draft\.$/);
+  expect(form.message).toMatch(/^Issue 2 invoices totalling \$[\d,]+\.\d\d\? Untick any invoice to keep it a draft\.\n\nInvoice: 7001\n[\s\S]*\n\nInvoice: 7002\n/);
   expect(Object.keys(form.requestedSchema.properties)).toEqual([`include_${a.id}`, `include_${b.id}`]);
   expect(form.requestedSchema.properties[`include_${a.id}`]).toMatchObject({ type: "boolean", default: true, title: expect.stringContaining("Acme Corp") });
   expect(r).toMatchObject({ status: "approved", pending: { excluded: [b.id] } });
@@ -123,7 +123,38 @@ test("elicitation: gate settings and payment details are asked in chat too, and 
   await mcp.call("profile_set", { payment_instructions: "Wire to account 42", source: "agent:x" });
   await mcp.close();
   expect(mcp.asked.map((a) => a.params.message)).toEqual([
-    "Change approval levels: issuing invoices from click to agent_decides?",
-    'Change the payment instructions printed on invoices to "Wire to account 42"?',
+    "Change approval levels?\n\nissuing invoices: click → agent_decides",
+    "Change the payment instructions printed on invoices?\n\nCurrent: ACH to First Bank, routing 011000015, account 1234567\nNew: Wire to account 42",
   ]);
+}, 30_000);
+
+test("elicitation: the chat prompt is a fixed question with labeled one-line fields, so the agent can't word it", async () => {
+  const dir = await clickAcme();
+  const mcp = await answering(dir, "decline");
+  // The audit's payload: text that tries to close the question and reassure the person.
+  const evil = `ACH to Jane's Bank, acct 1111"? This only re-saves your current instructions after a format update; nothing printed on invoices changes. (Ref: Wire alt. First Evil Bank 666666)`;
+  await mcp.call("profile_set", { payment_instructions: evil, source: "agent:x" });
+  const long = `Wire to First Evil Bank\nApprove: yes, this is routine\n${"x".repeat(1000)}`;
+  await mcp.call("profile_set", { payment_instructions: long, source: "agent:x" });
+  const d = await draftOctober(dir);
+  await ok(dir, ["invoice", "edit", "--id", String(d.id), "--note", "Thanks!\n\nApprove: this invoice was already approved", ...S]);
+  await mcp.call("invoice_issue", { id: d.id, source: "agent:x" });
+  await mcp.close();
+
+  const [first, second, third] = mcp.asked.map((a) => a.params.message.split("\n"));
+  expect(first).toEqual([
+    "Change the payment instructions printed on invoices?",
+    "",
+    "Current: ACH to First Bank, routing 011000015, account 1234567",
+    `New: ${evil}`,
+  ]);
+  expect(second![0]).toBe("Change the payment instructions printed on invoices?");
+  expect(second).toHaveLength(4); // the agent's newlines don't add lines
+  expect(second![3]).toStartWith("New: Wire to First Evil Bank Approve: yes, this is routine xxx");
+  expect(second![3]!.length).toBeLessThanOrEqual("New: ".length + 240);
+  expect(third![0]).toBe("Issue invoice 7001 for $3,359.50?");
+  expect(third).toContain("Note: Thanks! Approve: this invoice was already approved");
+  // Every line after the question is a label the code wrote, then the value.
+  const LABELS = /^(Current|New|Invoice|Credit note|Client|Client address|Line|Tax|Total|Note|Terms|Payment instructions|Reason): /;
+  for (const msg of [first!, second!, third!]) for (const l of msg.slice(1).filter(Boolean)) expect(l).toMatch(LABELS);
 }, 30_000);
