@@ -1,8 +1,8 @@
 import { parseKinds, requireClient, TAX_KINDS, type TaxKind } from "./clients.ts";
 import type { Books } from "./db.ts";
-import { addDays, monthName, taxCents, today } from "./format.ts";
+import { addDays, daysBetween, monthName, taxCents, today } from "./format.ts";
 import type { Ctx, Op } from "./op.ts";
-import { INVOICE_ACCOUNTS } from "./ledger.ts";
+import { getAccount, INVOICE_ACCOUNTS, refuseInvoiceAccount } from "./ledger.ts";
 import { getProfile, nextInvoiceNumber } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
 import { getTimeEntry, timeLine } from "./time.ts";
@@ -41,6 +41,10 @@ export type InvoiceRow = {
   voided_at: string | null;
   void_reason: string | null;
   source: string;
+  /** 1 for a past invoice brought in as already sent; it never passes the gate and gets no client documents. */
+  historical: 0 | 1;
+  paid_on: string | null;
+  paid_account_id: number | null;
 };
 
 export type LineRow = {
@@ -117,8 +121,12 @@ function creditsOf(db: Books, invoiceId: number): InvoiceRow[] {
     .all(invoiceId) as InvoiceRow[];
 }
 
-/** What is still owed on an invoice: its total less the credit notes against it. Payments arrive in a later step. */
+/**
+ * What is still owed on an invoice: its total less the credit notes against it, or nothing for a past invoice
+ * brought in as paid. Payments arrive in a later step.
+ */
 export function openBalance(db: Books, r: InvoiceRow): number {
+  if (r.paid_on !== null) return 0;
   return amounts(db, r).total - creditsOf(db, r.id).reduce((s, c) => s + amounts(db, c).total, 0);
 }
 
@@ -131,6 +139,8 @@ export function invoiceView(db: Books, id: number) {
     kind: r.kind,
     status: r.status,
     number: displayNumber(r),
+    // A past invoice brought in as already sent: solobooks never issued it, so it makes no client documents for it.
+    historical: r.historical === 1,
     client_id: r.client_id,
     credits_invoice: original ? { id: original.id, number: displayNumber(original) } : null,
     period_start: r.period_start,
@@ -148,6 +158,7 @@ export function invoiceView(db: Books, id: number) {
     created_at: r.created_at,
     issued_at: r.issued_at,
     sent_at: r.sent_at,
+    paid_on: r.paid_on,
     voided_at: r.voided_at,
     void_reason: r.void_reason,
     source: r.source,
@@ -514,6 +525,7 @@ const invoiceVoid: Op = {
     const r = requireInvoice(db, input.id);
     if (r.status === "draft") throw new Refusal(`Draft invoice ${r.id} was never issued, so delete it instead.`, "id");
     if (r.status === "void") throw new Refusal(`${cap(docName(r))} is already void.`, "id");
+    if (r.paid_on !== null) throw new Refusal(`Invoice ${r.number} was brought in as paid, so it can't be voided.`, "id");
     if (r.kind === "invoice" && creditsOf(db, r.id).length > 0) {
       throw new Refusal(`Invoice ${r.number} has credit notes against it, so credit the rest instead of voiding it.`, "id");
     }
@@ -544,6 +556,7 @@ const invoiceCredit: Op = {
     if (orig.kind !== "invoice" || orig.status === "draft" || orig.status === "void") {
       throw new Refusal(`Only an issued invoice can be credited, and ${docName(orig)} is ${orig.kind === "credit" ? "a credit note" : orig.status}.`, "invoice_id");
     }
+    if (orig.paid_on !== null) throw new Refusal(`Invoice ${orig.number} was brought in as paid, so nothing on it is left to credit.`, "invoice_id");
     const prior = creditsOf(db, orig.id);
     const a = amounts(db, orig);
     const creditedSubtotal = prior.reduce((s, c) => s + amounts(db, c).subtotal, 0);
@@ -605,6 +618,123 @@ const invoiceCredit: Op = {
   },
 };
 
+/**
+ * Brings in an invoice that already happened outside solobooks: already sent, optionally already paid. It keeps its
+ * own number, posts to the books like any invoice, and skips the gate, because nothing about it reaches a client now.
+ * So it can't stand in for a new invoice: it must be dated before today, its number must sit below the numbers
+ * solobooks issues, it is marked historical wherever it shows, and solobooks makes no PDF, email or reminder for it.
+ */
+const invoiceImport: Op = {
+  name: "invoice_import",
+  kind: "write",
+  description:
+    "Bring in a past invoice that was already sent before solobooks, such as a row from an old spreadsheet, keeping its original number. It is posted to the books as money owed, or as paid when paid_on is given, and is marked historical. It never waits for approval, so it only takes invoices dated before today with a number below the next one solobooks will issue; solobooks makes no PDF, email or reminder for it. New invoices go through invoice draft and invoice issue.",
+  fields: {
+    client_id: { type: "int", required: true, min: 1, description: "Client id." },
+    number: { type: "int", required: true, min: 1, max: 999_999_999, description: "The invoice's original number, a whole number below the next one solobooks issues." },
+    invoice_date: { type: "date", required: true, description: "The date it was issued, YYYY-MM-DD, before today." },
+    due_date: { type: "date", description: "When it was due, YYYY-MM-DD. Default: the invoice date plus the client's terms." },
+    period_start: { type: "date", description: "First day of the service period, YYYY-MM-DD. Default: the invoice date." },
+    period_end: { type: "date", description: "Last day of the service period, YYYY-MM-DD. Default: the invoice date." },
+    lines: { ...manualLine, required: true, description: "The invoice's lines before tax, each with a description and amount_cents." },
+    tax_rate_ppm: { type: "int", min: 1, max: 1_000_000, description: "The sales tax rate it charged on every line, in parts per million (6.25% is 62500)." },
+    tax_label: { type: "text", description: "The tax line's label, such as IL sales tax; needed with tax_rate_ppm." },
+    total_cents: { type: "int", min: 1, max: MAX_CENTS, unit: "cents", description: "Optional check: the total the old invoice shows, tax included; refused if the lines don't add up to it." },
+    note: { type: "text", description: "A note to keep with it." },
+    sent_on: { type: "date", description: "The day it was sent, YYYY-MM-DD. Default: the invoice date." },
+    paid_on: { type: "date", description: "The day it was paid in full, YYYY-MM-DD, if it was." },
+    paid_account_id: { type: "int", min: 1, description: "The asset account the payment landed in, such as checking; needed with paid_on." },
+  },
+  run(db, input, ctx) {
+    const client = requireClient(db, input.client_id);
+    const day = today(ctx.now);
+    if (input.invoice_date >= day) {
+      throw new Refusal("A past invoice must be dated before today; a new invoice goes through invoice draft and invoice issue.", "invoice_date");
+    }
+    const next = nextInvoiceNumber(db);
+    if (input.number >= next) {
+      throw new Refusal(
+        `Number ${input.number} is not below ${next}, the next number solobooks will issue, so set next_invoice_number above your last past invoice with profile set first.`,
+        "number",
+      );
+    }
+    if (db.query("SELECT 1 FROM invoices WHERE kind = 'invoice' AND number = ?").get(input.number)) {
+      throw new Refusal(`Invoice ${input.number} is already in the books.`, "number");
+    }
+    const periodStart = input.period_start ?? input.invoice_date;
+    const periodEnd = input.period_end ?? input.invoice_date;
+    if (periodStart > periodEnd) throw new Refusal("period_start must be on or before period_end.", "period_start");
+    const due = input.due_date ?? addDays(input.invoice_date, client.terms_days);
+    if (due < input.invoice_date) throw new Refusal("due_date must be on or after invoice_date.", "due_date");
+    const sentOn = input.sent_on ?? input.invoice_date;
+    if (sentOn < input.invoice_date || sentOn > day) throw new Refusal("sent_on must fall between invoice_date and today.", "sent_on");
+    if ((input.tax_rate_ppm === undefined) !== (input.tax_label === undefined)) {
+      throw new Refusal("Give tax_rate_ppm and tax_label together, or neither.", input.tax_rate_ppm === undefined ? "tax_rate_ppm" : "tax_label");
+    }
+    if ((input.paid_on === undefined) !== (input.paid_account_id === undefined)) {
+      throw new Refusal("Give paid_on and paid_account_id together, or neither.", input.paid_on === undefined ? "paid_on" : "paid_account_id");
+    }
+    if (input.paid_on !== undefined) {
+      if (input.paid_on < input.invoice_date || input.paid_on > day) throw new Refusal("paid_on must fall between invoice_date and today.", "paid_on");
+      const a = getAccount(db, input.paid_account_id);
+      if (!a) throw new Refusal(`There is no account with id ${input.paid_account_id}.`, "paid_account_id");
+      if (a.type !== "asset") throw new Refusal(`Account ${a.id} is ${a.type}, and a payment lands in an asset account such as checking.`, "paid_account_id");
+      refuseInvoiceAccount(db, a.id, "paid_account_id");
+    }
+    const p = getProfile(db);
+    if (!p.legal_name) throw new Refusal("Set the business's legal name with profile set before bringing in past invoices.", "legal_name");
+
+    // Lines can only go on a draft, so it is written as one and turned historical in the same write.
+    const { id } = db
+      .query(
+        `INSERT INTO invoices (kind, status, client_id, period_start, period_end, terms_days, note, created_at, source)
+         VALUES ('invoice', 'draft', ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      )
+      .get(client.id, periodStart, periodEnd, daysBetween(input.invoice_date, due), input.note ?? null, ctx.now, ctx.source) as { id: number };
+    insertLines(db, id, manual(input.lines), ctx);
+    const at = (d: string) => `${d}T00:00:00.000Z`;
+    db.query(
+      `UPDATE invoices SET status = 'sent', historical = 1, number = ?, invoice_date = ?, due_date = ?, tax_rate_ppm = ?, tax_label = ?, tax_applies_to = ?,
+         seller_legal_name = ?, seller_address = ?, seller_ein = ?, seller_email = ?, client_name = ?, client_address = ?, client_email = ?,
+         issued_at = ?, sent_at = ?, paid_on = ?, paid_account_id = ? WHERE id = ?`,
+    ).run(
+      input.number,
+      input.invoice_date,
+      due,
+      input.tax_rate_ppm ?? null,
+      input.tax_label ?? null,
+      input.tax_rate_ppm === undefined ? null : "manual",
+      p.legal_name,
+      p.address,
+      p.ein,
+      p.email,
+      client.name,
+      client.address,
+      client.email,
+      at(input.invoice_date),
+      at(sentOn),
+      input.paid_on ?? null,
+      input.paid_account_id ?? null,
+      id,
+    );
+    const r = requireInvoice(db, id);
+    const total = amounts(db, r).total;
+    if (input.total_cents !== undefined && input.total_cents !== total) {
+      throw new Refusal(`The lines and tax add up to ${total} cents, not the ${input.total_cents} cents given as total_cents.`, "total_cents");
+    }
+    post(db, r, "forward", input.invoice_date, `Past invoice ${input.number} to ${client.name}`, ctx);
+    if (input.paid_on !== undefined) {
+      const { id: entry } = db
+        .query("INSERT INTO entries (date, memo, source) VALUES (?, ?, ?) RETURNING id")
+        .get(input.paid_on, `Payment for past invoice ${input.number} from ${client.name}`, ctx.source) as { id: number };
+      const ins = db.query("INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES (?, ?, ?, ?, ?)");
+      ins.run(entry, input.paid_account_id, total, 0, ctx.source);
+      ins.run(entry, account(db, "receivable", ctx), 0, total, ctx.source);
+    }
+    return { invoice: invoiceView(db, id) };
+  },
+};
+
 const invoiceList: Op = {
   name: "invoice_list",
   kind: "read",
@@ -631,4 +761,4 @@ const invoiceGet: Op = {
   },
 };
 
-export const invoiceOps: Op[] = [invoiceDraft, invoiceEdit, invoiceDelete, invoiceIssue, invoiceSent, invoiceVoid, invoiceCredit, invoiceList, invoiceGet];
+export const invoiceOps: Op[] = [invoiceDraft, invoiceEdit, invoiceDelete, invoiceIssue, invoiceSent, invoiceVoid, invoiceCredit, invoiceImport, invoiceList, invoiceGet];

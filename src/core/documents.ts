@@ -61,9 +61,20 @@ export function invoiceDocument(db: Books, r: InvoiceRow): InvoiceDocument {
   };
 }
 
+/**
+ * solobooks makes client documents only for what it issued itself. A past invoice brought in already happened, so it
+ * gets none: otherwise bringing one in could put a numbered invoice in front of a client without the gate.
+ */
+function refuseHistorical(r: InvoiceRow): void {
+  if (r.historical === 1) {
+    throw new Refusal(`Invoice ${r.number} was brought in as already sent, so solobooks makes no PDF, email or reminder for it.`, "id");
+  }
+}
+
 /** A document someone outside will read must have been issued: a draft has no number to quote. */
 function requireIssued(db: Books, id: number): InvoiceRow {
   const r = requireInvoice(db, id);
+  refuseHistorical(r);
   if (r.status === "draft") throw new Refusal(`Draft invoice ${r.id} has no number yet, so issue it first.`, "id");
   if (r.status === "void") throw new Refusal(`${r.kind === "credit" ? "Credit note" : "Invoice"} ${displayNumber(r)} is void.`, "id");
   return r;
@@ -80,6 +91,7 @@ const invoicePdf: Op = {
   fields: { id: { type: "int", required: true, min: 1, description: "Invoice or credit note id." } },
   async run(db, input, ctx) {
     const r = requireInvoice(db, input.id);
+    refuseHistorical(r);
     const bytes = await renderPdf(invoiceDocument(db, r), r.issued_at ?? ctx.now);
     const file = fileName(r);
     ctx.files.push({ path: file, bytes, field: "id" });
