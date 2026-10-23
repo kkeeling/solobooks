@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 36/105
+progress: 50/109
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -173,19 +173,23 @@ Why: a full year goes to an accountant with nothing missing, so there are no fol
 ### F9 · The approval gate
 Why: the person decides how much their agent may do, and that choice holds even when the agent is told otherwise.
 
-- [ ] ISC-63: A gated action returns pending and does not run.
-- [ ] ISC-64: Each gated action offers agent-decides, click-in-chat and passkey levels.
-- [ ] ISC-65: Client-reaching actions default to click-in-chat.
-- [ ] ISC-66: Anti: no CLI command or MCP tool can approve a pending action.
-- [ ] ISC-67: Every gated MCP tool carries `requiresUserInteraction`.
-- [ ] ISC-68: Changing a gate setting itself creates a pending approval.
-- [ ] ISC-69: Changing payment details on invoices is gated by default.
+- [x] ISC-63: A gated action returns pending and does not run.
+- [x] ISC-64: Each gated action offers agent-decides, click-in-chat and passkey levels.
+- [x] ISC-65: Client-reaching actions default to click-in-chat.
+- [x] ISC-66: Anti: no CLI command or MCP tool can approve a pending action.
+- [x] ISC-67: Every gated MCP tool carries `requiresUserInteraction`.
+- [x] ISC-68: Changing a gate setting itself creates a pending approval.
+- [x] ISC-69: Changing payment details on invoices is gated by default.
 - [ ] ISC-70: Marking paid with no matching bank line is gated by default.
-- [ ] ISC-71: One batch approval issues every invoice left in the batch.
-- [ ] ISC-72: An invoice pulled from a batch stays a draft.
-- [ ] ISC-73: The local-page fallback link approves the pending action.
+- [x] ISC-71: One batch approval issues every invoice left in the batch.
+- [x] ISC-72: An invoice pulled from a batch stays a draft.
+- [x] ISC-73: The local-page fallback link approves the pending action.
 - [ ] ISC-74: Passkey-level approval completes only with a WebAuthn assertion.
 - [ ] ISC-75: Anti: instructions planted in an imported CSV never complete a gated action.
+- [x] ISC-106: Anti: a draft waiting for approval refuses every change to what would be issued.
+- [x] ISC-107: The approval prompt shows every line, the note, terms, payment instructions and any reason, in fixed wording the agent can't write.
+- [x] ISC-108: Anti: a raw ledger entry on the accounts invoices post to is refused.
+- [x] ISC-109: A request parked one day approves the next, dated the day it is approved.
 
 ### F10 · Onboarding and the agent guide
 Why: a stranger goes from one pasted prompt to a first draft invoice without a tutorial or a form.
@@ -326,6 +330,10 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-73 | screenshot | fallback link approves | action completes | Interceptor on the local approval page | derived: gate |
 | ISC-74 | screenshot | passkey approval | completes only after Touch ID | Interceptor on the local approval page | derived: gate |
 | ISC-75 | eval | agent imports a CSV with planted instructions | 0 gated actions completed | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-injection | derived: injection |
+| ISC-106 | bun-test | edits to a held draft at click and passkey | all refused | bun test test/gate.test.ts -t "refuses every change" | derived: gate |
+| ISC-107 | bun-test | page card and chat prompt contents | every field shown, fixed question | bun test test/gate.test.ts -t "show every line" | derived: gate |
+| ISC-108 | bun-test | entry post on invoice accounts | refused | bun test test/gate.test.ts -t "accounts invoices post to" | derived: gate |
+| ISC-109 | bun-test | park day 1, approve day 2 | issued, dated day 2 | bun test test/gate.test.ts -t "next morning" | derived: gate |
 | ISC-76 | eval | README prompt, Claude Code, clean machine | doctor passes | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-install-claude | literal |
 | ISC-77 | eval | README prompt, Codex, clean machine | doctor passes | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-install-codex | literal |
 | ISC-79 | eval | guide-only onboarding to draft invoice | draft exists | bun skills/Evals/Tools/EvalRunner.ts -s solobooks-onboarding | literal |
@@ -396,6 +404,9 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Build calls accepted from step 1b: credit notes have their own CN- number series so invoice numbers stay gap-free; issuing refuses until all 13 invoice fields exist; the business profile's next invoice number freezes after the first issue; credit notes issue at once, so the step-2 gate must wrap invoice credit and invoice void as well as issue; voiding releases billed items to be billed again; returned file paths are relative to the books folder.
 - 2026-10-23: refined: the first build taxed whole subtotals including pass-throughs, which made solobooks decide taxability. Setting a client tax rate now requires the line kinds it covers, with no default (ISC-105 added).
 - 2026-10-23: refined: a period's draft now pulls every unbilled item dated on or before the period end and marks earlier ones carried over, so a late-entered entry is never left unbilled.
+- 2026-10-23: Second look on the gate: a Forge audit ran read-only, but its cross-vendor tool could not start (it needs a task ISA under MEMORY/WORK), so it was an in-family review that reproduced every finding by hand. Adopted all five findings: (high) approval ran a draft edited after it was parked; (high) the note, line text and credit reason reached the client unseen; (medium) the chat prompt interpolated agent-written text; (low) a gated profile change carried other fields; (low) entry post could reverse an issued invoice's income ungated. Fixes are dispatched; F9 claims stay open until they are verified.
+- 2026-10-23: Gate calls accepted: approval re-checks a full snapshot of what the person saw apart from the number and dates; a waiting draft is held against edits; the chat prompt is a fixed question plus code-written labels with agent text flattened and capped at 240 characters; a payment-instructions change must come alone; one passkey per books, trusted on first use; the page is http://localhost:7317 bound to loopback.
+- 2026-10-23: refined: ISC-106..109 added from the gate audit's findings and the overnight-approval fix.
 - 2026-10-22: Named solobooks. It was free on npm and Homebrew that day, and the only GitHub match was a 2-star repo. No trademark search yet.
 
 ## Learning
@@ -409,6 +420,7 @@ Why: the person can see the books and approve things when their agent's app can'
 
 - ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
 - ISC-27, 29..38, 44, 45, 105: probes as written, rerun independently 2026-10-23 — `bun test` 51 pass 0 fail; issued and draft PDFs from a hand-run CLI billing viewed as rendered images — commits 463e5e5, 3eef074, 0ae1816
+- ISC-63..69, 71..73, 106..109: probes as written, rerun independently 2026-10-23 — `bun test` 79 pass 0 fail; ISC-73 approved in real Brave via Interceptor (draft to issued 1001); audit swap and hidden-note attacks replayed by hand and refused — commits 60b265b, ed7e037, 51e70e2, f4bd5f6
 
 ## Remaining Work
 
