@@ -408,6 +408,9 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Gate calls accepted: approval re-checks a full snapshot of what the person saw apart from the number and dates; a waiting draft is held against edits; the chat prompt is a fixed question plus code-written labels with agent text flattened and capped at 240 characters; a payment-instructions change must come alone; one passkey per books, trusted on first use; the page is http://localhost:7317 bound to loopback.
 - 2026-10-23: refined: ISC-106..109 added from the gate audit's findings and the overnight-approval fix.
 - 2026-10-22: Named solobooks. It was free on npm and Homebrew that day, and the only GitHub match was a 2-star repo. No trademark search yet.
+- 2026-10-23: The default books folder is `~/solobooks`, recorded by `solobooks setup` in a config file. Precedence: `--books`, then SOLOBOOKS_DIR, then the config, then refuse. Setup warns when the folder sits in iCloud, Dropbox, OneDrive or Google Drive. Settles the open call from step 1a.
+- 2026-10-23: Historical (already-happened) invoices must be dated before today and are marked historical wherever invoices are listed, so "historical" can't be used to skip the gate on a new invoice.
+- 2026-10-23: While the repo is private, ISC-83 is proven against a loopback mirror of a local release build. The run against the real GitHub Releases URL waits for the repo going public.
 
 ## Learning
 
@@ -438,3 +441,5 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
 - [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
 - [ ] Flip the repo public — waits on the trademark search and the docs scrub above.
+- [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
+- [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
