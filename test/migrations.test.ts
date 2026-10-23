@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { openBooks } from "../src/core/db.ts";
 import { MIGRATIONS } from "../src/db/migrations.ts";
-import { dbPath, tempDir } from "./support/books.ts";
+import { dbPath, dumpDb, tempDir } from "./support/books.ts";
 
 test("migrations: books saved before the payment gate open with every gate level and pending action kept, still locked", () => {
   const path = dbPath(tempDir());
@@ -153,4 +153,32 @@ test("migrations: books saved before the Schedule C chart get it, keeping every 
   expect(added).toContainEqual({ name: "Office expense", type: "expense", schedule_c: "18" });
   expect(db.query("SELECT COUNT(*) AS n FROM lines").get()).toEqual({ n: 2 });
   db.close();
+});
+
+test("migrations: new books, in memory or in a new file, are exactly books migrated from nothing, and never share state", () => {
+  const slow = new Database(":memory:", { strict: true });
+  slow.exec("PRAGMA foreign_keys = ON");
+  for (const [v, sql] of MIGRATIONS.entries()) {
+    slow.exec(sql);
+    slow.exec(`PRAGMA user_version = ${v + 1}`);
+  }
+  const schema = (db: Database) => db.query("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name").all();
+  const want = { version: slow.query("PRAGMA user_version").get(), schema: schema(slow), rows: dumpDb(slow) };
+  slow.close();
+
+  const path = dbPath(tempDir());
+  for (const db of [openBooks(":memory:"), openBooks(path)]) {
+    expect({ version: db.query("PRAGMA user_version").get(), schema: schema(db), rows: dumpDb(db) }).toEqual(want);
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+    db.exec("INSERT INTO clients (name, source) VALUES ('Acme', 'test')");
+    db.close();
+  }
+  // What one books file wrote is in it alone: the next new books start empty again, and the file kept its client.
+  const again = openBooks(":memory:");
+  expect(again.query("SELECT COUNT(*) AS n FROM clients").get()).toEqual({ n: 0 });
+  again.close();
+  const file = new Database(path, { readonly: true });
+  expect(file.query("SELECT name FROM clients").all()).toEqual([{ name: "Acme" }]);
+  expect(file.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+  file.close();
 });
