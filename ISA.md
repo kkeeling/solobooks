@@ -362,7 +362,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-97 | bun-test | idle gap fixture | zero past cap | bun test addons/agent-time/test/count.test.ts -t "cap" | derived: agent-time |
 | ISC-98 | bun-property | random parallel sessions | ≤ 60 min per hour | bun test addons/agent-time/test/count.property.test.ts -t "parallel" | derived: agent-time |
 | ISC-99 | bun-test | run twice for same period | 0 new entries | bun test addons/agent-time/test/rerun.test.ts | derived: agent-time |
-| ISC-100 | bash | add-on via binary, no bun on PATH | runs, prints hours | `env -i HOME=$HOME PATH=/usr/bin:/bin ./solobooks addon run agent-time --dry-run` | derived: agent-time |
+| ISC-100 | bash | add-on via binary, no bun on PATH | runs, prints hours | `bash scripts/addon-no-bun.sh` | derived: agent-time |
 | ISC-101 | bash | default setup output | no add-on installed | `bash scripts/setup-no-addon.sh` | derived: add-ons-optional |
 | ISC-102.1 | screenshot | page with delayed data | loading state shown | Interceptor capture | derived: human-page |
 | ISC-102.2 | screenshot | page with unreadable books file | error state shown | Interceptor capture | derived: human-page |

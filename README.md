@@ -90,6 +90,12 @@ Whatever your agent reads from them, though, goes to that agent's model vendor a
 
 US dollars, one US business, one machine.
 
+## Add-ons
+
+solobooks stores time; it never tracks it. Optional add-ons do that, and setup never installs one.
+
+- **Agent time** bills the time you spent directing Claude Code and Codex, from their session logs on your machine, by a fixed rule: from each of your own messages until 10 minutes after your last action, with parallel sessions merged so no hour bills more than 60 minutes. It previews before writing anything and can't bill a day twice. In Claude Code: `claude plugin install solobooks-agent-time@solobooks`. For other agents, copy [addons/agent-time/skills/bill-agent-time](addons/agent-time/skills/bill-agent-time) into `~/.agents/skills/`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

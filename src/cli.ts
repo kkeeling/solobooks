@@ -47,6 +47,12 @@ const COMMANDS = [
     description:
       "Copy the books to a new, empty folder (--to <dir>): the books file, receipts, invoice PDFs and statements, each checked, and point the settings at it. The old folder is left as it was.",
   },
+  {
+    command: "addon run",
+    kind: "addon",
+    description:
+      "Run an add-on's script with the runtime solobooks carries, so nothing else needs installing: solobooks addon run <script> [args...]. The add-on's skill names its script; it changes the books only through these same commands.",
+  },
   { command: "mcp", kind: "install", description: "Serve the MCP tools over stdio. Agent apps start this; you don't run it by hand." },
   { command: "version", kind: "install", description: "Print the solobooks version (also --version)." },
 ];
@@ -168,6 +174,13 @@ if (import.meta.main && (word === "--version" || word === "version")) {
   const r = await install(word, process.argv.slice(3));
   process.stdout.write(r.stdout + "\n");
   process.exit(r.code);
+} else if (import.meta.main && word === "addon") {
+  try {
+    process.exitCode = await (await import("./addon.ts")).runAddon(process.argv.slice(3), process.env, (argv) => run(argv));
+  } catch (e) {
+    process.stdout.write(JSON.stringify(e instanceof Refusal ? e.toJSON() : { error: e instanceof Error ? e.message : String(e) }, null, 2) + "\n");
+    process.exitCode = e instanceof Refusal ? 2 : 1;
+  }
 } else if (import.meta.main && word === "serve") {
   try {
     const page = await serve(process.argv.slice(2));

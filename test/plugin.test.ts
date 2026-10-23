@@ -15,7 +15,8 @@ test("ISC-87 manifests: the marketplace lists the solobooks plugin, and the plug
   const market = read(".claude-plugin/marketplace.json");
   expect(market.name).toMatch(kebab);
   expect(typeof market.owner?.name).toBe("string");
-  expect(market.plugins).toHaveLength(1);
+  // solobooks first; its optional add-ons after it, each its own plugin (see the add-on test below).
+  expect(market.plugins.map((p: { name: string }) => p.name)).toEqual(["solobooks", "solobooks-agent-time"]);
   const entry = market.plugins[0];
   expect(entry.name).toBe("solobooks");
   expect(entry.source).toMatch(/^\.\//); // a path inside this repo
@@ -36,6 +37,21 @@ test("ISC-87 manifests: the marketplace lists the solobooks plugin, and the plug
   expect(existsSync(join(pluginRoot, ".mcp.json"))).toBe(false);
   // The skill is found where Claude Code looks, and passes the Agent Skills check.
   expect(checkSkill(join(pluginRoot, "skills", "solobooks", "SKILL.md"))).toEqual([]);
+});
+
+test("add-on plugin: agent time is its own plugin, carrying only its skill and no MCP server", () => {
+  const market = read(".claude-plugin/marketplace.json");
+  const entry = market.plugins.find((p: { name: string }) => p.name === "solobooks-agent-time");
+  expect(entry.source).toBe("./addons/agent-time");
+  const pluginRoot = resolve(ROOT, entry.source);
+  const plugin = JSON.parse(readFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"));
+  expect(plugin.name).toBe(entry.name);
+  expect(plugin.version).toBe(entry.version);
+  expect(plugin.license).toBe("MIT");
+  expect(plugin.mcpServers).toBeUndefined();
+  const skill = join(pluginRoot, "skills", "bill-agent-time");
+  expect(checkSkill(join(skill, "SKILL.md"))).toEqual([]);
+  for (const f of ["scripts/count-time.ts", "references/billing-rule.md"]) expect(existsSync(join(skill, f))).toBe(true);
 });
 
 test("ISC-87 launcher: it starts the installed solobooks as an MCP server, or says how to install it", () => {
