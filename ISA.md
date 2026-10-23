@@ -2,10 +2,10 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: scoping
-progress: 0/104
+phase: climbing
+progress: 22/104
 started: 2026-10-23T01:31:17Z
-updated: 2026-10-23T01:31:17Z
+updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
@@ -74,29 +74,29 @@ _Avoid_: "Grok Bot" and "Muse", which are those companies' cloud products and ca
 ### F0 · Cross-cutting
 Why: the invariants that make the books trustworthy no matter which feature or agent touched them.
 
-- [ ] ISC-1: Anti: no solobooks command opens a non-loopback network connection.
-- [ ] ISC-2: Anti: the schema and config hold no field for an outside service's credential.
-- [ ] ISC-3: Anti: solobooks has no dependency on any AI model SDK.
-- [ ] ISC-4: Debits equal credits after every write, across any sequence of writes.
-- [ ] ISC-5: Any amount round-trips through storage to the exact cent.
-- [ ] ISC-6: Every report total equals the sum of its entries, with no cached totals.
-- [ ] ISC-7: Anti: updating or deleting a posted entry is refused at the database level.
-- [ ] ISC-8: Every write appends exactly one history row.
-- [ ] ISC-9: A write repeated with the same idempotency key changes nothing.
-- [ ] ISC-10: The same idempotency key with a different payload is refused.
-- [ ] ISC-11: `--dry-run` on any write leaves the database file byte-identical.
-- [ ] ISC-12: Every record carries a non-empty source.
-- [ ] ISC-13: Every refused write returns a one-sentence reason and the field to change.
-- [ ] ISC-14: The CLI and MCP produce identical records for the same operation.
-- [ ] ISC-15: Anti: any currency other than USD is refused.
+- [x] ISC-1: Anti: no solobooks command opens a non-loopback network connection.
+- [x] ISC-2: Anti: the schema and config hold no field for an outside service's credential.
+- [x] ISC-3: Anti: solobooks has no dependency on any AI model SDK.
+- [x] ISC-4: Debits equal credits after every write, across any sequence of writes.
+- [x] ISC-5: Any amount round-trips through storage to the exact cent.
+- [x] ISC-6: Every report total equals the sum of its entries, with no cached totals.
+- [x] ISC-7: Anti: updating or deleting a posted entry is refused at the database level.
+- [x] ISC-8: Every write appends exactly one history row.
+- [x] ISC-9: A write repeated with the same idempotency key changes nothing.
+- [x] ISC-10: The same idempotency key with a different payload is refused.
+- [x] ISC-11: `--dry-run` on any write leaves the database file byte-identical.
+- [x] ISC-12: Every record carries a non-empty source.
+- [x] ISC-13: Every refused write returns a one-sentence reason and the field to change.
+- [x] ISC-14: The CLI and MCP produce identical records for the same operation.
+- [x] ISC-15: Anti: any currency other than USD is refused.
 
 ### F1 · Clients and engagements
 Why: one consultant's mix of hourly, flat, recurring and pass-through work bills correctly with no code per client.
 
-- [ ] ISC-16: Hourly, fixed-milestone, recurring and mixed terms are each created through the CLI alone.
-- [ ] ISC-17: 37 minutes at $150/hr bills exactly $92.50 by default.
-- [ ] ISC-18: A client's 6-minute increment bills a 7-minute entry as 12 minutes.
-- [ ] ISC-19: A client's 15-minute minimum bills a 5-minute entry as 15 minutes.
+- [x] ISC-16: Hourly, fixed-milestone, recurring and mixed terms are each created through the CLI alone.
+- [x] ISC-17: 37 minutes at $150/hr bills exactly $92.50 by default.
+- [x] ISC-18: A client's 6-minute increment bills a 7-minute entry as 12 minutes.
+- [x] ISC-19: A client's 15-minute minimum bills a 5-minute entry as 15 minutes.
 
 ### F2 · Accounts and owner money
 Why: the most common solo mess, where your own money moving around gets counted as income or expense, can't happen.
@@ -110,10 +110,10 @@ Why: the most common solo mess, where your own money moving around gets counted 
 ### F3 · Time
 Why: solobooks keeps time from any source and never decides how it was tracked.
 
-- [ ] ISC-25: A time entry carries client, date, duration and a note.
-- [ ] ISC-26: Anti: the core contains no code that reads agent logs or runs timers.
+- [x] ISC-25: A time entry carries client, date, duration and a note.
+- [x] ISC-26: Anti: the core contains no code that reads agent logs or runs timers.
 - [ ] ISC-27: Editing a time entry on an issued invoice is refused with a reason.
-- [ ] ISC-28: Unbilled time entries can be edited and deleted freely.
+- [x] ISC-28: Unbilled time entries can be edited and deleted freely.
 
 ### F4 · Invoices and client documents
 Why: what reaches a client is always correct, numbered without gaps, and never sent final before approval.
@@ -251,7 +251,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | isc | type | check | threshold | tool | anchors_to |
 |-----|------|-------|-----------|------|------------|
 | ISC-1 | bun-test | full command suite with outbound sockets trapped | 0 non-loopback connects | bun test test/manifest.test.ts -t "no network" | derived: manifest |
-| ISC-2 | bash | schema and config scanned for credential fields | 0 matches | `rg -i "password\|token\|api_key\|secret" src/schema.sql src/config.ts` | derived: manifest |
+| ISC-2 | bash | schema and config scanned for credential fields | 0 matches | `rg -i "password\|token\|api_key\|secret" src/db src/config.ts ; test $? -eq 1` | derived: manifest |
 | ISC-3 | bash | dependency list scanned for model SDKs | 0 matches | `jq -r '.dependencies // {} \| keys[]' package.json \| rg -i "anthropic\|openai\|ai-sdk\|gemini" ; test $? -eq 1` | derived: no-ai-inside |
 | ISC-4 | bun-property | debits equal credits after random write sequences | 1000 runs | bun test test/ledger.property.test.ts -t "balances" | literal |
 | ISC-5 | bun-property | amount round-trip exact | 1000 runs | bun test test/money.property.test.ts -t "cents" | literal |
@@ -275,7 +275,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-23 | bun-test | unbalanced transfer | refused | bun test test/owner.test.ts -t "unbalanced" | derived: owner-money |
 | ISC-24 | bun-property | draws and contributions | P&L delta 0 | bun test test/owner.property.test.ts -t "draws" | derived: owner-money |
 | ISC-25 | bun-test | time entry fields required | all present | bun test test/time.test.ts -t "fields" | literal |
-| ISC-26 | bash | core scanned for log readers and timers | 0 matches | `rg -n "\.claude/projects\|\.codex/sessions\|setInterval" src/core` ; test $? -eq 1 | derived: stores-not-tracks |
+| ISC-26 | bash | core scanned for log readers and timers | 0 matches | `rg -n "\.claude/projects\|\.codex/sessions\|setInterval" src/core ; test $? -eq 1` | derived: stores-not-tracks |
 | ISC-27 | bun-test | edit billed time entry | refused with reason | bun test test/time.test.ts -t "locked" | derived: free-until-issued |
 | ISC-28 | bun-test | edit and delete unbilled entry | both succeed | bun test test/time.test.ts -t "unbilled" | derived: free-until-issued |
 | ISC-29 | bun-test | period draft line sources | 4 of 4 kinds | bun test test/invoices.test.ts -t "draft sources" | literal |
@@ -386,7 +386,16 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-22: refined: ISC-78 (Grok Build and Muse Code install tests) and ISC-84 (Windows installer test) were dropped from the v1 climb at the maintainer's call and moved to Remaining Work. A friend of the maintainer will test Windows.
 - 2026-10-22: The maintainer granted for the climb: git init and local commits; a private GitHub repo kkeeling/solobooks; beads tracking; a fresh empty home folder counting as a clean machine for install tests; installing hledger with Homebrew; and publishing the npm package, which needs an npm sign-in this machine does not have yet.
 - 2026-10-22: refined: ISC-62 (an accountant accepts a full year without follow-up) was dropped from the v1 climb at the maintainer's call, because it can only be checked during tax season in April. It moved to Remaining Work.
+- 2026-10-23: [arch] Core layout: `src/core/` holds all logic (ledger, money, clients, time, invoices); `src/cli.ts` and `src/mcp.ts` are thin adapters calling the same core functions; schema in `src/db/` with numbered migrations. Money is integer cents; rates are cents per hour; durations are whole minutes; line amounts round half-up once, at the line. Every write runs in one SQLite transaction that appends a history row and checks debits equal credits before commit. Dry-run executes the same transaction and rolls back.
+- 2026-10-23: [arch] Invoice PDFs come from pdf-lib (pure JS, no browser), rendered from an invoice document model; tests read PDF text back with pdfjs-dist as a dev dependency. MCP uses `@modelcontextprotocol/server` 2.x; tests use fast-check 4.x for properties.
+- 2026-10-23: Climb order: (1) bill one client, (2) gate, (3) install and onboarding, (4) money reconciles, (5) tax and year-end, (6) durability, add-on, page.
+- 2026-10-23: Build calls accepted from step 1a: every write requires `--source` (no default, since a default explains nothing); no default books folder yet, decided in step 3 with `solobooks setup`; a generic `entry post` and `account add`/`list` ledger primitive exists; MCP input validation is left to the core so CLI and MCP refuse identically; `SOLOBOOKS_NOW` pins the clock for parity tests.
+- 2026-10-23: refined: ISC-2 probe pointed at `src/db` (the schema lives in migrations) and given an exit check; ISC-26 and ISC-104 probe cells rewritten so the whole command sits in one code span.
 - 2026-10-22: Named solobooks. It was free on npm and Homebrew that day, and the only GitHub match was a 2-star repo. No trademark search yet.
+
+## Verification
+
+- ISC-1..19, 25, 26, 28: probes as written in Test Strategy, rerun independently 2026-10-23 — `bun test` 31 pass 0 fail; scan probes ISC-2, ISC-26 proven to fail on planted violations — commits 4eb622a, 1b9ccf7, 10c21a7
 
 ## Remaining Work
 
