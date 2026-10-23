@@ -78,6 +78,10 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "owner_draw", input: { date: "2026-10-07", amount_cents: 50000, account_id: 1 } },
   { op: "owner_contribute", input: { date: "2026-10-08", amount_cents: 20000, account_id: 1, memo: "Top-up" } },
   { op: "expense_add", input: { date: "2026-10-09", amount_cents: 1500, vendor: "Cafe", memo: "Client lunch", account_id: 3, paid_personally: true } },
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-10", amount_cents: 5000, fee_cents: 175, deposit_account_id: 1, memo: "Card payment" } },
+  { op: "payment_refund", input: { payment_id: 1, date: "2026-10-11", reason: "Paid on the wrong invoice" } },
+  { op: "payment_add", input: { invoice_id: 1, date: "2026-10-12", amount_cents: 500000, deposit_account_id: 1 } }, // more than is owed
+  { op: "payment_refund", input: { payment_id: 2, date: "2026-10-13", reason: "Overpaid" } },
   { op: "gate_set", input: { invoice_issue: "click" } },
   { op: "gate_list", input: {} },
   { op: "pending_list", input: {} },
@@ -97,6 +101,9 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_reminder", input: { id: 1, as_of: "2099-01-01" } },
   { op: "expense_list", input: {} },
   { op: "owner_list", input: {} },
+  { op: "payment_list", input: { invoice_id: 1 } },
+  { op: "client_credits", input: {} },
+  { op: "report_unpaid", input: {} },
   { op: "history_list", input: {} },
 ];
 

@@ -6,14 +6,16 @@ import { currency, MAX_CENTS } from "./validate.ts";
 export const ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"] as const;
 
 /**
- * The accounts invoices post to. Only invoice issue, void and credit move them, all three gated, so no journal entry
- * or expense may touch them: otherwise an ungated write could quietly reverse an issued invoice.
+ * The accounts invoices and their payments post to. Only invoice issue, void and credit, and payments and their
+ * refunds move them, each gated or tied to its own record, so no journal entry or expense may touch them: otherwise
+ * an ungated write could quietly reverse an issued invoice or mark it paid.
  */
 export const INVOICE_ACCOUNTS = {
   receivable: { name: "Accounts receivable", type: "asset" },
   services: { name: "Consulting income", type: "income" },
   reimbursed: { name: "Reimbursed expense income", type: "income" },
   salesTax: { name: "Sales tax payable", type: "liability" },
+  clientCredits: { name: "Client credits", type: "liability" },
 } as const;
 
 /** Refuses an account invoices post to, naming the field that holds it. */

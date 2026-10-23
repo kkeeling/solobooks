@@ -8,6 +8,7 @@ import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
 import type { Ctx, Op } from "./op.ts";
 import { ownerOps } from "./owner.ts";
+import { paymentOps } from "./payments.ts";
 import { profileOps } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
 import { reportOps } from "./reports.ts";
@@ -20,6 +21,7 @@ export const OPS: readonly Op[] = [
   ...timeOps,
   ...expenseOps,
   ...invoiceOps,
+  ...paymentOps,
   ...documentOps,
   ...ledgerOps,
   ...ownerOps,
