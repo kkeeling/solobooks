@@ -16,6 +16,8 @@ Check: `~/.local/bin/solobooks --version` prints `solobooks 0.1.0` or later. If 
 
 ## 2. Connect it
 
+setup writes to the agent apps' own config folders (and `~/.agents/skills`), so if this app runs commands in a sandbox, ask the person to approve running setup outside it.
+
 ```sh
 ~/.local/bin/solobooks setup
 ```
