@@ -32,7 +32,7 @@ const WHAT: Record<SetAction, string> = {
   invoice_void: "voiding invoices and credit notes",
   invoice_credit: "issuing credit notes",
   payment_instructions: "changing the payment instructions printed on invoices",
-  payment_unmatched: "recording an invoice payment with no imported bank line behind it",
+  payment_unmatched: "recording an invoice payment with no imported bank line behind it, or undoing the bank match behind one",
 };
 
 export function levelOf(db: Books, action: SetAction): Level {
@@ -186,6 +186,7 @@ export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ct
       case "payment_instructions":
         return { title: "Change the payment instructions printed on invoices?", items: [{ from: instructionsBefore, to: input.payment_instructions }] };
       case "payment_unmatched": {
+        if (op.name === "bank_unmatch") return unmatchPrompt(db, preview, input);
         const p = preview.payment;
         const item = {
           invoice_id: p.invoice_id,
@@ -215,6 +216,34 @@ export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ct
   }
 }
 
+/** Undoing the bank match behind a payment: the bank line, the payment it backed, and what that leaves. */
+function unmatchPrompt(db: Books, preview: Record<string, any>, input: Record<string, any>): Prompt {
+  const line = preview.line;
+  const p = db.query("SELECT id, invoice_id, date, amount_cents, fee_cents FROM payments WHERE entry_id = ?").get(preview.unmatched.entry_id) as {
+    id: number;
+    invoice_id: number;
+    date: string;
+    amount_cents: number;
+    fee_cents: number;
+  };
+  const inv = getInvoiceRow(db, p.invoice_id)!;
+  const item = {
+    line_id: line.id,
+    line_date: line.date,
+    line_description: line.description,
+    line_amount_cents: line.amount_cents,
+    account: getAccount(db, line.account_id)!.name,
+    payment_id: p.id,
+    invoice_number: String(inv.number),
+    client: inv.client_name,
+    paid_on: p.date,
+    amount_cents: p.amount_cents,
+    deposit_cents: p.amount_cents - p.fee_cents,
+    reason: input.reason,
+  };
+  return { title: `Undo the bank match behind the ${dollars(p.amount_cents)} payment on invoice ${inv.number}, leaving it with no bank line behind it?`, items: [item] };
+}
+
 /** Agent-written text as one capped line, so it can only ever fill its own field. */
 export const FIELD_MAX = 240;
 export function field(v: unknown): string {
@@ -223,13 +252,24 @@ export function field(v: unknown): string {
 }
 
 /** One pending action's fields, label first, as the page card and the chat prompt both show them. */
-export function promptFields(p: Pick<PendingAction, "action" | "items">): [string, string][][] {
+export function promptFields(p: Pick<PendingAction, "action" | "op" | "items">): [string, string][][] {
   if (p.action === "payment_instructions") {
     const [i] = p.items as { from: string | null; to: string }[];
     return [[["Current", i!.from === null ? "(none)" : field(i!.from)], ["New", field(i!.to)]]];
   }
   if (p.action === "gate_settings") {
     return [(p.items as { what: string; from: string; to: string }[]).map((i) => [i.what, `${i.from} → ${i.to}`] as [string, string])];
+  }
+  if (p.action === "payment_unmatched" && p.op === "bank_unmatch") {
+    const [i] = p.items as Record<string, any>[];
+    return [[
+      ["Bank line", `${i!.line_date} ${field(i!.line_description)}: ${dollars(i!.line_amount_cents)} on ${field(i!.account)}`],
+      ["Payment it backs", `${dollars(i!.amount_cents)} paid on ${i!.paid_on}, deposit ${dollars(i!.deposit_cents)}`],
+      ["Invoice", i!.invoice_number],
+      ["Client", field(i!.client)],
+      ["After", "the line goes back on the unmatched list, and this payment has no bank line behind it"],
+      ["Reason", field(i!.reason)],
+    ]];
   }
   if (p.action === "payment_unmatched") {
     const [i] = p.items as Record<string, any>[];

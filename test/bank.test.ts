@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { promptFields } from "../src/core/gate.ts";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
-import { fileHash, tempDir } from "./support/books.ts";
+import { dumpFile, dbPath, fileHash, tempDir } from "./support/books.ts";
+import { approveOnPage, asPerson, setEveryLevel } from "./support/person.ts";
 
 // Bank import through the CLI. acmeBooks() accounts: 1 Checking, 2 Printing; its expenses, both paid from checking,
 // are $42.00 on 2026-10-05 and $9.99 on 2026-11-05.
@@ -185,4 +187,89 @@ test("bank import: reads each bank's own layout, and refuses a row it can't read
   expect(await cli(dir, json(["bank", "import"], { account_id: 2, file_path: statement(OCTOBER), ...COLUMNS }))).toMatchObject({ code: 2, out: { field: "account_id" } });
   expect(await cli(dir, json(["bank", "import"], { account_id: 1, file_path: join(tempDir(), "missing.csv"), ...COLUMNS }))).toMatchObject({ code: 2, out: { field: "file_path" } });
   expect(existsSync(join(dir, "statements"))).toBe(true);
+});
+
+test("ISC-112 unmatch: a wrong match is undone with both rows kept, and undoing a payment's match waits like an unbacked payment", async () => {
+  const dir = await acmeBooks();
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  const d = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Work", amount_cents: 100000 }] }))).invoice;
+  const inv = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).invoice;
+  const ink = (await ok(dir, json(["expense", "add"], { date: "2026-10-14", amount_cents: 2500, vendor: "Ink", account_id: 2, paid_from_account_id: 1 }))).expense;
+  const path = statement(`Date,Description,Amount
+10/07/2026,OFFICE DEPOT,-42.00
+10/14/2026,INK REFILL,-25.00
+10/25/2026,STRIPE PAYOUT,970.00
+`);
+  const imported = await importFile(dir, path);
+  const [depot, refill, payout] = imported.lines.map((l: any) => l.id);
+  // The ink line matched by itself; the agent matched the Office Depot charge to the print shop expense, wrongly.
+  expect(imported.matched).toEqual([{ line_id: refill, entry_id: ink.entry_id }]);
+  const [print] = (await ok(dir, ["expense", "list"])).expenses.filter((e: any) => e.vendor === "Print shop");
+  await ok(dir, json(["bank", "match"], { line_id: depot, entry_id: print.entry_id }));
+  const payment = (await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: 100000, fee_cents: 3000, deposit_account_id: 1, bank_line_id: payout }))).payment;
+  expect(payment.bank_line_id).toBe(payout);
+  expect(await lines(dir, "unmatched")).toEqual([]);
+
+  // From here the person asks before anything gated; undoing a match that backs no payment still runs at once.
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
+  const undo = (await ok(dir, json(["bank", "unmatch"], { line_id: depot, reason: "That was toner, not the print shop" }))).line;
+  expect(undo).toMatchObject({ id: depot, match: null, candidates: [print.entry_id] });
+  expect(undo.undone_matches).toEqual([
+    expect.objectContaining({ entry_id: print.entry_id, kind: "agent", reason: "That was toner, not the print shop", unmatched_by: "agent:test" }),
+  ]);
+  expect((await lines(dir, "unmatched")).map((l: any) => l.id)).toEqual([depot]);
+  // Append-only: the match row is still there, with an unmatch beside it, and neither can be edited or deleted.
+  const rows = dumpFile(dbPath(dir));
+  expect(rows.bank_matches).toHaveLength(3);
+  expect(rows.bank_unmatches).toEqual([expect.objectContaining({ reason: "That was toner, not the print shop", source: "agent:test" })]);
+  asPerson(dir, (db) => {
+    expect(() => db.exec("DELETE FROM bank_matches")).toThrow(/kept/);
+    expect(() => db.exec("DELETE FROM bank_unmatches")).toThrow(/kept/);
+    expect(() => db.exec("UPDATE bank_unmatches SET reason = 'x'")).toThrow(/kept/);
+  });
+  // Only a standing match can be undone.
+  expect(await cli(dir, json(["bank", "unmatch"], { line_id: depot, reason: "Again" }))).toMatchObject({ code: 2, out: { field: "line_id" } });
+  expect(await cli(dir, json(["bank", "unmatch"], { line_id: 999, reason: "x" }))).toMatchObject({ code: 2, out: { field: "line_id" } });
+
+  // A pairing undone as wrong is never made again by itself: the ink line, unmatched, stays so on the next import.
+  await ok(dir, json(["bank", "unmatch"], { line_id: refill, reason: "Personal purchase" }));
+  expect((await importFile(dir, path)).matched).toEqual([]);
+  expect((await lines(dir, "unmatched")).map((l: any) => l.id)).toEqual([depot, refill]);
+
+  // Undoing the match behind a payment leaves it with no bank line, so it waits for the person and changes nothing.
+  const before = dumpFile(dbPath(dir));
+  const asked = (await ok(dir, json(["bank", "unmatch"], { line_id: payout, reason: "Wrong deposit" })));
+  expect(asked).toMatchObject({
+    status: "pending",
+    level: "click",
+    title: `Undo the bank match behind the $1,000.00 payment on invoice ${inv.number}, leaving it with no bank line behind it?`,
+  });
+  const { pending_actions: _p, history: _h, ...unchanged } = dumpFile(dbPath(dir));
+  const { pending_actions: _p0, history: _h0, ...was } = before;
+  expect(unchanged).toEqual(was);
+  expect((await lines(dir, "matched")).map((l: any) => l.id)).toEqual([payout]);
+  const shown = (await ok(dir, ["pending", "get", "--id", String(asked.pending_id)])).pending;
+  expect(shown).toMatchObject({ action: "payment_unmatched", op: "bank_unmatch" });
+  expect(promptFields(shown)[0]).toEqual([
+    ["Bank line", "2026-10-25 STRIPE PAYOUT: $970.00 on Checking"],
+    ["Payment it backs", "$1,000.00 paid on 2026-10-25, deposit $970.00"],
+    ["Invoice", inv.number],
+    ["Client", "Beta LLC"],
+    ["After", "the line goes back on the unmatched list, and this payment has no bank line behind it"],
+    ["Reason", "Wrong deposit"],
+  ]);
+
+  // Approved, it runs: the line is back on the list and the payment shows no bank line behind it.
+  const approved = asPerson(dir, (db) => approveOnPage(db, asked.pending_id));
+  expect(approved.result.line).toMatchObject({ id: payout, match: null });
+  expect((await lines(dir, "unmatched")).map((l: any) => l.id)).toEqual([depot, refill, payout]);
+  expect((await ok(dir, ["payment", "list"])).payments[0]).toMatchObject({ id: payment.id, bank_line_id: null });
+
+  // Re-backed with bank match it is matched again, and with payment_unmatched left to the agent the undo runs at once.
+  await ok(dir, json(["bank", "match"], { line_id: payout, entry_id: payment.entry.id }));
+  expect((await ok(dir, ["payment", "list"])).payments[0].bank_line_id).toBe(payout);
+  asPerson(dir, (db) => setEveryLevel(db, "agent_decides"));
+  const direct = await ok(dir, json(["bank", "unmatch"], { line_id: payout, reason: "Still wrong" }));
+  expect(direct.status).toBeUndefined();
+  expect(direct.line.undone_matches.map((m: any) => m.reason)).toEqual(["Wrong deposit", "Still wrong"]);
 });

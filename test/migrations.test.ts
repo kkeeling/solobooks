@@ -77,3 +77,44 @@ test("migrations: books saved before partial refunds and applied credits open wi
   expect(db.query("SELECT COUNT(*) AS n FROM refunds WHERE payment_id = 1").get()).toEqual({ n: 2 });
   db.close();
 });
+
+test("migrations: books saved before bank unmatch open with every match kept and still locked, and a line can be matched again once undone", () => {
+  const path = dbPath(tempDir());
+  const old = new Database(path, { create: true, strict: true });
+  old.exec("PRAGMA foreign_keys = ON");
+  for (const [v, sql] of MIGRATIONS.slice(0, 10).entries()) {
+    old.exec(sql);
+    old.exec(`PRAGMA user_version = ${v + 1}`);
+  }
+  old.exec(`
+    INSERT INTO accounts (id, name, type, source) VALUES (1, 'Checking', 'asset', 'agent:old'), (2, 'Printing', 'expense', 'agent:old');
+    INSERT INTO entries (id, date, memo, source) VALUES (1, '2026-10-05', 'Print shop', 'agent:old');
+    INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES (1, 2, 4200, 0, 'agent:old'), (1, 1, 0, 4200, 'agent:old');
+    INSERT INTO bank_imports (id, account_id, file_name, file_sha256, stored_file, row_count, new_lines, imported_at, source)
+      VALUES (1, 1, 'oct.csv', 'abc', 'statements/abc.csv', 1, 1, '2026-10-22', 'agent:old');
+    INSERT INTO bank_lines (id, import_id, account_id, file_row, date, description, amount_cents, source)
+      VALUES (1, 1, 1, 2, '2026-10-05', 'PRINT SHOP', -4200, 'agent:old');
+    INSERT INTO bank_matches (id, line_id, entry_id, account_id, kind, matched_at, source) VALUES (1, 1, 1, 1, 'exact', '2026-10-22', 'agent:old');
+  `);
+  old.close();
+
+  const db = openBooks(path);
+  expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
+  expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  expect(db.query("SELECT * FROM bank_matches").all()).toEqual([
+    { id: 1, line_id: 1, entry_id: 1, account_id: 1, kind: "exact", matched_at: "2026-10-22", source: "agent:old" },
+  ]);
+  expect(db.query("SELECT id FROM live_bank_matches").all()).toEqual([{ id: 1 }]);
+  expect(() => db.exec("DELETE FROM bank_matches")).toThrow(/kept/);
+  expect(() => db.exec("UPDATE bank_matches SET source = 'x'")).toThrow(/kept/);
+  // A standing match can't be doubled; once undone, the line can be matched again, and both rows stay.
+  const rematch = "INSERT INTO bank_matches (line_id, entry_id, account_id, kind, matched_at, source) VALUES (1, 1, 1, 'agent', 'd', 's')";
+  expect(() => db.exec(rematch)).toThrow(/at most one match/);
+  db.exec("INSERT INTO bank_unmatches (match_id, reason, unmatched_at, source) VALUES (1, 'Wrong', 'd', 's')");
+  expect(() => db.exec("INSERT INTO bank_unmatches (match_id, reason, unmatched_at, source) VALUES (1, 'Again', 'd', 's')")).toThrow();
+  expect(() => db.exec("DELETE FROM bank_unmatches")).toThrow(/kept/);
+  db.exec(rematch);
+  expect(db.query("SELECT id FROM bank_matches ORDER BY id").all()).toEqual([{ id: 1 }, { id: 2 }]);
+  expect(db.query("SELECT id FROM live_bank_matches").all()).toEqual([{ id: 2 }]);
+  db.close();
+});

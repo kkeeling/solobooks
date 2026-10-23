@@ -175,7 +175,7 @@ function candidates(db: Books, accountId: number, date: string | null, amount: n
       .query(
         `SELECT l.entry_id AS id FROM lines l JOIN entries e ON e.id = l.entry_id
          WHERE l.account_id = ?1 AND (?2 IS NULL OR e.date = ?2)
-           AND NOT EXISTS (SELECT 1 FROM bank_matches m WHERE m.entry_id = l.entry_id AND m.account_id = l.account_id)
+           AND NOT EXISTS (SELECT 1 FROM live_bank_matches m WHERE m.entry_id = l.entry_id AND m.account_id = l.account_id)
          GROUP BY l.entry_id HAVING SUM(l.debit_cents) - SUM(l.credit_cents) = ?3 ORDER BY l.entry_id`,
       )
       .all(accountId, date, amount) as { id: number }[]
@@ -188,7 +188,7 @@ function unmatchedLines(db: Books, accountId: number): LineRow[] {
   return db
     .query(
       `SELECT b.id, b.account_id, b.date, b.amount_cents FROM bank_lines b
-       WHERE b.account_id = ? AND NOT EXISTS (SELECT 1 FROM bank_matches m WHERE m.line_id = b.id) ORDER BY b.date, b.id`,
+       WHERE b.account_id = ? AND NOT EXISTS (SELECT 1 FROM live_bank_matches m WHERE m.line_id = b.id) ORDER BY b.date, b.id`,
     )
     .all(accountId) as LineRow[];
 }
@@ -205,7 +205,9 @@ function insertMatch(db: Books, lineId: number, entryId: number, accountId: numb
  */
 function matchExact(db: Books, accountId: number, ctx: Ctx): { line_id: number; entry_id: number }[] {
   const lines = unmatchedLines(db, accountId);
-  const options = new Map(lines.map((l) => [l.id, candidates(db, accountId, l.date, l.amount_cents)]));
+  // A pairing someone already undid as wrong is never made again by itself.
+  const undone = db.query("SELECT 1 FROM bank_matches WHERE line_id = ? AND entry_id = ? AND account_id = ?");
+  const options = new Map(lines.map((l) => [l.id, candidates(db, accountId, l.date, l.amount_cents).filter((e) => !undone.get(l.id, e, accountId))]));
   const claims = new Map<number, number>();
   for (const ids of options.values()) for (const e of ids) claims.set(e, (claims.get(e) ?? 0) + 1);
   const made: { line_id: number; entry_id: number }[] = [];
@@ -223,7 +225,7 @@ export function bankLineView(db: Books, id: number) {
   const b = db
     .query(
       `SELECT b.*, i.file_name, i.stored_file, m.entry_id, m.kind AS match_kind, m.source AS match_source, m.matched_at
-       FROM bank_lines b JOIN bank_imports i ON i.id = b.import_id LEFT JOIN bank_matches m ON m.line_id = b.id WHERE b.id = ?`,
+       FROM bank_lines b JOIN bank_imports i ON i.id = b.import_id LEFT JOIN live_bank_matches m ON m.line_id = b.id WHERE b.id = ?`,
     )
     .get(id) as Record<string, any>;
   return {
@@ -238,6 +240,13 @@ export function bankLineView(db: Books, id: number) {
     stored_file: b.stored_file,
     row: b.file_row,
     match: b.entry_id === null ? null : { entry_id: b.entry_id, kind: b.match_kind, source: b.match_source, matched_at: b.matched_at },
+    // Matches made and later undone: each row is kept, with who undid it, when and why.
+    undone_matches: db
+      .query(
+        `SELECT m.id AS match_id, m.entry_id, m.kind, m.source, m.matched_at, u.reason, u.source AS unmatched_by, u.unmatched_at
+         FROM bank_matches m JOIN bank_unmatches u ON u.match_id = m.id WHERE m.line_id = ? ORDER BY m.id`,
+      )
+      .all(id),
     // For a line still unmatched: entries with its amount on this account, any day, that aren't matched there yet.
     candidates: b.entry_id === null ? candidates(db, b.account_id, null, b.amount_cents) : [],
     source: b.source,
@@ -247,7 +256,7 @@ export function bankLineView(db: Books, id: number) {
 export function requireUnmatchedLine(db: Books, id: number, field: string): LineRow {
   const l = db.query("SELECT id, account_id, date, amount_cents FROM bank_lines WHERE id = ?").get(id) as LineRow | null;
   if (!l) throw new Refusal(`There is no bank line with id ${id}.`, field);
-  const m = db.query("SELECT entry_id FROM bank_matches WHERE line_id = ?").get(id) as { entry_id: number } | null;
+  const m = db.query("SELECT entry_id FROM live_bank_matches WHERE line_id = ?").get(id) as { entry_id: number } | null;
   if (m) throw new Refusal(`Bank line ${id} is already matched to entry ${m.entry_id}.`, field);
   return l;
 }
@@ -261,9 +270,25 @@ export function linkLine(db: Books, line: LineRow, entryId: number, kind: "agent
   if (net.cents !== line.amount_cents) {
     throw new Refusal(`Entry ${entryId} moves ${net.cents} cents through account ${line.account_id}, but bank line ${line.id} is ${line.amount_cents} cents.`, field);
   }
-  const taken = db.query("SELECT line_id FROM bank_matches WHERE entry_id = ? AND account_id = ?").get(entryId, line.account_id) as { line_id: number } | null;
+  const taken = db.query("SELECT line_id FROM live_bank_matches WHERE entry_id = ? AND account_id = ?").get(entryId, line.account_id) as { line_id: number } | null;
   if (taken) throw new Refusal(`Entry ${entryId} is already matched to bank line ${taken.line_id} on this account.`, field);
   insertMatch(db, line.id, entryId, line.account_id, kind, ctx);
+}
+
+/** The standing match on a bank line, if it has one. */
+function liveMatch(db: Books, lineId: number) {
+  return db.query("SELECT id, line_id, entry_id, account_id, kind FROM live_bank_matches WHERE line_id = ?").get(lineId) as
+    | { id: number; line_id: number; entry_id: number; account_id: number; kind: string }
+    | null;
+}
+
+/** The payment a bank line's standing match backs: its deposit's entry, on its deposit account. Null for anything else. */
+export function paymentBackedBy(db: Books, lineId: number): { id: number; invoice_id: number } | null {
+  const m = liveMatch(db, lineId);
+  if (!m) return null;
+  return db.query("SELECT id, invoice_id FROM payments WHERE entry_id = ? AND deposit_account_id = ?").get(m.entry_id, m.account_id) as
+    | { id: number; invoice_id: number }
+    | null;
 }
 
 // ---------------------------------------------------------------- operations
@@ -366,7 +391,7 @@ const bankList: Op = {
     if (input.account_id !== undefined && !getAccount(db, input.account_id)) throw new Refusal(`There is no account with id ${input.account_id}.`, "account_id");
     const rows = db
       .query(
-        `SELECT b.id FROM bank_lines b LEFT JOIN bank_matches m ON m.line_id = b.id
+        `SELECT b.id FROM bank_lines b LEFT JOIN live_bank_matches m ON m.line_id = b.id
          WHERE (?1 IS NULL OR b.account_id = ?1) AND (?2 IS NULL OR (?2 = 'matched') = (m.id IS NOT NULL)) ORDER BY b.date, b.id`,
       )
       .all(input.account_id ?? null, input.status ?? null) as { id: number }[];
@@ -374,4 +399,24 @@ const bankList: Op = {
   },
 };
 
-export const bankOps: Op[] = [bankImport, bankMatch, bankList];
+const bankUnmatch: Op = {
+  name: "bank_unmatch",
+  kind: "write",
+  description:
+    "Undo a wrong bank match: the line goes back on the unmatched list, and the match is kept with an unmatch recorded beside it, so the history shows both. Undoing the match behind a client payment leaves that payment with no bank line behind it, so it is gated the same way as recording one: unless the person lets the agent decide, it returns a pending action for them to approve.",
+  fields: {
+    line_id: { type: "int", required: true, min: 1, description: "The matched bank line whose match is wrong." },
+    reason: { type: "text", required: true, description: "Why the match is wrong." },
+  },
+  // Unmatching a payment's deposit takes away the bank line behind it, which is what payment_unmatched guards.
+  gate: (input, db) => (paymentBackedBy(db, input.line_id) ? "payment_unmatched" : null),
+  run(db, input, ctx) {
+    if (!db.query("SELECT 1 FROM bank_lines WHERE id = ?").get(input.line_id)) throw new Refusal(`There is no bank line with id ${input.line_id}.`, "line_id");
+    const m = liveMatch(db, input.line_id);
+    if (!m) throw new Refusal(`Bank line ${input.line_id} isn't matched to anything, so there is no match to undo.`, "line_id");
+    db.query("INSERT INTO bank_unmatches (match_id, reason, unmatched_at, source) VALUES (?, ?, ?, ?)").run(m.id, input.reason, ctx.now, ctx.source);
+    return { line: bankLineView(db, input.line_id), unmatched: { match_id: m.id, entry_id: m.entry_id, kind: m.kind } };
+  },
+};
+
+export const bankOps: Op[] = [bankImport, bankMatch, bankUnmatch, bankList];

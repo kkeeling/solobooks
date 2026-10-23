@@ -92,7 +92,7 @@ export function paymentView(db: Books, id: number) {
     client_credit: credit ? { id: credit.id, amount_cents: credit.amount_cents, client_balance_cents: creditBalance(db, inv.client_id) } : null,
     invoice_open_cents: openBalance(db, inv),
     // The imported bank line the deposit matched, if any: given when it was recorded, or matched on a later import.
-    bank_line_id: (db.query("SELECT line_id FROM bank_matches WHERE entry_id = ? AND account_id = ?").get(p.entry_id, p.deposit_account_id) as { line_id: number } | null)?.line_id ?? null,
+    bank_line_id: (db.query("SELECT line_id FROM live_bank_matches WHERE entry_id = ? AND account_id = ?").get(p.entry_id, p.deposit_account_id) as { line_id: number } | null)?.line_id ?? null,
     memo: p.memo,
     entry: getEntry(db, p.entry_id),
     // Each refund of it, what they gave back in all, and what could still be refunded.
