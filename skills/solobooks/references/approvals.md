@@ -8,7 +8,7 @@ The person decides how much you may do alone. For each gated action they pick a 
 | `click` (the default) | It waits until the person approves it in their agent app's prompt, or on the approval page. |
 | `passkey` | It waits until they approve it with their passkey (Touch ID and the like) on the approval page. |
 
-Gated actions: issuing invoices, voiding invoices and credit notes, issuing credit notes, changing the payment instructions printed on invoices (`profile payment instructions set`), and recording an invoice payment with no imported bank line behind it (`payment_unmatched`; give `bank_line_id` and it isn't gated). Everything else `profile set` changes runs at once. Changing a level is itself always gated. `gate list` shows the current levels.
+Gated actions: issuing invoices, voiding invoices and credit notes, issuing credit notes, changing the payment instructions printed on invoices (`profile payment instructions set`), and recording an invoice payment with no imported bank line behind it (`payment_unmatched`; give `bank_line_id` and it isn't gated). Undoing the bank match behind a payment (`bank unmatch` on that line) is the same `payment_unmatched` action, since it leaves the payment with no bank line; undoing any other match isn't gated. Everything else `profile set` changes runs at once. Changing a level is itself always gated. `gate list` shows the current levels.
 
 ## When a result is pending
 

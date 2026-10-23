@@ -30,6 +30,8 @@ On import, a line matches by itself when exactly one posted entry moves the same
    - **The person's own money moving:** `transfer add`, `owner draw` or `owner contribute` (below), then `bank match` each leg's line.
    - **Not sure:** leave it on the list and ask the person. Don't guess.
 3. Two look-alikes (two $4.50 coffees, two candidates) never match by themselves. Pair them yourself with `bank match`.
+4. **A wrong match** (yours or solobooks'): `bank unmatch --line-id <id> --reason "..."`. The line goes back on the unmatched list; the match is kept with the unmatch beside it (`undone_matches` on the line), and solobooks never makes that same pairing again by itself. Then match the line to what it really is.
+   - Undoing the match behind a **client payment** leaves that payment with no bank line behind it, so it waits for the person just like `payment add` without a line (unless they chose otherwise). Tell them it's waiting, and why. Any other unmatch runs at once.
 
 ## Client payments
 
@@ -40,7 +42,10 @@ On import, a line matches by itself when exactly one posted entry moves the same
 - **Without one it waits for the person** (unless they chose otherwise), because a document you read could tell you to mark invoices paid. Use it for a payment you know about before the bank shows it, and tell the person it's waiting. See approvals.md.
 - **Processor payouts:** when a processor like Stripe pays out several payments at once, give the processor its own asset account and import its balance report (or payments export) as that account's statement. Record each payment into it against its line, and the payout to checking as a `transfer add` from it; then the payout's checking line matches the transfer.
 - **Partial payments** leave the rest owed. **Overpayments** settle the invoice and hold the rest as a client credit: `client credits` shows each client's balance.
-- **Refunds:** `payment refund --payment-id <id> --date <day> --reason "..."` reverses the whole payment, fee included, and takes back any client credit it made. Nothing is edited.
+- **Using a credit:** when that client's next invoice is issued, `client credit apply --client-id <id> --invoice-id <id> --date <day>` pays it down from their credit (all it can by default, or `--amount-cents`). It isn't gated, since no money leaves the books. A credit only pays the same client's invoices and never goes below zero.
+- **Refunds:** `payment refund --payment-id <id> --date <day> --reason "..."` gives the client back the gross, as a new entry; nothing is edited. By default it refunds everything still refundable; `--amount-cents` refunds part, and you can refund again later up to what was paid. It comes out of any client credit the payment made first, then off the invoice, which is owed again by that much.
+  - **The fee:** processors usually keep their fee on a refund (Stripe does), so by default the fee stays an expense and the whole gross leaves the deposit account: refunding a $1,000 payment that deposited $970 takes $1,000 out. Only if the processor's refund report shows the fee coming back, add `--fee-returned-cents <n>`; then gross less that leaves the account. Check the processor's report rather than assuming.
+  - Once a payment's credit was applied to another invoice, that part can't be refunded from the payment; `payment list` shows each payment's `refundable_cents`.
 - `payment list` shows payments; `report unpaid` shows every invoice still owed, most days late first. Past invoices brought in are on it marked `historical`; they never get a reminder.
 
 ## The person's own money
