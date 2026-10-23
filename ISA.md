@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 51/109
+progress: 59/109
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -199,20 +199,20 @@ Why: a stranger goes from one pasted prompt to a first draft invoice without a t
 - [ ] ISC-78: [DROPPED — see Decisions 2026-10-22; Grok Build and Muse Code install tests moved to Remaining Work]
 - [ ] ISC-79: An agent with only solobooks' guide gets from "my first client is Acme at $150/hr" to a draft invoice.
 - [ ] ISC-80: Past invoices from a spreadsheet import as already-sent with their original numbers.
-- [ ] ISC-81: Anti: imported already-happened records never hit the gate or trigger reminders.
-- [ ] ISC-82: The skill's frontmatter uses only the six Agent Skills fields.
+- [x] ISC-81: Anti: imported already-happened records never hit the gate or trigger reminders.
+- [x] ISC-82: The skill's frontmatter uses only the six Agent Skills fields.
 
 ### F11 · Packaging and install
 Why: whatever local agent someone already uses, solobooks connects to it in one step and proves it worked.
 
-- [ ] ISC-83: The macOS one-line installer leaves a working binary with no bun or Node on PATH.
+- [x] ISC-83: The macOS one-line installer leaves a working binary with no bun or Node on PATH.
 - [ ] ISC-84: [DROPPED — see Decisions 2026-10-22; Windows installer test moved to Remaining Work]
-- [ ] ISC-85: Running `solobooks setup` twice leaves every agent config identical to one run.
-- [ ] ISC-86: `solobooks doctor` fails when the MCP server isn't registered for a detected agent.
+- [x] ISC-85: Running `solobooks setup` twice leaves every agent config identical to one run.
+- [x] ISC-86: `solobooks doctor` fails when the MCP server isn't registered for a detected agent.
 - [ ] ISC-87: `claude plugin install solobooks --marketplace <owner>/solobooks` installs the MCP server and skill.
-- [ ] ISC-88: The npm wrapper runs the compiled binary.
-- [ ] ISC-89: Every read-only MCP tool carries `readOnlyHint: true` and every write tool doesn't.
-- [ ] ISC-90: The README carries the privacy note, the unsupported-agents list and the "not tax or accounting advice" line.
+- [x] ISC-88: The npm wrapper runs the compiled binary.
+- [x] ISC-89: Every read-only MCP tool carries `readOnlyHint: true` and every write tool doesn't.
+- [x] ISC-90: The README carries the privacy note, the unsupported-agents list and the "not tax or accounting advice" line.
 
 ### F12 · Durability
 Why: seven years of records survive dead laptops, synced folders and every future release.
@@ -430,6 +430,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-27, 29..38, 44, 45, 105: probes as written, rerun independently 2026-10-23 — `bun test` 51 pass 0 fail; issued and draft PDFs from a hand-run CLI billing viewed as rendered images — commits 463e5e5, 3eef074, 0ae1816
 - ISC-63..69, 71..73, 106..109: probes as written, rerun independently 2026-10-23 — `bun test` 79 pass 0 fail; ISC-73 approved in real Brave via Interceptor (draft to issued 1001); audit swap and hidden-note attacks replayed by hand and refused — commits 60b265b, ed7e037, 51e70e2, f4bd5f6
 - ISC-74: real Touch ID in Brave via Interceptor 2026-10-23 — passkey registered (Passwords), gate change click→passkey and invoice 1001 ($905.00) each stayed pending until the Touch ID assertion, then approved; `invoice get` shows issued
+- ISC-81..83, 85, 86, 88..90: probes as written, rerun independently 2026-10-23 — `bun test` 93 pass 0 fail; setup and doctor rerun from the compiled binary in a clean home (Claude Code and Codex both answered with 37 tools) — commits dbb4110..a2ad0e7
 
 ## Remaining Work
 
