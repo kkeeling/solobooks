@@ -259,8 +259,8 @@ function html(v: View): string {
 <meta name="color-scheme" content="light dark">
 <title>solobooks</title>
 <style>
-:root { color-scheme:light dark; --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc; --ok:#1f7a4d; --bad:#a33a2b; --accent:#2c5fd6; }
-@media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#21211f; --ink:#ecebe7; --muted:#a09e98; --line:#34332f; --ok:#5cc28f; --bad:#e07b6c; --accent:#7ea2ff; } }
+:root { color-scheme:light dark; --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc; --ok:#1f7a4d; --on-ok:#fff; --bad:#a33a2b; --accent:#2c5fd6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#21211f; --ink:#ecebe7; --muted:#a09e98; --line:#34332f; --ok:#5cc28f; --on-ok:#0d2418; --bad:#e07b6c; --accent:#7ea2ff; } }
 * { box-sizing: border-box; }
 html { background:var(--bg); }
 body { margin:0; min-height:100vh; min-height:100dvh; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -281,7 +281,7 @@ h1 { font-size:22px; margin:0 0 4px; } .lede { color:var(--muted); margin:0 0 28
 .hint { color:var(--muted); font-size:14px; margin:0 0 8px; }
 .actions { display:flex; gap:8px; margin-top:12px; }
 button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
-button.approve { background:var(--ok); border-color:var(--ok); color:#fff; } button:disabled { opacity:.5; cursor:default; }
+button.approve { background:var(--ok); border-color:var(--ok); color:var(--on-ok); } button:disabled { opacity:.5; cursor:default; }
 .outcome { margin:8px 0 0; font-size:14px; } .outcome.ok { color:var(--ok); } .outcome.bad { color:var(--bad); }
 section.passkey { border-top:1px solid var(--line); margin-top:36px; padding-top:16px; color:var(--muted); } section.passkey h2 { font-size:17px; color:var(--ink); }
 .empty { color:var(--muted); }
@@ -293,7 +293,7 @@ th.num, td.num { text-align:right; white-space:nowrap; padding-right:0; }
 td.two > span { display:block; } .sub { display:block; font-size:13px; color:var(--muted); } .sub.inline { display:inline; }
 .strong { font-weight:600; } .bad { color:var(--bad); } .muted { color:var(--muted); }
 .tag { display:inline-block; font-size:11px; line-height:16px; padding:0 6px; border:1px solid var(--line); border-radius:999px; color:var(--muted); vertical-align:1px; }
-tfoot td { font-weight:600; border-top:1px solid var(--line); border-bottom:0; }
+tfoot td { font-weight:600; border-top:1px solid var(--line); border-bottom:0; } tfoot .late-total td { color:var(--bad); font-weight:500; }
 .pnl .group th { padding-top:16px; font-size:13px; font-weight:600; color:var(--ink); border-bottom:0; }
 .pnl .line { display:inline-block; min-width:2.4em; color:var(--muted); }
 .pnl .subtotal td { color:var(--muted); }

@@ -98,7 +98,7 @@ function unpaid(db: Books, nowIso: string): string {
 </tr>`,
   );
   return `<table><thead><tr><th>Invoice</th><th>When</th><th class="num">Still owed</th></tr></thead><tbody>${rows.join("")}</tbody>
-<tfoot><tr><td colspan="2">Owed in all${r.overdue_total_cents ? `, ${money(r.overdue_total_cents)} of it overdue` : ""}</td>${num(r.open_total_cents)}</tr></tfoot></table>`;
+<tfoot>${r.overdue_total_cents ? `<tr class="late-total"><td colspan="2">Overdue</td>${num(r.overdue_total_cents)}</tr>` : ""}<tr><td colspan="2">Owed in all</td>${num(r.open_total_cents)}</tr></tfoot></table>`;
 }
 
 function profit(db: Books, nowIso: string): string {
