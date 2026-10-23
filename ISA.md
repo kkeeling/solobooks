@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 108/112
+progress: 112/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -239,11 +239,11 @@ Why: people who bill for work done by directing coding agents get honest, explai
 ### F14 · The human page
 Why: the person can see the books and approve things when their agent's app can't, without a second app to learn.
 
-- [ ] ISC-102: [container] The page shows invoices, unpaid, P&L and recent changes.
-  - [ ] ISC-102.1: The page renders a loading state while data loads.
-  - [ ] ISC-102.2: The page renders an error state when the books file can't be read.
-  - [ ] ISC-102.3: The page renders an empty state for new books.
-  - [ ] ISC-102.4: The page renders all four panels with populated books.
+- [x] ISC-102: [container] The page shows invoices, unpaid, P&L and recent changes.
+  - [x] ISC-102.1: The page renders a loading state while data loads.
+  - [x] ISC-102.2: The page renders an error state when the books file can't be read.
+  - [x] ISC-102.3: The page renders an empty state for new books.
+  - [x] ISC-102.4: The page renders all four panels with populated books.
 - [x] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
 - [x] ISC-104: Anti: the page server listens only on loopback.
 
@@ -252,7 +252,6 @@ Why: the person can see the books and approve things when their agent's app can'
 - fog: what the invoice PDF looks like (layout, logo, typography) — needs a throwaway prototype the maintainer reacts to before a claim can name what "looks professional" means.
 - fog: which agent apps actually render the in-chat approval prompt — the docs say Claude Code, Codex, ChatGPT, Cursor, VS Code, Goose and OpenCode, and that's untested. Each app sharpens into a claim once a test build exists.
 - fog: whether Claude Desktop honors `requiresUserInteraction` — unverified in Anthropic's docs. It resolves with a test build in Claude Desktop.
-- fog: how Grok Build and Muse Code store session logs for the agent-time add-on — the formats haven't been checked. Each graduates to a claim once its log format is read.
 
 ## Test Strategy
 
@@ -421,6 +420,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Step 4 build calls accepted: bank import takes the bank's own CSV plus a declared column map, so amounts come from the file and not the model; a line's identity is account, date, amount and collapsed description, counted per file; exact matching needs exactly one candidate on each side; payments backed by an imported bank line of the same net amount skip the new `payment_unmatched` gate. Known residual: an agent that writes its own CSV can back a payment ungated; the kept file and its hash are the trail.
 - 2026-10-23: refined: review of step 4 found three gaps, now claims. A refund mirrored the processor fee, but processors keep it (ISC-42 refined). An overpayment credit couldn't be used (ISC-111). A wrong bank match couldn't be undone (ISC-112). And income was booked when invoiced, while Out of Scope rules out accrual books, so reports must count income when paid (ISC-110).
 - 2026-10-23: refined: sales tax owed was first built to follow the money, at my instruction. Most states tax at the sale, and which rule applies is the person's state's call, so the report now gives charged, collected and paid side by side and names no amount due (ISC-51 refined). New books also get a seeded Schedule C chart of accounts, which the Constraints promised.
+- 2026-10-23: Fog on Grok Build and Muse Code log formats closed: those agents were moved out of v1 by the maintainer (see 2026-10-22), so the add-on supports Claude Code and Codex; their formats wait with the install tests in Remaining Work.
 
 ## Learning
 
@@ -454,6 +454,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-49..61, 110: probes as written, rerun independently on the merged tree 2026-10-23 — all pass; `bash scripts/export-check.sh` 62 CSV rows and `hledger check` on 26 transactions; full `bun test` 132 of 133 with ISC-6 timing out under load, green alone in 14s; eval selftest 11 of 11; 2026 IRS mileage rates confirmed on irs.gov by the builder
 - ISC-91..101: probes as written, rerun independently on merge 9579949 2026-10-23 — all pass; `bash scripts/addon-no-bun.sh` PASS with no bun or node on PATH; full `bun test` 177 pass 0 fail in 73s after the migrated-image speed-up (was 280 to 440s with timeouts); eval selftest 11 of 11; exports pass
 - ISC-103, 104: probes as written, rerun independently 2026-10-23 — `-t "no entry forms"` 2 pass; `sh scripts/page-loopback-check.sh` PASS (127.0.0.1 and ::1 only); full `bun test` 184 pass 0 fail in 57s — commits 6f37cbe..328ee66
+- ISC-102.1..102.4: real Brave via Interceptor (context interceptor-test) 2026-10-23 — populated books show all four panels in dollars with historical tags and overdue in red; loading skeletons with data held back; plain-words error with the file path and doctor hint when the books file is unreadable; per-panel empty hints for new books
 
 ## Remaining Work
 
