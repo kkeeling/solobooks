@@ -5,18 +5,35 @@ import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
 import { startPage } from "./page.ts";
+import { VERSION } from "./version.ts";
 
 // Thin adapter: argv in, JSON out. All logic lives in src/core.
 
 const ENVELOPE = new Set(["books", "json", "dry-run", "idempotency-key", "source"]);
 
-/** The one command that isn't an operation: it runs the local approval page until stopped. It approves nothing itself. */
-const SERVE = {
-  command: "serve",
-  kind: "page",
-  description:
-    "Run the local approval page on localhost (default port 7317, or --port / SOLOBOOKS_PORT) until stopped. The person approves or rejects pending actions there, and registers a passkey.",
-};
+/** Commands that aren't operations on the books. None of them approves anything. */
+const COMMANDS = [
+  {
+    command: "serve",
+    kind: "page",
+    description:
+      "Run the local approval page on localhost (default port 7317, or --port / SOLOBOOKS_PORT) until stopped. The person approves or rejects pending actions there, and registers a passkey.",
+  },
+  {
+    command: "setup",
+    kind: "install",
+    description:
+      "Connect solobooks to every agent app found here: registers its MCP server, copies the solobooks skill where agents read skills, and settles the books folder (--books <dir>, default ~/solobooks), which later commands then use. Safe to run again.",
+  },
+  {
+    command: "doctor",
+    kind: "install",
+    description:
+      "Check the install: opens the books, and for each agent app found, checks the MCP server is registered and answers, and the skill is in place. Exits non-zero, saying how to fix it, when something is wrong.",
+  },
+  { command: "mcp", kind: "install", description: "Serve the MCP tools over stdio. Agent apps start this; you don't run it by hand." },
+  { command: "version", kind: "install", description: "Print the solobooks version (also --version)." },
+];
 
 function parse(argv: string[]) {
   const words: string[] = [];
@@ -51,7 +68,7 @@ function help() {
         description: o.description,
         fields: o.fields,
       })),
-      SERVE,
+      ...COMMANDS,
     ],
   };
 }
@@ -105,7 +122,28 @@ export async function serve(argv: string[], env: Env = process.env) {
   return startPage({ books: booksDir(flags.books, env), port, env });
 }
 
-if (import.meta.main && process.argv[2] === "serve") {
+/** Runs setup or doctor and prints its JSON; doctor exits 1 when a check failed. */
+export async function install(word: string, argv: string[], env: Env = process.env): Promise<{ code: number; stdout: string }> {
+  const out = (code: number, v: unknown) => ({ code, stdout: JSON.stringify(v, null, 2) });
+  try {
+    if (word === "setup") return out(0, (await import("./setup.ts")).setup(argv, env));
+    const r = await (await import("./doctor.ts")).doctor(argv, env);
+    return out(r.ok ? 0 : 1, r);
+  } catch (e) {
+    if (e instanceof Refusal) return out(2, e.toJSON());
+    return out(1, { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+const word = process.argv[2];
+if (import.meta.main && (word === "--version" || word === "version")) {
+  process.stdout.write(`solobooks ${VERSION}\n`);
+} else if (import.meta.main && word === "mcp") {
+  (await import("./mcp.ts")).serveMcp(process.argv.slice(3));
+} else if (import.meta.main && (word === "setup" || word === "doctor")) {
+  const r = await install(word, process.argv.slice(3));
+  process.stdout.write(r.stdout + "\n");
+  process.exit(r.code);
+} else if (import.meta.main && word === "serve") {
   try {
     const page = await serve(process.argv.slice(2));
     process.stdout.write(JSON.stringify({ serving: page.url }) + "\n");

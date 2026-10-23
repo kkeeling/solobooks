@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_PORT } from "./core/gate.ts";
 import { Refusal } from "./core/refusal.ts";
@@ -6,11 +7,41 @@ export type Env = Record<string, string | undefined>;
 
 export const DB_FILE = "solobooks.sqlite";
 
-/** The books folder: `--books <dir>` wins, then SOLOBOOKS_DIR. There is no default location. */
+/** The person's home folder, from the environment only, so a run can be pointed at a scratch home. */
+export function homeDir(env: Env): string | null {
+  return env.HOME || env.USERPROFILE || null;
+}
+
+/** Where `solobooks setup` records the books folder: $XDG_CONFIG_HOME/solobooks, else ~/.config/solobooks. */
+export function configFile(env: Env): string | null {
+  const home = homeDir(env);
+  const base = env.XDG_CONFIG_HOME || (home ? join(home, ".config") : null);
+  return base ? join(base, "solobooks", "config.json") : null;
+}
+
+export type Config = { books?: string };
+
+/** The recorded settings, or none when setup hasn't run. */
+export function readConfig(env: Env): Config {
+  const file = configFile(env);
+  if (!file || !existsSync(file)) return {};
+  let c: unknown;
+  try {
+    c = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    throw new Refusal(`The settings file ${file} isn't valid JSON, so run solobooks setup to write it again.`, "config");
+  }
+  if (typeof c !== "object" || c === null || Array.isArray(c)) {
+    throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup to write it again.`, "config");
+  }
+  return c as Config;
+}
+
+/** The books folder: `--books <dir>` wins, then SOLOBOOKS_DIR, then the folder setup recorded. Otherwise it refuses. */
 export function booksDir(flag: string | undefined, env: Env): string {
-  const dir = flag ?? env.SOLOBOOKS_DIR;
+  const dir = flag ?? env.SOLOBOOKS_DIR ?? readConfig(env).books;
   if (!dir || !dir.trim()) {
-    throw new Refusal("Say which folder holds the books with --books <dir> or the SOLOBOOKS_DIR variable.", "books");
+    throw new Refusal("Say which folder holds the books with --books <dir> or SOLOBOOKS_DIR, or run solobooks setup to pick one.", "books");
   }
   return dir;
 }

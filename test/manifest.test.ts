@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { install } from "../src/cli.ts";
 import { OPS } from "../src/core/perform.ts";
 import { cli, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
@@ -45,4 +48,21 @@ describe("ISC-1", () => {
     }
     expect(trap.attempts).toEqual([]);
   });
+
+  test("no network: setup and doctor connect agents and check them with zero outbound connections", async () => {
+    const home = tempDir();
+    mkdirSync(join(home, ".claude"));
+    mkdirSync(join(home, ".codex"));
+    const trap = trapNetwork();
+    let setup, doctor;
+    try {
+      setup = await install("setup", [], { HOME: home });
+      doctor = await install("doctor", [], { HOME: home });
+    } finally {
+      trap.release();
+    }
+    expect(trap.attempts).toEqual([]);
+    expect(setup.code).toBe(0);
+    expect(JSON.parse(doctor.stdout)).toMatchObject({ ok: true });
+  }, 30_000);
 });

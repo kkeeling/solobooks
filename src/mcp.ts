@@ -20,10 +20,10 @@ import type { Op } from "./core/op.ts";
 import { OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import type { Field, Fields } from "./core/validate.ts";
+import { VERSION } from "./version.ts";
 
 // Thin adapter: one MCP tool per core operation, over stdio. Logs go to stderr only.
 
-const VERSION = "0.0.0";
 
 function jsonSchema(f: Field): Record<string, unknown> {
   const base = { description: f.description };
@@ -109,10 +109,14 @@ function approvalForm(p: PendingAction) {
   return inputRequired.elicit({ mode: "form", message, requestedSchema: { type: "object", properties } } as any);
 }
 
+/** Server-wide guidance for the agent, self-contained in its first 512 characters. */
+export const INSTRUCTIONS =
+  "solobooks keeps a US solo consultant's books on this machine. Money is whole cents, dates are YYYY-MM-DD, and every write needs a source such as agent:claude-code. A result with status pending has not happened: it waits for the person's approval in this app's prompt or on the local approval page (solobooks serve), and no tool can approve it, so never say a pending invoice was issued or sent. solobooks sends nothing: you deliver its PDFs and emails, then record invoice_sent. The solobooks skill covers onboarding and bringing in past invoices.";
+
 export function createServer(env: Env, books?: string): McpServer {
   const server = new McpServer(
     { name: "solobooks", version: VERSION },
-    { capabilities: { tools: {} }, requestState: { verify: approvals.verify } },
+    { capabilities: { tools: {} }, instructions: INSTRUCTIONS, requestState: { verify: approvals.verify } },
   );
   const page = () => pageUrl(env);
 
@@ -185,11 +189,14 @@ export function createServer(env: Env, books?: string): McpServer {
   return server;
 }
 
-if (import.meta.main) {
-  const i = process.argv.indexOf("--books");
-  const books = i === -1 ? undefined : process.argv[i + 1];
-  serveStdio(() => createServer(process.env, books), {
+/** Serves MCP over stdio until the agent app closes it: what `solobooks mcp` runs. */
+export function serveMcp(argv: string[], env: Env = process.env): void {
+  const i = argv.indexOf("--books");
+  const books = i === -1 ? undefined : argv[i + 1];
+  serveStdio(() => createServer(env, books), {
     onerror: (e) => console.error("solobooks mcp:", e),
   });
   console.error(`solobooks mcp ${VERSION} on stdio`);
 }
+
+if (import.meta.main) serveMcp(process.argv.slice(2));
