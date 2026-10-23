@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 65/109
+progress: 78/112
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-23T02:30:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -101,11 +101,11 @@ Why: one consultant's mix of hourly, flat, recurring and pass-through work bills
 ### F2 · Accounts and owner money
 Why: the most common solo mess, where your own money moving around gets counted as income or expense, can't happen.
 
-- [ ] ISC-20: A transfer between the person's own accounts leaves the P&L unchanged.
-- [ ] ISC-21: Paying off a card from checking leaves the P&L unchanged.
-- [ ] ISC-22: A business expense on a personal card records the expense and an owner contribution.
-- [ ] ISC-23: Anti: a transfer whose legs don't net to zero is refused.
-- [ ] ISC-24: Owner draws and contributions never appear in the P&L.
+- [x] ISC-20: A transfer between the person's own accounts leaves the P&L unchanged.
+- [x] ISC-21: Paying off a card from checking leaves the P&L unchanged.
+- [x] ISC-22: A business expense on a personal card records the expense and an owner contribution.
+- [x] ISC-23: Anti: a transfer whose legs don't net to zero is refused.
+- [x] ISC-24: Owner draws and contributions never appear in the P&L.
 
 ### F3 · Time
 Why: solobooks keeps time from any source and never decides how it was tracked.
@@ -132,20 +132,22 @@ Why: what reaches a client is always correct, numbered without gaps, and never s
 ### F5 · Payments
 Why: what lands in the bank, what the client paid and what the processor kept always reconcile to the 1099-K.
 
-- [ ] ISC-39: A $1,000 payment with a $30 fee records $1,000 income, a $30 fee expense and a $970 deposit.
-- [ ] ISC-40: A partial payment leaves the exact remaining balance due.
-- [ ] ISC-41: An overpayment becomes a client credit.
-- [ ] ISC-42: A refund reverses its payment.
-- [ ] ISC-43: The unpaid list shows every overdue invoice with its days late.
+- [x] ISC-39: A $1,000 payment with a $30 fee records $1,000 income, a $30 fee expense and a $970 deposit.
+- [x] ISC-40: A partial payment leaves the exact remaining balance due.
+- [x] ISC-41: An overpayment becomes a client credit.
+- [ ] ISC-42: A refund reverses its payment's income at gross; the processor fee stays an expense unless the processor returned it.
+- [ ] ISC-111: An overpayment credit can be applied to a later invoice of the same client.
+- [x] ISC-43: The unpaid list shows every overdue invoice with its days late.
 
 ### F6 · Expenses and bank import
 Why: the bank statement becomes the books with the person seeing only the few lines that need a human.
 
 - [x] ISC-44: An expense carries an attached receipt file.
 - [x] ISC-45: A pass-through cost links to the invoice that recovers it.
-- [ ] ISC-46: Importing the same bank CSV twice adds zero lines the second time.
-- [ ] ISC-47: Exact matches to payments and expenses are made automatically on import.
-- [ ] ISC-48: Unmatched lines land on one list.
+- [x] ISC-46: Importing the same bank CSV twice adds zero lines the second time.
+- [x] ISC-47: Exact matches to payments and expenses are made automatically on import.
+- [x] ISC-48: Unmatched lines land on one list.
+- [ ] ISC-112: A wrong bank match can be undone, and undoing a payment's match is gated like an unbacked payment.
 
 ### F7 · Sales tax
 Why: tax collected for a state is tracked as owed money, never mistaken for income, and never chosen by solobooks.
@@ -165,6 +167,7 @@ Why: a full year goes to an accountant with nothing missing, so there are no fol
 - [ ] ISC-56: A contractor payment carries W-9 status and payment method.
 - [ ] ISC-57: Card and PayPal contractor payments are flagged as outside the 1099-NEC list.
 - [ ] ISC-58: The P&L groups by Schedule C category.
+- [ ] ISC-110: The P&L and year-to-date profit count income when it is paid, not when it is invoiced (cash basis).
 - [ ] ISC-59: One command exports a year's transactions as a single CSV.
 - [ ] ISC-60: Year-to-date profit is available as one number.
 - [ ] ISC-61: The hledger export passes `hledger check`.
@@ -180,7 +183,7 @@ Why: the person decides how much their agent may do, and that choice holds even 
 - [x] ISC-67: Every gated MCP tool carries `requiresUserInteraction`.
 - [x] ISC-68: Changing a gate setting itself creates a pending approval.
 - [x] ISC-69: Changing payment details on invoices is gated by default.
-- [ ] ISC-70: Marking paid with no matching bank line is gated by default.
+- [x] ISC-70: Marking paid with no matching bank line is gated by default.
 - [x] ISC-71: One batch approval issues every invoice left in the batch.
 - [x] ISC-72: An invoice pulled from a batch stays a draft.
 - [x] ISC-73: The local-page fallback link approves the pending action.
@@ -296,13 +299,15 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-39 | bun-test | $1,000 with $30 fee | 100000 / 3000 / 97000 | bun test test/payments.test.ts -t "gross plus fee" | derived: payments |
 | ISC-40 | bun-test | partial payment balance | exact remainder | bun test test/payments.test.ts -t "partial" | derived: payments |
 | ISC-41 | bun-test | overpayment | client credit row | bun test test/payments.test.ts -t "overpay" | derived: payments |
-| ISC-42 | bun-test | refund | payment reversed | bun test test/payments.test.ts -t "refund" | derived: payments |
+| ISC-42 | bun-test | refund | gross income reversed, fee kept | bun test test/payments.test.ts -t "refund" | derived: payments |
+| ISC-111 | bun-test | overpayment credit applied to next invoice | balance drops by the credit | bun test test/payments.test.ts -t "apply credit" | derived: payments |
 | ISC-43 | bun-test | unpaid list vs fixture | all overdue, days late | bun test test/reports.test.ts -t "unpaid" | literal |
 | ISC-44 | bun-test | expense with receipt | file linked and readable | bun test test/expenses.test.ts -t "receipt" | literal |
 | ISC-45 | bun-test | pass-through link | invoice id set | bun test test/expenses.test.ts -t "pass-through" | literal |
 | ISC-46 | bun-test | import same CSV twice | 0 new lines | bun test test/bank.test.ts -t "dedupe" | derived: retry-safe |
 | ISC-47 | bun-test | fixture CSV exact matches | all matched | bun test test/bank.test.ts -t "exact match" | literal |
 | ISC-48 | bun-test | fixture CSV leftovers | one list, all present | bun test test/bank.test.ts -t "unmatched" | literal |
+| ISC-112 | bun-test | unmatch a wrong match | line back on the unmatched list; payment unmatch pending | bun test test/bank.test.ts -t "unmatch" | derived: injection |
 | ISC-49 | bun-test | taxed client invoice | separate tax line | bun test test/tax.test.ts -t "line" | literal |
 | ISC-50 | bun-test | tax collected | liability, not income | bun test test/tax.test.ts -t "liability" | derived: sales-tax |
 | ISC-51 | bun-property | owed report vs collected minus paid | equal | bun test test/tax.property.test.ts | derived: sales-tax |
@@ -314,6 +319,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-56 | bun-test | contractor payment fields | W-9 status, method | bun test test/contractors.test.ts -t "fields" | derived: year-end |
 | ISC-57 | bun-test | card-paid contractor | flagged outside 1099-NEC | bun test test/contractors.test.ts -t "1099-k" | derived: year-end |
 | ISC-58 | bun-test | P&L categories | Schedule C lines | bun test test/reports.test.ts -t "schedule c" | derived: year-end |
+| ISC-110 | bun-test | issued in one year, paid in the next | income in the paid year | bun test test/reports.test.ts -t "cash basis" | derived: out-of-scope accrual |
 | ISC-59 | bash | year CSV export | one file, all rows | `solobooks export --year 2026 --format csv > /tmp/y.csv && test -s /tmp/y.csv` | literal |
 | ISC-60 | bun-test | YTD profit vs fixture | exact | bun test test/reports.test.ts -t "ytd" | derived: year-end |
 | ISC-61 | bash | hledger check on export | exit 0 | `solobooks export --format hledger > /tmp/j.journal && hledger -f /tmp/j.journal check` | derived: export |
@@ -412,6 +418,8 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Historical (already-happened) invoices must be dated before today and are marked historical wherever invoices are listed, so "historical" can't be used to skip the gate on a new invoice.
 - 2026-10-23: While the repo is private, ISC-83 is proven against a loopback mirror of a local release build. The run against the real GitHub Releases URL waits for the repo going public.
 - 2026-10-23: refined: payment instructions moved from `profile set` to their own gated command, `profile payment instructions set`, because the MCP requiresUserInteraction flag is per tool. The Codex eval runs with full access in its throwaway home, standing in for the person approving setup outside the sandbox, and INSTALL.md tells sandboxed agents to ask.
+- 2026-10-23: Step 4 build calls accepted: bank import takes the bank's own CSV plus a declared column map, so amounts come from the file and not the model; a line's identity is account, date, amount and collapsed description, counted per file; exact matching needs exactly one candidate on each side; payments backed by an imported bank line of the same net amount skip the new `payment_unmatched` gate. Known residual: an agent that writes its own CSV can back a payment ungated; the kept file and its hash are the trail.
+- 2026-10-23: refined: review of step 4 found three gaps, now claims. A refund mirrored the processor fee, but processors keep it (ISC-42 refined). An overpayment credit couldn't be used (ISC-111). A wrong bank match couldn't be undone (ISC-112). And income was booked when invoiced, while Out of Scope rules out accrual books, so reports must count income when paid (ISC-110).
 
 ## Learning
 
@@ -440,6 +448,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-87: `bash scripts/plugin-install-check.sh` run with the real claude CLI in a throwaway home 2026-10-23 — marketplace added, plugin installed and enabled, skill in the plugin cache, `claude mcp list` shows solobooks connected; setup-written entries also listed by real `claude mcp list` (connected) and `codex mcp list` (enabled)
 - ISC-76, 79: real `claude -p` runs in throwaway homes 2026-10-23 — install suite PASS in 37s (agent read INSTALL.md and the installer, ran install, setup, doctor); onboarding suite PASS in 34s, all through the solobooks MCP tools
 - ISC-75, 77, 80: real agent runs in throwaway homes 2026-10-23 after commits 6b8cb07, 3e7e3d9 — Codex install PASS in 33s; past-invoice import PASS in 28s; planted-instruction import PASS in 62s with 0 pending actions created, gates and payment instructions unchanged, both plants named to the person; `bun test` 95 pass 0 fail, eval selftest 11 of 11
+- ISC-20..24, 39..41, 43, 46..48, 70: probes as written, rerun independently on the merged tree 2026-10-23 — `bun test` 111 pass 0 fail, eval selftest 11 of 11 — merge 7833cf9
 
 ## Remaining Work
 
