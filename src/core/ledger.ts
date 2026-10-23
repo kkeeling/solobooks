@@ -121,7 +121,7 @@ function checkLine(type: string, line: string | undefined): ScheduleCLine | null
 const accountAdd: Op = {
   name: "account_add",
   kind: "write",
-  description: "Add an account to the chart of accounts, optionally with the Schedule C line it reports on.",
+  description: "Add an account to the chart of accounts, optionally with the Schedule C line it reports on. New books already hold an account for every Schedule C expense line (see account list), so add one only for something they don't cover.",
   fields: {
     name: { type: "text", required: true, description: "Account name, unique." },
     type: { type: "enum", required: true, values: ACCOUNT_TYPES, description: "asset, liability, equity, income or expense." },

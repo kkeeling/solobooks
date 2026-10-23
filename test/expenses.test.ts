@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { acmeBooks, cli, issueOctober, json, ok, S } from "./support/billing.ts";
-import { tempDir } from "./support/books.ts";
+import { tempDir, acct } from "./support/books.ts";
 import { RECEIPT } from "./support/scenario.ts";
 
 test("ISC-44 receipt: an expense carries its receipt file, stored in the books folder, linked and readable back", async () => {
@@ -10,7 +10,7 @@ test("ISC-44 receipt: an expense carries its receipt file, stored in the books f
   await ok(dir, ["account", "add", "--name", "Checking", "--type", "asset", ...S]);
   await ok(dir, ["account", "add", "--name", "Software", "--type", "expense", ...S]);
   const add = (extra: Record<string, unknown>) =>
-    cli(dir, json(["expense", "add"], { date: "2026-10-02", amount_cents: 1999, vendor: "Editor Inc", account_id: 2, paid_from_account_id: 1, ...extra }));
+    cli(dir, json(["expense", "add"], { date: "2026-10-02", amount_cents: 1999, vendor: "Editor Inc", account_id: acct(2), paid_from_account_id: acct(1), ...extra }));
 
   const original = readFileSync(RECEIPT);
   const { expense } = (await add({ receipt_path: RECEIPT })).out;

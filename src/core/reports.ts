@@ -67,34 +67,40 @@ export function pnl(db: Books, from: string, to: string) {
   const rows = db
     .query(
       `SELECT a.id AS account_id, a.name, a.type, a.schedule_c,
-              COALESCE(SUM(l.debit_cents), 0) AS d, COALESCE(SUM(l.credit_cents), 0) AS c
+              COALESCE(SUM(l.debit_cents), 0) AS d, COALESCE(SUM(l.credit_cents), 0) AS c, COUNT(l.id) AS n
        FROM accounts a
        LEFT JOIN (SELECT l.* FROM lines l JOIN entries e ON e.id = l.entry_id WHERE e.date BETWEEN ? AND ?) l
          ON l.account_id = a.id
        WHERE a.type IN ('income', 'expense')
        GROUP BY a.id ORDER BY a.id`,
     )
-    .all(from, to) as { account_id: number; name: string; type: string; schedule_c: string | null; d: number; c: number }[];
+    .all(from, to) as { account_id: number; name: string; type: string; schedule_c: string | null; d: number; c: number; n: number }[];
   const events = cashEvents(db, from, to);
-  const paid = {
+  const paid: Record<string, number> = {
     [INVOICE_ACCOUNTS.services.name.toLowerCase()]: events.reduce((s, e) => s + e.services, 0),
     [INVOICE_ACCOUNTS.reimbursed.name.toLowerCase()]: events.reduce((s, e) => s + e.reimbursed, 0),
   };
   const line = (r: (typeof rows)[number], total_cents: number) => ({ account_id: r.account_id, name: r.name, schedule_c: lineOf(r), total_cents });
-  const income = rows.filter((r) => r.type === "income").map((r) => line(r, paid[r.name.toLowerCase()] ?? r.c - r.d));
-  const expense = rows.filter((r) => r.type === "expense").map((r) => line(r, r.d - r.c));
+  const totals = rows.map((r) => ({ r, total: r.type === "income" ? (paid[r.name.toLowerCase()] ?? r.c - r.d) : r.d - r.c }));
+  // The P&L lists the accounts that moved in the range; the rest of the chart would only be rows of zeros.
+  const moved = totals.filter(({ r, total }) => r.n > 0 || total !== 0);
+  const income = moved.filter(({ r }) => r.type === "income").map(({ r, total }) => line(r, total));
+  const expense = moved.filter(({ r }) => r.type === "expense").map(({ r, total }) => line(r, total));
   const sum = (xs: { total_cents: number }[]) => xs.reduce((s, x) => s + x.total_cents, 0);
   const income_total_cents = sum(income);
   const expense_total_cents = sum(expense);
+  // Every income or expense account with no Schedule C line, moved or not, so the person can place it.
+  const not_on_schedule_c = totals
+    .filter(({ r }) => lineOf(r) === null)
+    .map(({ r, total }) => ({ account_id: r.account_id, name: r.name, total_cents: total }));
 
-  // Schedule C, line by line in the form's order. An account with no line is listed for the person to place.
+  // Schedule C, line by line in the form's order.
   const all = [...income, ...expense];
   const lines = [...new Set(all.map((a) => a.schedule_c).filter((l): l is ScheduleCLine => l !== null))].sort((a, b) => lineOrder(a) - lineOrder(b));
   const schedule_c = lines.map((l) => {
     const accounts = all.filter((a) => a.schedule_c === l);
     return { line: l, name: SCHEDULE_C[l], total_cents: sum(accounts), account_ids: accounts.map((a) => a.account_id) };
   });
-  const not_on_schedule_c = all.filter((a) => a.schedule_c === null).map(({ account_id, name, total_cents }) => ({ account_id, name, total_cents }));
   return {
     basis: "cash",
     basis_note: BASIS_NOTE,
@@ -112,7 +118,7 @@ const reportPnl: Op = {
   name: "report_pnl",
   kind: "read",
   description:
-    "Profit and loss for a date range on the cash basis: invoice income counts on the day the client paid, not the day it was invoiced, and sales tax is never income. Lists each income and expense account, and the same totals grouped by Schedule C line; accounts with no line yet are listed in not_on_schedule_c for the person to place with account edit.",
+    "Profit and loss for a date range on the cash basis: invoice income counts on the day the client paid, not the day it was invoiced, and sales tax is never income. Lists each income and expense account with entries in the range, and the same totals grouped by Schedule C line; accounts someone added with no line are listed in not_on_schedule_c for the person to place with account edit.",
   fields: {
     from: { type: "date", description: "First day included, YYYY-MM-DD. Default: the beginning." },
     to: { type: "date", description: "Last day included, YYYY-MM-DD. Default: the end." },

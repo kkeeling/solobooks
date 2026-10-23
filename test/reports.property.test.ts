@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
-import { memBooks } from "./support/books.ts";
+import { memBooks, acct } from "./support/books.ts";
 import { must, seedAccounts, write, writeCmd } from "./support/gen.ts";
 
 // Account ids from seedAccounts: 4 is income; 5 and 6 are expenses.
-const INCOME = new Set([4]);
-const EXPENSE = new Set([5, 6]);
+const INCOME = new Set([acct(4)]);
+const EXPENSE = new Set([acct(5), acct(6)]);
 
 test("ISC-6 recompute: every P&L total equals the sum of its entries, with no cached totals", () => {
   fc.assert(

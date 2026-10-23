@@ -11,6 +11,19 @@ export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "solobooks-test-"));
 }
 
+/** How many accounts every new books file starts with: the Schedule C chart. */
+export const CHART_ACCOUNTS = (() => {
+  const db = openBooks(":memory:");
+  try {
+    return (db.query("SELECT COUNT(*) AS n FROM accounts").get() as { n: number }).n;
+  } finally {
+    db.close();
+  }
+})();
+
+/** The id of the nth account a test adds to new books itself, after the chart. */
+export const acct = (n: number) => CHART_ACCOUNTS + n;
+
 /** In-memory books with every migration applied. */
 export function memBooks(): Books {
   return openBooks(":memory:");

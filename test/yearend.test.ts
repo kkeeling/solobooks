@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
+import { acct } from "./support/books.ts";
 
 // The year-end report: everything an accountant asks for, with figures only. acmeBooks: 1 Checking, 2 Printing.
 
@@ -26,15 +27,15 @@ test("ISC-55 owner items: estimated taxes, health insurance and retirement are t
   const dir = await acmeBooks();
   const before = await ok(dir, ["report", "pnl"]);
   const item = (body: Record<string, unknown>) => ok(dir, json(["owner", "item", "add"], body));
-  await item({ kind: "estimated_tax", date: "2026-04-15", amount_cents: 400_000, paid_from_account_id: 1, jurisdiction: "federal", confirmation: "EFT-1" });
-  await item({ kind: "estimated_tax", date: "2026-04-15", amount_cents: 90_000, paid_from_account_id: 1, jurisdiction: "Illinois" });
+  await item({ kind: "estimated_tax", date: "2026-04-15", amount_cents: 400_000, paid_from_account_id: acct(1), jurisdiction: "federal", confirmation: "EFT-1" });
+  await item({ kind: "estimated_tax", date: "2026-04-15", amount_cents: 90_000, paid_from_account_id: acct(1), jurisdiction: "Illinois" });
   await item({ kind: "estimated_tax", date: "2026-06-15", amount_cents: 400_000, paid_personally: true, jurisdiction: "federal", memo: "Q2" });
-  const health = (await item({ kind: "health_insurance", date: "2026-05-01", amount_cents: 61_234, paid_from_account_id: 1 })).owner_item;
+  const health = (await item({ kind: "health_insurance", date: "2026-05-01", amount_cents: 61_234, paid_from_account_id: acct(1) })).owner_item;
   await item({ kind: "retirement", date: "2026-12-30", amount_cents: 1_000_000, paid_personally: true, memo: "Solo 401(k)" });
   await item({ kind: "retirement", date: "2025-12-30", amount_cents: 5, paid_personally: true }); // last year
 
   // Paid from checking it is an owner draw: money left the business, and no expense was booked.
-  expect(health).toMatchObject({ paid_personally: false, entry: { lines: [{ debit_cents: 61_234 }, { account_id: 1, credit_cents: 61_234 }] } });
+  expect(health).toMatchObject({ paid_personally: false, entry: { lines: [{ debit_cents: 61_234 }, { account_id: acct(1), credit_cents: 61_234 }] } });
   expect((await ok(dir, ["owner", "list", "--kind", "draw"])).owner_money.map((m: any) => m.amount_cents)).toEqual([400_000, 90_000, 61_234]);
   expect(await ok(dir, ["report", "pnl"])).toEqual(before);
 
@@ -51,8 +52,8 @@ test("ISC-55 owner items: estimated taxes, health insurance and retirement are t
   // An estimated tax payment says who it went to; nothing else does; and it is paid one way.
   expect((await cli(dir, json(["owner", "item", "add"], { kind: "estimated_tax", date: "2026-09-15", amount_cents: 1, paid_personally: true }))).out.field).toBe("jurisdiction");
   expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_personally: true, jurisdiction: "federal" }))).out.field).toBe("jurisdiction");
-  expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_personally: true, paid_from_account_id: 1 }))).out.field).toBe("paid_from_account_id");
-  expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_from_account_id: 2 }))).out.field).toBe("paid_from_account_id");
+  expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_personally: true, paid_from_account_id: acct(1) }))).out.field).toBe("paid_from_account_id");
+  expect((await cli(dir, json(["owner", "item", "add"], { kind: "retirement", date: "2026-09-15", amount_cents: 1, paid_from_account_id: acct(2) }))).out.field).toBe("paid_from_account_id");
 }, 30_000); // many CLI runs: allow for a busy machine
 
 test("year-end: one report carries the P&L by Schedule C line, profit, sales tax, mileage and contractors, stated as figures", async () => {

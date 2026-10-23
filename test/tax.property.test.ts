@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 import { cashEvents } from "../src/core/cash.ts";
-import { memBooks } from "./support/books.ts";
+import { memBooks, acct } from "./support/books.ts";
 import { must, write } from "./support/gen.ts";
 import { letAgentDecide } from "./support/person.ts";
 
@@ -54,7 +54,7 @@ test("ISC-51 sales tax by period: charged, collected and paid to the state each 
         } else if (s.do === "pay" && invoices.length) {
           const inv = must(db, "invoice_get", { id: pick(invoices, s.pick) }).invoice;
           const amount = Math.max(1, Math.round((inv.open_cents ?? 0) * s.part));
-          const r = write(db, "payment_add", { invoice_id: inv.id, date: s.date, amount_cents: amount, deposit_account_id: 1 });
+          const r = write(db, "payment_add", { invoice_id: inv.id, date: s.date, amount_cents: amount, deposit_account_id: acct(1) });
           if (r.ok) payments.push({ id: (r.result as any).payment.id, date: s.date });
         } else if (s.do === "refund" && payments.length) {
           const p = pick(payments, s.pick)!;
@@ -69,7 +69,7 @@ test("ISC-51 sales tax by period: charged, collected and paid to the state each 
         } else if (s.do === "state") {
           const m = Math.min(s.month, 13 - s.months);
           const start = `2026-${String(m).padStart(2, "0")}-01`;
-          write(db, "sales_tax_payment_add", { date: s.date, amount_cents: s.cents, paid_from_account_id: 1, tax_label: s.label, period_start: start, period_end: monthEnd(m + s.months - 1) });
+          write(db, "sales_tax_payment_add", { date: s.date, amount_cents: s.cents, paid_from_account_id: acct(1), tax_label: s.label, period_start: start, period_end: monthEnd(m + s.months - 1) });
         }
       }
 

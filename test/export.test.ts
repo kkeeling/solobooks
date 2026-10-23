@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { acmeBooks, issueOctober, json, ok, S } from "./support/billing.ts";
-import { tempDir } from "./support/books.ts";
+import { tempDir, acct } from "./support/books.ts";
 import { asPerson } from "./support/person.ts";
 
 // ISC-59 and ISC-61's bash probes live in scripts/export-check.sh; these check what the files hold.
@@ -24,10 +24,10 @@ function cells(line: string): string[] {
 async function books() {
   const dir = await acmeBooks();
   const inv = await issueOctober(dir);
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, fee_cents: 1234, deposit_account_id: 1 }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, fee_cents: 1234, deposit_account_id: acct(1) }));
   // Text from outside: a memo with a comma, a quote, a line break and a spreadsheet formula.
-  await ok(dir, json(["expense", "add"], { date: "2026-12-31", amount_cents: 101, vendor: '=HYPERLINK("x")', memo: 'Line one,\nline "two"', account_id: 2, paid_from_account_id: 1 }));
-  await ok(dir, json(["expense", "add"], { date: "2027-01-02", amount_cents: 500, vendor: "Next year", account_id: 2, paid_from_account_id: 1 }));
+  await ok(dir, json(["expense", "add"], { date: "2026-12-31", amount_cents: 101, vendor: '=HYPERLINK("x")', memo: 'Line one,\nline "two"', account_id: acct(2), paid_from_account_id: acct(1) }));
+  await ok(dir, json(["expense", "add"], { date: "2027-01-02", amount_cents: 500, vendor: "Next year", account_id: acct(2), paid_from_account_id: acct(1) }));
   return dir;
 }
 
@@ -54,7 +54,7 @@ test("ISC-59 csv: one file holds every posted line of the year, each with its ac
   const viaMcpShape = await asPerson(dir, async (db) => (await import("../src/core/perform.ts")).perform(db, "export", { format: "csv", year: 2026 }, { now: "2026-10-22T12:00:00.000Z" }));
   expect(viaMcpShape).toMatchObject({ ok: true, result: { format: "csv", year: 2026, lines: posted.n, text } });
   const interest = (await ok(dir, ["account", "add", "--name", "Interest", "--type", "income", ...S])).account.id;
-  await ok(dir, json(["entry", "post"], { date: "2026-12-31", memo: "=1+1", lines: [{ account_id: 1, debit_cents: 1 }, { account_id: interest, credit_cents: 1 }] }));
+  await ok(dir, json(["entry", "post"], { date: "2026-12-31", memo: "=1+1", lines: [{ account_id: acct(1), debit_cents: 1 }, { account_id: interest, credit_cents: 1 }] }));
   expect((await ok(dir, ["export", "--year", "2026", "--format", "csv"])) as string).toContain(",'=1+1,");
 
   // An empty year is still one file: just the header.

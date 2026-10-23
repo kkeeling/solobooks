@@ -1,4 +1,4 @@
-import { cli, ok, tempDir } from "./books.ts";
+import { cli, ok, tempDir, acct } from "./books.ts";
 import { asPerson, letAgentDecideIn, setEveryLevel } from "./person.ts";
 import { RECEIPT } from "./scenario.ts";
 
@@ -45,10 +45,10 @@ export async function acmeBooks(client: Record<string, unknown> = {}) {
   await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-11-02", "--minutes", "60", "--note", "November work", ...S]);
   await ok(dir, json(["expense", "add"], {
     date: "2026-10-05", amount_cents: 4200, vendor: "Print shop", memo: "Workshop handouts",
-    account_id: 2, paid_from_account_id: 1, receipt_path: RECEIPT, pass_through_client_id: 1,
+    account_id: acct(2), paid_from_account_id: acct(1), receipt_path: RECEIPT, pass_through_client_id: 1,
   }));
   await ok(dir, json(["expense", "add"], {
-    date: "2026-11-05", amount_cents: 999, vendor: "Courier", account_id: 2, paid_from_account_id: 1, pass_through_client_id: 1,
+    date: "2026-11-05", amount_cents: 999, vendor: "Courier", account_id: acct(2), paid_from_account_id: acct(1), pass_through_client_id: 1,
   }));
   return dir;
 }

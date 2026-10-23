@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
 import { asPerson } from "./support/person.ts";
+import { acct } from "./support/books.ts";
 
 // Payments on issued invoices, through the CLI on books where the person lets the agent decide everything.
 // Accounts from acmeBooks: 1 Checking, 2 Printing.
@@ -15,7 +16,7 @@ async function thousandDollarInvoice() {
   return { dir, inv };
 }
 
-const pay = async (dir: string, body: Record<string, unknown>) => (await ok(dir, json(["payment", "add"], { deposit_account_id: 1, date: "2026-10-25", ...body }))).payment;
+const pay = async (dir: string, body: Record<string, unknown>) => (await ok(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-25", ...body }))).payment;
 const open = async (dir: string, id: number) => (await ok(dir, ["invoice", "get", "--id", String(id)])).invoice.open_cents;
 
 /** An account's balance, debits less credits, by name. */
@@ -36,7 +37,7 @@ test("ISC-39 gross plus fee: a $1,000 invoice paid with a $30 fee records $1,000
   const fees = asPerson(dir, (db) => (db.query("SELECT id FROM accounts WHERE name = 'Payment processing fees'").get() as { id: number }).id);
   const ar = asPerson(dir, (db) => (db.query("SELECT id FROM accounts WHERE name = 'Accounts receivable'").get() as { id: number }).id);
   expect(p.entry.lines).toEqual([
-    { account_id: 1, debit_cents: 97000, credit_cents: 0 },
+    { account_id: acct(1), debit_cents: 97000, credit_cents: 0 },
     { account_id: fees, debit_cents: 3000, credit_cents: 0 },
     { account_id: ar, debit_cents: 0, credit_cents: 100000 },
   ]);
@@ -53,15 +54,15 @@ test("ISC-39 gross plus fee: a $1,000 invoice paid with a $30 fee records $1,000
   // A fee can't swallow the whole payment, and only an issued invoice can be paid into an asset account.
   for (const [body, field] of [
     [{ invoice_id: inv.id, amount_cents: 100, fee_cents: 100 }, "fee_cents"],
-    [{ invoice_id: inv.id, amount_cents: 100, deposit_account_id: 2 }, "deposit_account_id"],
+    [{ invoice_id: inv.id, amount_cents: 100, deposit_account_id: acct(2) }, "deposit_account_id"],
     [{ invoice_id: inv.id, amount_cents: 100, deposit_account_id: ar }, "deposit_account_id"],
     [{ invoice_id: 999, amount_cents: 100 }, "invoice_id"],
   ] as const) {
-    const r = await cli(dir, json(["payment", "add"], { deposit_account_id: 1, date: "2026-10-25", ...body }));
+    const r = await cli(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-25", ...body }));
     expect(r).toMatchObject({ code: 2, out: { field } });
   }
   const draft = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-11-01", period_end: "2026-11-30", lines: [{ description: "Nov", amount_cents: 500 }] }))).invoice;
-  expect(await cli(dir, json(["payment", "add"], { invoice_id: draft.id, amount_cents: 500, deposit_account_id: 1, date: "2026-10-25" }))).toMatchObject({ code: 2, out: { field: "invoice_id" } });
+  expect(await cli(dir, json(["payment", "add"], { invoice_id: draft.id, amount_cents: 500, deposit_account_id: acct(1), date: "2026-10-25" }))).toMatchObject({ code: 2, out: { field: "invoice_id" } });
 });
 
 test("ISC-40 partial: a partial payment leaves the exact remaining balance due", async () => {
@@ -126,7 +127,7 @@ test("ISC-42 refund: a refund reverses the payment's income at gross as a new en
   expect(refundEntry).toMatchObject({ date: "2026-10-28", memo: `Refund of payment ${p.id} on invoice ${inv.number}: Project cancelled` });
   expect(refundEntry.lines).toEqual([
     { account_id: ar, debit_cents: 100000, credit_cents: 0 },
-    { account_id: 1, debit_cents: 0, credit_cents: 100000 },
+    { account_id: acct(1), debit_cents: 0, credit_cents: 100000 },
   ]);
   expect(balance(dir, "Checking") - checking).toBe(-100000);
   expect(await pnlLine(dir, "Payment processing fees")).toBe(3000);
@@ -168,7 +169,7 @@ test("ISC-42 refund: a refund reverses the payment's income at gross as a new en
   const partEntry = (await ok(dir, ["entry", "list"])).entries.find((e: any) => e.id === part.refunds[0].entry_id);
   expect(partEntry.lines).toEqual([
     { account_id: ar, debit_cents: 40000, credit_cents: 0 },
-    { account_id: 1, debit_cents: 0, credit_cents: 39910 },
+    { account_id: acct(1), debit_cents: 0, credit_cents: 39910 },
     { account_id: fees, debit_cents: 0, credit_cents: 90 },
   ]);
   expect(balance(dir, "Checking") - c2).toBe(-39910);

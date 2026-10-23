@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { acmeBooks, cli, draftOctober, json, ok, S } from "./support/billing.ts";
 import { pdfLines } from "./support/pdf-text.ts";
 import { asPerson } from "./support/person.ts";
+import { acct } from "./support/books.ts";
 
 // acmeBooks' October: time $92.50 + $225.00, milestone $2,500.00, monthly fee $500.00, pass-through $42.00.
 const SERVICES = 9250 + 22500 + 250000 + 50000;
@@ -35,7 +36,7 @@ test("applies to: a tax rate covers only the kinds the person listed, and a rate
   expect(lines).toContain("IL sales tax (6.25% of $3,317.50) $207.34");
   expect(lines).toContain("Total due $3,566.84");
   // Tax is owed to the state, never income: paid in full, the P&L counts everything but the tax.
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, deposit_account_id: 1 }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, deposit_account_id: acct(1) }));
   const pnl = await ok(dir, ["report", "pnl"]);
   expect(pnl.income_total_cents).toBe(SERVICES + PASS_THROUGH);
 
@@ -109,8 +110,8 @@ test("ISC-50 liability: tax collected is owed to the state, never income, from i
   expect(toIncome).toBe(100000);
 
   // Paid in two parts, the P&L counts only the work, and the tax shows as collected for the state.
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: 55000, deposit_account_id: 1 }));
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-28", amount_cents: 55000, deposit_account_id: 1 }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: 55000, deposit_account_id: acct(1) }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-28", amount_cents: 55000, deposit_account_id: acct(1) }));
   const pnl = await ok(dir, ["report", "pnl"]);
   expect(pnl.income_total_cents).toBe(100000);
   expect([...pnl.income, ...pnl.expense].every((x: any) => x.account_id !== payable.id)).toBe(true);
@@ -119,18 +120,18 @@ test("ISC-50 liability: tax collected is owed to the state, never income, from i
 
   // Paying the state clears the liability and leaves the P&L alone.
   const paid = (await ok(dir, json(["sales", "tax", "payment", "add"], {
-    date: "2026-11-15", amount_cents: 10000, paid_from_account_id: 1, tax_label: "TX sales tax", period_start: "2026-10-01", period_end: "2026-10-31",
+    date: "2026-11-15", amount_cents: 10000, paid_from_account_id: acct(1), tax_label: "TX sales tax", period_start: "2026-10-01", period_end: "2026-10-31",
   }))).sales_tax_payment;
-  expect(paid.entry.lines).toEqual([{ account_id: payable.id, debit_cents: 10000, credit_cents: 0 }, { account_id: 1, debit_cents: 0, credit_cents: 10000 }]);
+  expect(paid.entry.lines).toEqual([{ account_id: payable.id, debit_cents: 10000, credit_cents: 0 }, { account_id: acct(1), debit_cents: 0, credit_cents: 10000 }]);
   const owedToState = () => asPerson(dir, (db) => (db.query("SELECT SUM(debit_cents) - SUM(credit_cents) AS n FROM lines WHERE account_id = ?").get(payable.id) as { n: number }).n);
   expect(owedToState()).toBe(0);
   expect(await ok(dir, ["report", "pnl"])).toEqual(pnl);
   expect((await ok(dir, ["report", "sales", "tax"])).taxes[0]).toMatchObject({ charged_cents: 10000, collected_cents: 10000, paid_to_state_cents: 10000 });
 
   // Nothing else may post to the account that holds it, and a payment to the state names a tax some invoice charged.
-  const entry = await cli(dir, json(["entry", "post"], { date: "2026-11-15", memo: "x", lines: [{ account_id: payable.id, debit_cents: 1 }, { account_id: 1, credit_cents: 1 }] }));
+  const entry = await cli(dir, json(["entry", "post"], { date: "2026-11-15", memo: "x", lines: [{ account_id: payable.id, debit_cents: 1 }, { account_id: acct(1), credit_cents: 1 }] }));
   expect(entry.out.field).toBe("lines[0].account_id");
-  const typo = await cli(dir, json(["sales", "tax", "payment", "add"], { date: "2026-11-15", amount_cents: 1, paid_from_account_id: 1, tax_label: "TX sales", period_start: "2026-10-01", period_end: "2026-10-31" }));
+  const typo = await cli(dir, json(["sales", "tax", "payment", "add"], { date: "2026-11-15", amount_cents: 1, paid_from_account_id: acct(1), tax_label: "TX sales", period_start: "2026-10-01", period_end: "2026-10-31" }));
   expect(typo.out).toEqual({ reason: "No issued invoice carries that tax label, so use a label exactly as report sales tax lists it.", field: "tax_label" });
 }, 30_000); // many CLI runs: allow for a busy machine
 

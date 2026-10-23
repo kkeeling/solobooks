@@ -23,7 +23,7 @@ For a year, run these and hand the person the files:
 
 Before handing it over, fix what the report shows as missing:
 
-- **`pnl.not_on_schedule_c`** lists accounts with no Schedule C line. Ask the person which line each belongs on, then `account edit --id <id> --schedule-c <line>`. Don't choose for them. solobooks' own accounts already have one: invoice income and costs billed at cost are line 1, processor fees line 10.
+- **`pnl.not_on_schedule_c`** lists accounts someone added with no Schedule C line. Ask the person which line each belongs on, then `account edit --id <id> --schedule-c <line>`. Don't choose for them. The books start with the Schedule C chart (an expense account for every expense line, plus Consulting income, Reimbursed expense income and Other income), each already on its line, and processor fees go on line 10.
 - **Contractors with `w9_status: not_on_file`:** remind the person to collect the W-9.
 - **`mileage.trips_without_rate`:** trips dated after the rate table ends. A newer solobooks has the rate.
 - **No `home_office`:** ask if they work from home, and if so for the figures below.

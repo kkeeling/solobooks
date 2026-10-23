@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 import type { Books } from "../src/core/db.ts";
-import { memBooks } from "./support/books.ts";
+import { memBooks, acct } from "./support/books.ts";
 import { must, write } from "./support/gen.ts";
 
 // Owner money, thrown at the books at random. Accounts: 1 Checking, 2 Savings, 3 Card, 4 Stripe balance (the
@@ -15,13 +15,13 @@ function books(): Books {
     ["Owner equity", "equity"], ["Speaking income", "income"], ["Software", "expense"],
   ]) must(db, "account_add", { name, type });
   // Some real income and expense first, so an unchanged P&L isn't just an empty one.
-  must(db, "entry_post", { date: "2026-03-01", memo: "Client paid", lines: [{ account_id: 1, debit_cents: 900000 }, { account_id: 6, credit_cents: 900000 }] });
-  must(db, "expense_add", { date: "2026-03-02", amount_cents: 4999, vendor: "Editor", account_id: 7, paid_from_account_id: 3 });
+  must(db, "entry_post", { date: "2026-03-01", memo: "Client paid", lines: [{ account_id: acct(1), debit_cents: 900000 }, { account_id: acct(6), credit_cents: 900000 }] });
+  must(db, "expense_add", { date: "2026-03-02", amount_cents: 4999, vendor: "Editor", account_id: acct(7), paid_from_account_id: acct(3) });
   return db;
 }
 
-const OWN = [1, 2, 3, 4];
-const ANY = [1, 2, 3, 4, 5, 6, 7];
+const OWN = [1, 2, 3, 4].map(acct);
+const ANY = [1, 2, 3, 4, 5, 6, 7].map(acct);
 const date = fc.integer({ min: 0, max: 364 }).map((d) => new Date(Date.UTC(2026, 0, 1 + d)).toISOString().slice(0, 10));
 const amount = fc.integer({ min: 1, max: 50_000_000 });
 
@@ -48,7 +48,7 @@ const legs = fc.oneof(balancedLegs(OWN), balancedLegs(ANY), strayLegs);
 const pnl = (db: Books) => must(db, "report_pnl", {});
 /** What the person's own accounts hold in all, debits less credits: moving money among them never changes it. */
 const own = (db: Books) =>
-  (db.query("SELECT COALESCE(SUM(debit_cents) - SUM(credit_cents), 0) n FROM lines WHERE account_id IN (1, 2, 3, 4)").get() as { n: number }).n;
+  (db.query("SELECT COALESCE(SUM(debit_cents) - SUM(credit_cents), 0) n FROM lines WHERE account_id IN (?, ?, ?, ?)").get(...OWN) as { n: number }).n;
 
 test("ISC-20 transfers: random transfers between the person's own accounts leave the P&L unchanged", () => {
   let posted = 0;
