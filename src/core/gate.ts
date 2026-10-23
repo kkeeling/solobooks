@@ -315,7 +315,7 @@ const gateSet: Op = {
   fields: Object.fromEntries(
     ACTIONS.map((a) => [a, { type: "enum", values: LEVELS, description: `Level for ${WHAT[a]}.` } as const]),
   ),
-  gate: () => "gate_settings",
+  gate: "gate_settings",
   run(db, input, ctx) {
     const asked = ACTIONS.filter((a) => input[a] !== undefined);
     if (asked.length === 0) throw new Refusal(`Name at least one gated action and the level to set it to, such as invoice_issue.`, "invoice_issue");

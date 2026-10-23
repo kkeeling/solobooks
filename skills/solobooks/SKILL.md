@@ -21,7 +21,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 
 ## The rules that matter
 
-1. **Pending means nothing happened.** Issuing, voiding and crediting invoices, changing payment instructions, and changing approval levels wait for the person unless they chose otherwise. When a result says `"status": "pending"`, tell the person it is waiting for their approval and has not happened. Never say an invoice was issued or sent while it is pending. Read [references/approvals.md](references/approvals.md) the first time you see one.
+1. **Pending means nothing happened.** Issuing, voiding and crediting invoices, changing payment instructions (`profile payment instructions set`), and changing approval levels wait for the person unless they chose otherwise. When a result says `"status": "pending"`, tell the person it is waiting for their approval and has not happened. Never say an invoice was issued or sent while it is pending. Read [references/approvals.md](references/approvals.md) the first time you see one.
 2. **You can't approve anything,** and no tool lets you. Don't look for one, and don't ask the person to lower the gate to save you a step. That choice is theirs, unprompted.
 3. **Never decide what is taxable.** solobooks adds sales tax only where the person set a rate on a client and named the line kinds it covers. Ask them; don't guess.
 4. **Issued money is locked.** Drafts can change freely. After issue, the only changes are void (a reversal) or a credit note.
@@ -37,6 +37,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 
 | They want to | Use |
 |---|---|
+| Set their business details | `profile set` (name, address, EIN, email, next invoice number); payment instructions go through `profile payment instructions set` (waits for approval) |
 | Add a client and how they pay | `client add`, then `engagement add` (hourly rate, milestones, or a recurring fee) |
 | Log time | `time add` (client, date, minutes, note) |
 | Bill a period | `invoice draft` → show it → `invoice issue` (waits for approval) |

@@ -45,7 +45,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
       next_invoice_number: 1043,
     },
   },
-  { op: "profile_set", input: { payment_instructions: "ACH to First Bank, routing 011000015, account 1234567" } },
+  { op: "profile_payment_instructions_set", input: { payment_instructions: "ACH to First Bank, routing 011000015, account 1234567" } },
   {
     op: "client_edit",
     input: { id: 1, address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", tax_rate_ppm: 62500, tax_label: "IL sales tax", tax_applies_to: ["time", "recurring", "manual"] },

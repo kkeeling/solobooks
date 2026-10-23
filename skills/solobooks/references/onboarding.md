@@ -28,10 +28,10 @@ solobooks needs the legal name, address and EIN before it can issue an invoice. 
 How clients pay them: bank details for ACH or wire, or a payment link. It is printed on every invoice.
 
 ```sh
-solobooks profile set --payment-instructions "ACH to First Bank, routing 011000015, account 1234567" --source agent:<you>
+solobooks profile payment instructions set --payment-instructions "ACH to First Bank, routing 011000015, account 1234567" --source agent:<you>
 ```
 
-Payment instructions always go in a request of their own, and changing them waits for the person's approval, because a swapped bank account is how invoice fraud works. You'll get a pending result: tell them to approve it in the prompt their app shows, or on the approval page (see approvals.md). Carry on with the next questions while it waits.
+Payment instructions have their own command (the `profile_payment_instructions_set` tool); `profile set` refuses them. Changing them waits for the person's approval, because a swapped bank account is how invoice fraud works. You'll get a pending result: tell them to approve it in the prompt their app shows, or on the approval page (see approvals.md). Carry on with the next questions while it waits.
 
 ### 4. Numbering
 

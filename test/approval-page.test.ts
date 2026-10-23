@@ -83,7 +83,7 @@ test("ISC-73 page approves: a batch can have an invoice unticked, and what the a
   await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-12-02", "--minutes", "60", "--note", "December", ...S]);
   const b = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2026-12-01", "--period-end", "2026-12-31", ...S])).invoice;
   const batch = (await ok(dir, ["invoice", "issue", "--ids", `${a.id},${b.id}`, ...S])).pending_id;
-  const sneaky = (await ok(dir, json(["profile", "set"], { payment_instructions: '<script>alert("pay me")</script>' }))).pending_id;
+  const sneaky = (await ok(dir, json(["profile", "payment", "instructions", "set"], { payment_instructions: '<script>alert("pay me")</script>' }))).pending_id;
   const page = serve(dir);
   const { html, item } = await load(page);
   expect(html).toContain(`data-batch="${batch}" value="${b.id}"`);

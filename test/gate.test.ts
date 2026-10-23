@@ -29,7 +29,7 @@ function coreBooks() {
   letAgentDecide(db);
   const { payment_instructions, ...seller } = SELLER;
   must(db, "profile_set", seller);
-  must(db, "profile_set", { payment_instructions });
+  must(db, "profile_payment_instructions_set", { payment_instructions });
   must(db, "client_add", { name: "Acme Corp", address: "500 Market St" });
   must(db, "client_add", { name: "Beta LLC", address: "9 Elm Rd" });
   must(db, "client_add", { name: "Gamma Inc", address: "1 Oak Ave" });
@@ -122,7 +122,7 @@ test("ISC-64 levels: each gated action offers agent_decides, click and passkey, 
       must(db, "invoice_issue", { id: toIssue }),
       must(db, "invoice_void", { id: toVoid, reason: "Wrong client" }),
       must(db, "invoice_credit", { invoice_id: toCredit, reason: "Discount", amount_cents: 500, line_kind: "manual" }),
-      must(db, "profile_set", { payment_instructions: "Zelle to jane@example.com" }),
+      must(db, "profile_payment_instructions_set", { payment_instructions: "Zelle to jane@example.com" }),
     ];
     for (const r of attempts) {
       if (level === "agent_decides") {
@@ -167,7 +167,7 @@ test("ISC-66 no self approval: no CLI command or MCP tool approves a pending act
   // Every command there is: the operations, plus serve, which only starts the page, and the install commands, which
   // connect agents and check the install but never open a pending action.
   const commands = (await ok(dir, ["help"])).commands.map((c: any) => c.command);
-  expect(commands).toEqual([...OPS.map((o) => o.name.replace("_", " ")), "serve", "setup", "doctor", "mcp", "version"]);
+  expect(commands).toEqual([...OPS.map((o) => o.name.replaceAll("_", " ")), "serve", "setup", "doctor", "mcp", "version"]);
   const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now });
   const tools = (await mcp.request("tools/list")).result.tools.map((t: any) => t.name);
   expect(tools).toEqual(OPS.map((o) => o.name));
@@ -242,7 +242,7 @@ test("ISC-68 setting gated: changing a gate level creates a pending approval at 
 test("ISC-69 payment details: changing the payment instructions printed on invoices is gated by default", async () => {
   const dir = tempDir();
   await ok(dir, json(["profile", "set"], { legal_name: "Jane Doe LLC" })); // not gated
-  const r = await ok(dir, json(["profile", "set"], { payment_instructions: "ACH to Evil Bank, account 666" }));
+  const r = await ok(dir, json(["profile", "payment", "instructions", "set"], { payment_instructions: "ACH to Evil Bank, account 666" }));
   expect(r).toMatchObject({ status: "pending", level: "click", title: "Change the payment instructions printed on invoices?" });
   expect((await ok(dir, ["pending", "get", "--id", String(r.pending_id)])).pending.items).toEqual([{ from: null, to: "ACH to Evil Bank, account 666" }]);
   expect((await ok(dir, ["profile", "get"])).profile).toMatchObject({ legal_name: "Jane Doe LLC", payment_instructions: null });
@@ -415,11 +415,31 @@ test("ISC-69 payment details: the page card and the chat prompt show every line,
 
 test("ISC-69 payment details: a change to the payment instructions can't carry other business details along with it", async () => {
   const dir = tempDir();
-  const r = await cli(dir, json(["profile", "set"], { payment_instructions: "Wire to account 42", legal_name: "Jane Doe LLC" }));
-  expect([r.code, r.out.field]).toEqual([2, "payment_instructions"]);
+  const r = await cli(dir, json(["profile", "payment", "instructions", "set"], { payment_instructions: "Wire to account 42", legal_name: "Jane Doe LLC" }));
+  expect([r.code, r.out.field]).toEqual([2, "legal_name"]);
   const db = coreBooks();
-  expect(write(db, "profile_set", { payment_instructions: "x", email: "evil@example.com" })).toMatchObject({ ok: false, refusal: { field: "payment_instructions" } });
+  expect(write(db, "profile_payment_instructions_set", { payment_instructions: "x", email: "evil@example.com" })).toMatchObject({ ok: false, refusal: { field: "email" } });
+  expect(write(db, "profile_payment_instructions_set", {})).toMatchObject({ ok: false, refusal: { field: "payment_instructions" } });
+  expect(asPerson(dir, (b) => b.query("SELECT COUNT(*) n FROM pending_actions").get())).toEqual({ n: 0 });
 });
+
+test("ISC-69 payment details: profile set refuses payment instructions in one sentence naming the gated command, and its other edits need no one", async () => {
+  const dir = tempDir();
+  const reason = "Change payment_instructions with profile_payment_instructions_set (solobooks profile payment instructions set), which waits for the person's approval.";
+  for (const body of [{ payment_instructions: "Wire to account 42" }, { payment_instructions: "Wire to account 42", legal_name: "Jane Doe LLC" }]) {
+    const r = await cli(dir, json(["profile", "set"], body));
+    expect([r.code, r.out]).toEqual([2, { reason, field: "payment_instructions" }]);
+  }
+  const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now }, { capabilities: { elicitation: { form: {} } }, answer: () => ({ action: "accept", content: {} }) });
+  const refused = await mcp.call("profile_set", { payment_instructions: "Wire to account 42", source: "agent:x" });
+  expect([refused.isError, refused.structuredContent]).toEqual([true, { reason, field: "payment_instructions" }]);
+  // The eval's case: setting the next number to bring in past invoices just runs, with no prompt and nothing parked.
+  const set = await mcp.call("profile_set", { next_invoice_number: 1043, legal_name: "Jane Doe LLC", source: "agent:x" });
+  await mcp.close();
+  expect(mcp.asked).toHaveLength(0);
+  expect(set.structuredContent).toMatchObject({ profile: { legal_name: "Jane Doe LLC", next_invoice_number: 1043, payment_instructions: null } });
+  expect(asPerson(dir, (db) => db.query("SELECT COUNT(*) n FROM pending_actions").get())).toEqual({ n: 0 });
+}, 30_000);
 
 test("ISC-66 no self approval: a journal entry or expense can't move the accounts invoices post to", () => {
   const db = coreBooks();

@@ -479,7 +479,7 @@ const invoiceIssue: Op = {
     id: { type: "int", min: 1, description: "Draft invoice id." },
     ids: { type: "ids", description: "Several draft invoice ids, issued together in this order; give this or id." },
   },
-  gate: () => "invoice_issue",
+  gate: "invoice_issue",
   run(db, input, ctx) {
     if ((input.id === undefined) === (input.ids === undefined)) {
       throw new Refusal("Give the draft to issue as id, or several as ids, but not both.", "id");
@@ -516,7 +516,7 @@ const invoiceVoid: Op = {
   kind: "write",
   description:
     "Void an issued invoice or credit note. The record and its number stay; a reversing entry is posted, and what it billed goes back to unbilled. Gated: unless the person lets the agent decide, this returns a pending action for them to approve.",
-  gate: () => "invoice_void",
+  gate: "invoice_void",
   fields: {
     id: { type: "int", required: true, min: 1, description: "Invoice or credit note id." },
     reason: { type: "text", required: true, description: "Why it is being voided." },
@@ -541,7 +541,7 @@ const invoiceCredit: Op = {
   kind: "write",
   description:
     "Issue a credit note against an issued invoice, reducing what the client owes. With no amount it credits everything still open; amount_cents is before tax. Tax is credited at the invoice's rate when line_kind is one the tax applied to. Gated: unless the person lets the agent decide, this returns a pending action for them to approve.",
-  gate: () => "invoice_credit",
+  gate: "invoice_credit",
   fields: {
     invoice_id: { type: "int", required: true, min: 1, description: "The issued invoice being credited." },
     reason: { type: "text", required: true, description: "Why, printed on the credit note." },

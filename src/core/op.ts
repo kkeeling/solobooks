@@ -33,8 +33,11 @@ export interface Op {
   savesFile?: boolean;
   description: string;
   fields: Fields;
-  /** For a gated write: which gated action this input is, or null when it touches nothing gated. */
-  gate?(input: any): GateAction | null;
+  /**
+   * For a gated write. A plain action means every call is that gated action, so agent apps ask the person before it
+   * runs. A function says, per input, which gated action it is, or null when that input touches nothing gated.
+   */
+  gate?: GateAction | ((input: any) => GateAction | null);
   /** Writes are synchronous so they run inside one transaction; only reads may return a promise. */
   run(db: Books, input: any, ctx: Ctx): Record<string, unknown> | Promise<Record<string, unknown>>;
 }

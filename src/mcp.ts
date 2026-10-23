@@ -74,6 +74,12 @@ function toolSchema(op: Op) {
 /** Marks a tool whose call may need the person, so the agent app asks them instead of running it unattended. */
 export const REQUIRES_USER = "anthropic/requiresUserInteraction";
 
+/**
+ * Whether a tool carries REQUIRES_USER: only when every call of it is a gated action. Agent apps ask the person
+ * before any flagged call, even one allowed in advance, so a tool gated only for some inputs stays unflagged.
+ */
+export const needsPerson = (op: Op): boolean => typeof op.gate === "string";
+
 // Carries the pending action's id through the person's answer in chat. Signed, so a client can't swap in another id.
 const approvals = createRequestStateCodec<{ pending_id: number }>({
   key: crypto.getRandomValues(new Uint8Array(32)),
@@ -154,7 +160,7 @@ export function createServer(env: Env, books?: string): McpServer {
           idempotentHint: op.kind === "read",
           openWorldHint: false,
         },
-        ...(op.gate && { _meta: { [REQUIRES_USER]: true } }),
+        ...(needsPerson(op) && { _meta: { [REQUIRES_USER]: true } }),
       },
       async (args: any, ctx: ServerContext) => {
         const { source, idempotency_key, dry_run, ...input } = args ?? {};

@@ -123,7 +123,7 @@ function writeCsv(home: string, rows: Past[]): void {
 async function seedBooks(c: Ctx): Promise<void> {
   await installAndSetup(c.home, c.mirror, c.agent);
   await sbOk(c.home, ["profile", "set", "--legal-name", BUSINESS.legal_name, "--address", BUSINESS.address, "--ein", BUSINESS.ein, "--email", BUSINESS.email, "--source", S]);
-  await sbApproved(c.home, ["profile", "set", "--payment-instructions", BUSINESS.payment, "--source", S]);
+  await sbApproved(c.home, ["profile", "payment", "instructions", "set", "--payment-instructions", BUSINESS.payment, "--source", S]);
   await sbOk(c.home, ["client", "add", "--name", ACME.name, "--email", ACME.email, "--address", ACME.address, "--terms-days", "30", "--source", S]);
 }
 

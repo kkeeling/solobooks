@@ -66,7 +66,7 @@ function help() {
     usage: "solobooks <noun> <verb> [--field value ...] [--json '{...}'] --books <dir> [--source s] [--idempotency-key k] [--dry-run]",
     commands: [
       ...OPS.map((o) => ({
-        command: o.name.replace("_", " "),
+        command: o.name.replaceAll("_", " "),
         kind: o.kind,
         description: o.description,
         fields: o.fields,

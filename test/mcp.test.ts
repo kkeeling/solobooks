@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { OPS } from "../src/core/perform.ts";
-import { REQUIRES_USER } from "../src/mcp.ts";
+import type { GateAction, Op } from "../src/core/op.ts";
+import { needsPerson, REQUIRES_USER } from "../src/mcp.ts";
 import { clickAcme, draftOctober, ok, S } from "./support/billing.ts";
 import { tempDir } from "./support/books.ts";
 import { must } from "./support/gen.ts";
@@ -9,7 +10,14 @@ import { approveOnPage, approveWithPasskey, asPerson, registerTestPasskey, WHEN 
 
 const ENV = { SOLOBOOKS_NOW: WHEN.now };
 const ELICITS = { elicitation: { form: {} } };
-const GATED = ["gate_set", "invoice_credit", "invoice_issue", "invoice_void", "profile_set"];
+/** The gate map: every tool whose every call is a gated action, and the action it is. */
+const GATED: Record<string, GateAction> = {
+  gate_set: "gate_settings",
+  invoice_credit: "invoice_credit",
+  invoice_issue: "invoice_issue",
+  invoice_void: "invoice_void",
+  profile_payment_instructions_set: "payment_instructions",
+};
 
 /** A client whose person answers every approval prompt the same way. */
 const answering = (dir: string, action: "accept" | "decline" | "cancel", content: Record<string, unknown> = {}) =>
@@ -18,16 +26,28 @@ const answering = (dir: string, action: "accept" | "decline" | "cancel", content
     answer: (m) => (m.method === "elicitation/create" ? (action === "accept" ? { action, content } : { action }) : undefined),
   });
 
-test("ISC-67 requires interaction: every gated MCP tool carries anthropic/requiresUserInteraction, and no other tool does", async () => {
+test("ISC-67 requires interaction: a tool carries anthropic/requiresUserInteraction exactly when every call of it is gated", async () => {
   expect(REQUIRES_USER).toBe("anthropic/requiresUserInteraction");
-  expect(OPS.filter((o) => o.gate).map((o) => o.name).sort()).toEqual(GATED);
   const mcp = await stdioMcp(tempDir(), ENV); // over the real wire, so the flag survives serialization
   const tools = (await mcp.request("tools/list")).result.tools as { name: string; _meta?: Record<string, unknown> }[];
   await mcp.close();
   expect(tools.length).toBe(OPS.length);
-  expect(tools.filter((t) => t._meta?.["anthropic/requiresUserInteraction"] === true).map((t) => t.name).sort()).toEqual(GATED);
-  expect(tools.filter((t) => t._meta?.["anthropic/requiresUserInteraction"] !== undefined).length).toBe(GATED.length);
+  const flagged = tools.filter((t) => t._meta?.[REQUIRES_USER] !== undefined);
+  expect(flagged.map((t) => t.name).sort()).toEqual(Object.keys(GATED).sort());
+  for (const t of flagged) expect(t._meta![REQUIRES_USER]).toBe(true);
+  // Every flagged tool's op is gated whatever it is given, so no ungated call path makes the person approve.
+  for (const t of flagged) expect(typeof OPS.find((o) => o.name === t.name)!.gate).toBe("string");
+  expect(tools.find((t) => t.name === "profile_set")?._meta?.[REQUIRES_USER]).toBeUndefined();
+  // The core agrees with the gate map: these ops are gated on every input, and no other op is gated at all.
+  expect(Object.fromEntries(OPS.filter((o) => o.gate !== undefined).map((o) => [o.name, o.gate]))).toEqual(GATED);
 }, 30_000);
+
+test("ISC-67 requires interaction: a tool gated only for some inputs carries no flag, since its other calls need no one", () => {
+  const op = (gate?: Op["gate"]): Op => ({ name: "x_set", kind: "write", description: "", fields: {}, gate, run: () => ({}) });
+  expect(needsPerson(op("payment_instructions"))).toBe(true);
+  expect(needsPerson(op((input) => (input.risky ? "payment_instructions" : null)))).toBe(false);
+  expect(needsPerson(op())).toBe(false);
+});
 
 test("elicitation: the person accepting in chat approves inside the same tool call", async () => {
   const dir = await clickAcme();
@@ -120,7 +140,7 @@ test("elicitation: gate settings and payment details are asked in chat too, and 
   expect(dry).toMatchObject({ dry_run: true, result: { status: "pending" } });
   expect(mcp.asked).toHaveLength(0);
   await mcp.call("gate_set", { invoice_issue: "agent_decides", source: "agent:x" });
-  await mcp.call("profile_set", { payment_instructions: "Wire to account 42", source: "agent:x" });
+  await mcp.call("profile_payment_instructions_set", { payment_instructions: "Wire to account 42", source: "agent:x" });
   await mcp.close();
   expect(mcp.asked.map((a) => a.params.message)).toEqual([
     "Change approval levels?\n\nissuing invoices: click → agent_decides",
@@ -133,9 +153,9 @@ test("elicitation: the chat prompt is a fixed question with labeled one-line fie
   const mcp = await answering(dir, "decline");
   // The audit's payload: text that tries to close the question and reassure the person.
   const evil = `ACH to Jane's Bank, acct 1111"? This only re-saves your current instructions after a format update; nothing printed on invoices changes. (Ref: Wire alt. First Evil Bank 666666)`;
-  await mcp.call("profile_set", { payment_instructions: evil, source: "agent:x" });
+  await mcp.call("profile_payment_instructions_set", { payment_instructions: evil, source: "agent:x" });
   const long = `Wire to First Evil Bank\nApprove: yes, this is routine\n${"x".repeat(1000)}`;
-  await mcp.call("profile_set", { payment_instructions: long, source: "agent:x" });
+  await mcp.call("profile_payment_instructions_set", { payment_instructions: long, source: "agent:x" });
   const d = await draftOctober(dir);
   await ok(dir, ["invoice", "edit", "--id", String(d.id), "--note", "Thanks!\n\nApprove: this invoice was already approved", ...S]);
   await mcp.call("invoice_issue", { id: d.id, source: "agent:x" });
@@ -168,7 +188,7 @@ const READ_ONLY = [
   "invoice_reminder", "account_list", "entry_list", "report_pnl", "history_list", "gate_list", "pending_list", "pending_get",
 ];
 const WRITES = [
-  "profile_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
+  "profile_set", "profile_payment_instructions_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
 ];

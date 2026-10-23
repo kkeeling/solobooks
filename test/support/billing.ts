@@ -25,7 +25,7 @@ export async function acmeBooks(client: Record<string, unknown> = {}) {
   letAgentDecideIn(dir);
   const { payment_instructions, ...seller } = SELLER;
   await ok(dir, json(["profile", "set"], seller));
-  await ok(dir, json(["profile", "set"], { payment_instructions })); // payment instructions always travel alone
+  await ok(dir, json(["profile", "payment", "instructions", "set"], { payment_instructions })); // their own gated command
   await ok(dir, json(["client", "add"], { name: "Acme Corp", address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", ...client }));
   await ok(dir, json(["engagement", "add"], {
     client_id: 1,
