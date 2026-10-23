@@ -5,6 +5,7 @@ import type { Books } from "./db.ts";
 import { sha256 } from "./files.ts";
 import { getAccount, refuseInvoiceAccount } from "./ledger.ts";
 import type { Op } from "./op.ts";
+import { contributionAccount, recordPersonalCost } from "./owner.ts";
 import { Refusal } from "./refusal.ts";
 import { currency, MAX_CENTS } from "./validate.ts";
 
@@ -50,22 +51,37 @@ const expenseAdd: Op = {
   name: "expense_add",
   kind: "write",
   description:
-    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and as a pass-through cost to bill on to a client.",
+    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and as a pass-through cost to bill on to a client. When the person paid it with their own money, such as a personal card, set paid_personally instead of paid_from_account_id: it is recorded as the expense plus an owner contribution of the same amount.",
   fields: {
     date: { type: "date", required: true, description: "Day of the expense, YYYY-MM-DD." },
     amount_cents: { type: "int", required: true, min: 1, max: MAX_CENTS, unit: "cents", description: "Amount in cents." },
     vendor: { type: "text", required: true, description: "Who was paid." },
     memo: { type: "text", description: "What it was for." },
     account_id: { type: "int", required: true, min: 1, description: "The expense account it belongs to." },
-    paid_from_account_id: { type: "int", required: true, min: 1, description: "The bank, card or owner account it was paid from." },
+    paid_from_account_id: { type: "int", min: 1, description: "The business bank or card account it was paid from; give this or paid_personally." },
+    paid_personally: {
+      type: "bool",
+      description: "true when the person paid it with their own money, such as a personal card: the books then record an owner contribution for it.",
+    },
     receipt_path: { type: "text", description: "Path to the receipt file on this machine; it is copied into the books folder." },
     pass_through_client_id: { type: "int", min: 1, description: "Client this cost is billed on to at cost; their next draft for its date picks it up." },
     currency,
   },
   run(db, input, ctx) {
     const expense = requireAccount(db, input.account_id, "account_id", ["expense"], "an expense account");
-    requireAccount(db, input.paid_from_account_id, "paid_from_account_id", ["asset", "liability", "equity"], "a bank, card or owner account");
-    refuseInvoiceAccount(db, input.paid_from_account_id, "paid_from_account_id");
+    const personal = input.paid_personally === true;
+    if (personal === (input.paid_from_account_id !== undefined)) {
+      throw new Refusal(
+        "Say how it was paid with paid_from_account_id, or set paid_personally to true when the person paid it with their own money, but not both.",
+        "paid_from_account_id",
+      );
+    }
+    if (!personal) {
+      requireAccount(db, input.paid_from_account_id, "paid_from_account_id", ["asset", "liability", "equity"], "a bank, card or owner account");
+      refuseInvoiceAccount(db, input.paid_from_account_id, "paid_from_account_id");
+    }
+    // Paid personally: the cost is the business's, and the money is the person's contribution to it.
+    const paidFrom: number = personal ? contributionAccount(db, ctx, "paid_personally") : input.paid_from_account_id;
     if (input.pass_through_client_id !== undefined) requireClient(db, input.pass_through_client_id, "pass_through_client_id");
 
     let receipt: { file: string; sha: string; size: number } | null = null;
@@ -93,7 +109,7 @@ const expenseAdd: Op = {
       .get(input.date, `${expense.name}: ${memo}`, ctx.source) as { id: number };
     const line = db.query("INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES (?, ?, ?, ?, ?)");
     line.run(entryId, input.account_id, input.amount_cents, 0, ctx.source);
-    line.run(entryId, input.paid_from_account_id, 0, input.amount_cents, ctx.source);
+    line.run(entryId, paidFrom, 0, input.amount_cents, ctx.source);
 
     const { id } = db
       .query(
@@ -107,7 +123,7 @@ const expenseAdd: Op = {
         input.vendor,
         input.memo ?? null,
         input.account_id,
-        input.paid_from_account_id,
+        paidFrom,
         entryId,
         input.pass_through_client_id ?? null,
         receipt?.file ?? null,
@@ -115,7 +131,8 @@ const expenseAdd: Op = {
         receipt?.size ?? null,
         ctx.source,
       ) as { id: number };
-    return { expense: expenseView(db, id) };
+    if (!personal) return { expense: expenseView(db, id) };
+    return { expense: expenseView(db, id), owner_contribution: recordPersonalCost(db, input.date, input.amount_cents, `Paid personally: ${memo}`, entryId, id, ctx) };
   },
 };
 

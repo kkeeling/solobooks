@@ -10,7 +10,8 @@ export type Field =
   | { type: "enum"; required?: boolean; values: readonly string[]; description: string }
   | { type: "list"; required?: boolean; minItems?: number; of: Fields; description: string }
   | { type: "set"; required?: boolean; values: readonly string[]; description: string }
-  | { type: "ids"; required?: boolean; description: string };
+  | { type: "ids"; required?: boolean; description: string }
+  | { type: "bool"; required?: boolean; description: string };
 
 export type Fields = Record<string, Field>;
 
@@ -86,6 +87,10 @@ export function validate(input: unknown, fields: Fields, prefix = ""): Record<st
         out[key] = v;
         break;
       }
+      case "bool":
+        if (typeof v !== "boolean") throw new Refusal(`${name} must be true or false.`, name);
+        out[key] = v;
+        break;
       case "list": {
         if (!Array.isArray(v)) throw new Refusal(`${name} must be a list.`, name);
         if (f.minItems !== undefined && v.length < f.minItems) {
@@ -106,6 +111,7 @@ export function coerceFlags(flags: Record<string, string>, fields: Fields): Reco
     const t = fields[k]?.type;
     const parts = () => v.split(",").map((x) => x.trim());
     out[k] = t === "int" && /^-?\d+$/.test(v) ? Number(v)
+      : t === "bool" && (v === "true" || v === "false") ? v === "true"
       : t === "set" ? parts()
       : t === "ids" ? parts().map((x) => (/^\d+$/.test(x) ? Number(x) : x))
       : v;

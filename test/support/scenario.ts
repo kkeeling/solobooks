@@ -11,6 +11,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "account_add", input: { name: "Checking", type: "asset" } },
   { op: "account_add", input: { name: "Interest income", type: "income" } },
   { op: "account_add", input: { name: "Software", type: "expense" } },
+  { op: "account_add", input: { name: "Card", type: "liability" } },
   {
     op: "entry_post",
     input: { date: "2026-10-01", memo: "Bank interest", lines: [{ account_id: 1, debit_cents: 92500 }, { account_id: 2, credit_cents: 92500 }] },
@@ -73,6 +74,10 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
     op: "invoice_import",
     input: { client_id: 2, number: 900, invoice_date: "2026-09-01", lines: [{ description: "August retainer", amount_cents: 300000 }], paid_on: "2026-09-20", paid_account_id: 1 },
   },
+  { op: "transfer_add", input: { date: "2026-10-06", memo: "Pay off the card", legs: [{ account_id: 1, amount_cents: -1999 }, { account_id: 4, amount_cents: 1999 }] } },
+  { op: "owner_draw", input: { date: "2026-10-07", amount_cents: 50000, account_id: 1 } },
+  { op: "owner_contribute", input: { date: "2026-10-08", amount_cents: 20000, account_id: 1, memo: "Top-up" } },
+  { op: "expense_add", input: { date: "2026-10-09", amount_cents: 1500, vendor: "Cafe", memo: "Client lunch", account_id: 3, paid_personally: true } },
   { op: "gate_set", input: { invoice_issue: "click" } },
   { op: "gate_list", input: {} },
   { op: "pending_list", input: {} },
@@ -91,6 +96,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_email", input: { id: 1 } },
   { op: "invoice_reminder", input: { id: 1, as_of: "2099-01-01" } },
   { op: "expense_list", input: {} },
+  { op: "owner_list", input: {} },
   { op: "history_list", input: {} },
 ];
 

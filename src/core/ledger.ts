@@ -24,6 +24,41 @@ export function refuseInvoiceAccount(db: Books, id: number, field: string): void
   }
 }
 
+/** An account solobooks posts to by name, created on first use. */
+export function namedAccount(db: Books, a: { name: string; type: string }, source: string, field: string): number {
+  const found = db.query("SELECT id, type FROM accounts WHERE name = ?").get(a.name) as { id: number; type: string } | null;
+  if (found) {
+    if (found.type !== a.type) throw new Refusal(`The account named ${a.name} must be type ${a.type} for solobooks to post to it.`, field);
+    return found.id;
+  }
+  return (db.query("INSERT INTO accounts (name, type, source) VALUES (?, ?, ?) RETURNING id").get(a.name, a.type, source) as { id: number }).id;
+}
+
+/**
+ * One of the person's own accounts, where their money actually sits: a bank, a card or a processor balance. Equity,
+ * income and expense accounts aren't places money sits, and the accounts invoices post to aren't the person's to move.
+ */
+export function requireOwnAccount(db: Books, id: number, field: string) {
+  const a = getAccount(db, id);
+  if (!a) throw new Refusal(`There is no account with id ${id}.`, field);
+  if (a.type !== "asset" && a.type !== "liability") {
+    throw new Refusal(`Account ${id} is ${a.type}, but ${field} must be one of your own bank, card or balance accounts (asset or liability).`, field);
+  }
+  refuseInvoiceAccount(db, id, field);
+  return a;
+}
+
+/** Posts one entry from signed amounts: positive is a debit, negative a credit, zero no line at all. */
+export function postEntry(db: Books, date: string, memo: string, legs: [number, number][], source: string): number {
+  const { id } = db.query("INSERT INTO entries (date, memo, source) VALUES (?, ?, ?) RETURNING id").get(date, memo, source) as { id: number };
+  const ins = db.query("INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES (?, ?, ?, ?, ?)");
+  for (const [account, cents] of legs) {
+    if (cents > 0) ins.run(id, account, cents, 0, source);
+    if (cents < 0) ins.run(id, account, 0, -cents, source);
+  }
+  return id;
+}
+
 export function getAccount(db: Books, id: number) {
   return db.query("SELECT id, name, type, source FROM accounts WHERE id = ?").get(id) as
     | { id: number; name: string; type: string; source: string }
