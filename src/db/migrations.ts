@@ -1,0 +1,15 @@
+import type { Database } from "bun:sqlite";
+import m001 from "./001_init.sql" with { type: "text" };
+
+/** Numbered migrations, applied in order. The file's PRAGMA user_version is the last one applied. */
+export const MIGRATIONS: readonly string[] = [m001];
+
+export function migrate(db: Database): void {
+  const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
+  for (let v = user_version; v < MIGRATIONS.length; v++) {
+    db.transaction(() => {
+      db.exec(MIGRATIONS[v]!);
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+    })();
+  }
+}
