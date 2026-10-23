@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, linkSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { migrate, MIGRATIONS } from "../db/migrations.ts";
 import { backupAs } from "./backup.ts";
@@ -32,9 +32,10 @@ function placeFresh(path: string): void {
   try {
     linkSync(tmp, path); // fails, leaving the other file alone, if one appeared at path meanwhile
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    // A drive with no hard links, such as exFAT: fall back to a rename, still never over an existing file.
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST" && !existsSync(path)) renameSync(tmp, path);
   } finally {
-    unlinkSync(tmp);
+    if (existsSync(tmp)) unlinkSync(tmp);
   }
 }
 
