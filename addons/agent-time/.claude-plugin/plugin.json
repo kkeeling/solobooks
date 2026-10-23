@@ -1,0 +1,12 @@
+{
+  "name": "solobooks-agent-time",
+  "version": "0.1.0",
+  "description": "A solobooks add-on for people who bill for work done by directing coding agents: turns Claude Code and Codex session logs into honest, explainable time entries in solobooks. Needs the solobooks app.",
+  "author": {
+    "name": "Keenan Keeling"
+  },
+  "homepage": "https://github.com/kkeeling/solobooks",
+  "repository": "https://github.com/kkeeling/solobooks",
+  "license": "MIT",
+  "keywords": ["solobooks", "time", "billing", "claude-code", "codex"]
+}
