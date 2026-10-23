@@ -2,7 +2,7 @@ import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { documentOps } from "./documents.ts";
 import { expenseOps } from "./expenses.ts";
-import { DEFAULT_PAGE, gateOps, park, requiredLevel } from "./gate.ts";
+import { DEFAULT_PAGE, gateOps, park, refuseIfHeld, requiredLevel } from "./gate.ts";
 import { saveFiles, sha256 } from "./files.ts";
 import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
@@ -114,6 +114,7 @@ function execute(
     return runWrite(db, write, (ctx) => park(db, op, input, ctx, action, level, key));
   }
   return runWrite(db, write, (ctx) => {
+    refuseIfHeld(db, op.name, input);
     const result = op.run(db, input, ctx);
     if (result instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
     return result;

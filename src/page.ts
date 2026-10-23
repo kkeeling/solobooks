@@ -3,8 +3,7 @@ import type { Server } from "bun";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
 import { openBooks, type Books } from "./core/db.ts";
-import { dollars } from "./core/format.ts";
-import { getPending, hasPasskey, levelToApprove, type PendingAction } from "./core/gate.ts";
+import { field, getPending, hasPasskey, levelToApprove, type PendingAction, promptFields } from "./core/gate.ts";
 import { authenticationOptions, registrationOptions, verifyPasskey, verifyRegistration } from "./core/passkey.ts";
 import { Refusal } from "./core/refusal.ts";
 
@@ -172,23 +171,21 @@ const LEVEL_TEXT = { click: "Click to approve", passkey: "Passkey required", age
 
 function card(p: PendingAction, level: keyof typeof LEVEL_TEXT, passkeyReady: boolean): string {
   const batch = p.op === "invoice_issue" && Array.isArray(p.input.ids);
-  const rows = p.items
-    .map((it: any) => {
-      if (it.invoice_id === undefined) {
-        if (it.action !== undefined) return `<li>${esc(it.what)}: ${esc(it.from)} &rarr; <strong>${esc(it.to)}</strong></li>`;
-        return `<li>From: ${esc(it.from ?? "(none)")}</li><li>To: <strong>${esc(it.to)}</strong></li>`;
-      }
-      const label = `${esc(it.client)} &middot; ${it.number ? `No. ${esc(it.number)}` : "draft"} &middot; ${esc(dollars(it.total_cents))}`;
-      if (!batch) return `<li>${label}</li>`;
-      return `<li><label><input type="checkbox" checked data-batch="${p.id}" value="${it.invoice_id}"> ${label}</label></li>`;
+  // The same labeled fields the chat prompt shows: every line, the note, terms, due date and payment instructions.
+  const rows = promptFields(p)
+    .map((fields, i) => {
+      const it = p.items[i] as { invoice_id?: number };
+      const list = `<dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+      if (!batch) return `<li>${list}</li>`;
+      return `<li><label><input type="checkbox" checked data-batch="${p.id}" value="${it.invoice_id}"> Keep in this batch</label>${list}</li>`;
     })
     .join("");
   const hint = batch ? `<p class="hint">Untick an invoice to keep it a draft.</p>` : "";
   const blocked = level === "passkey" && !passkeyReady;
   return `<article class="card" id="pending-${p.id}">
-  <header><span class="level ${level}">${LEVEL_TEXT[level]}</span><span class="meta">#${p.id} &middot; asked by ${esc(p.source)}</span></header>
+  <header><span class="level ${level}">${LEVEL_TEXT[level]}</span><span class="meta">#${p.id} &middot; asked by ${esc(field(p.source))}</span></header>
   <h2>${esc(p.title)}</h2>
-  <ul>${rows}</ul>${hint}
+  <ul class="docs">${rows}</ul>${hint}
   <div class="actions">
     <button class="approve" data-approve="${p.id}"${blocked ? " disabled" : ""}>${level === "passkey" ? "Approve with passkey" : "Approve"}</button>
     <button class="reject" data-reject="${p.id}">Reject</button>
@@ -217,7 +214,9 @@ h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 24p
 .card header { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
 .level { font-weight:600; } .level.click { color:var(--accent); } .level.passkey { color:var(--key); }
 .card h2 { font-size:18px; margin:8px 0; overflow-wrap:anywhere; }
-.card ul { margin:0 0 8px; padding-left:20px; overflow-wrap:anywhere; } .card li { margin:2px 0; }
+.card ul.docs { list-style:none; margin:0 0 8px; padding:0; overflow-wrap:anywhere; } .card ul.docs > li { margin:8px 0; padding-top:8px; border-top:1px solid var(--line); }
+.card dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; margin:6px 0 0; font-size:15px; }
+.card dt { color:var(--muted); } .card dd { margin:0; overflow-wrap:anywhere; }
 .hint { color:var(--muted); font-size:14px; margin:0 0 8px; }
 .actions { display:flex; gap:8px; margin-top:12px; }
 button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }

@@ -15,7 +15,7 @@ import { booksDir, booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending } from "./core/approve.ts";
 import { type Books, openForRun } from "./core/db.ts";
 import { dollars } from "./core/format.ts";
-import { getPending, type PendingAction, waiting } from "./core/gate.ts";
+import { field, getPending, type PendingAction, promptFields, waiting } from "./core/gate.ts";
 import type { Op } from "./core/op.ts";
 import { OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
@@ -89,17 +89,23 @@ const reply = (result: Record<string, unknown>, isError = false): Reply => ({
 });
 
 /** The approval prompt the agent app shows the person. A batch lists each invoice so one can be pulled out. */
+export function approvalMessage(p: PendingAction): string {
+  const batch = Array.isArray(p.input.ids);
+  const blocks = promptFields(p).map((fields) => fields.map(([label, value]) => `${label}: ${value}`).join("\n"));
+  return [batch ? `${p.title} Untick any invoice to keep it a draft.` : p.title, ...blocks].join("\n\n");
+}
+
 function approvalForm(p: PendingAction) {
   const batch = Array.isArray(p.input.ids);
   const properties = batch
     ? Object.fromEntries(
         p.items.map((it: any) => [
           `include_${it.invoice_id}`,
-          { type: "boolean", title: `${it.client}, ${dollars(it.total_cents)}`, description: "Untick to keep this invoice a draft.", default: true },
+          { type: "boolean", title: `Invoice ${it.number}: ${field(it.client)}, ${dollars(it.total_cents)}`, description: "Untick to keep this invoice a draft.", default: true },
         ]),
       )
     : {};
-  const message = batch ? `${p.title} Untick any invoice to keep it a draft.` : p.title;
+  const message = approvalMessage(p);
   return inputRequired.elicit({ mode: "form", message, requestedSchema: { type: "object", properties } } as any);
 }
 

@@ -1,5 +1,6 @@
 import type { Books } from "./db.ts";
-import { dollars } from "./format.ts";
+import { dollars, termsText } from "./format.ts";
+import { getInvoiceRow, invoiceView } from "./invoices.ts";
 import type { Ctx, GateAction, Op } from "./op.ts";
 import { getProfile } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
@@ -111,79 +112,152 @@ export function pendingView(db: Books, id: number, page: string) {
 
 /** What the person must clear to approve this pending action now: its own level, or a stricter one set since. */
 export function levelToApprove(db: Books, p: PendingAction): Level {
-  return p.action === "gate_settings" ? p.level : stricter(p.level, levelOf(db, p.action));
+  // A gate change is re-checked against the levels in force now, in case the person raised one meanwhile.
+  const now = p.action === "gate_settings" ? requiredLevel(db, "gate_settings", p.input) : levelOf(db, p.action);
+  return stricter(p.level, now);
 }
-
-const clientName = (db: Books, id: unknown) =>
-  (db.query("SELECT name FROM clients WHERE id = ?").get(id as number) as { name: string } | null)?.name ?? `client ${id}`;
-
-type View = { id: number; kind: string; number: string | null; client_id: number; total_cents: number; credits_invoice?: { number: string | null } | null };
 
 type Prompt = { title: string; items: Record<string, unknown>[] };
 
-/** The sentence the person approves, and the lines of a batch, worked out from what the action would do. */
-function describe(db: Books, action: GateAction, input: Record<string, any>, preview: Record<string, any>): Prompt {
-  const doc = (v: View) => ({ invoice_id: v.id, number: v.number, client: clientName(db, v.client_id), total_cents: v.total_cents });
-  switch (action) {
-    case "invoice_issue": {
-      const views: View[] = preview.invoice ? [preview.invoice] : preview.invoices;
-      const items = views.map(doc);
-      if (input.ids === undefined) {
-        const [i] = items;
-        return { title: `Issue invoice ${i!.number} to ${i!.client} for ${dollars(i!.total_cents)}?`, items };
-      }
-      const total = items.reduce((s, i) => s + i.total_cents, 0);
-      const n = items.length;
-      return { title: `Issue ${n} invoice${n === 1 ? "" : "s"} totalling ${dollars(total)}?`, items };
-    }
-    case "invoice_void": {
-      const v = preview.invoice as View;
-      const name = v.kind === "credit" ? `credit note ${v.number}` : `invoice ${v.number}`;
-      return { title: `Void ${name} to ${clientName(db, v.client_id)} for ${dollars(v.total_cents)} because: ${input.reason}?`, items: [doc(v)] };
-    }
-    case "invoice_credit": {
-      const v = preview.credit_note as View;
-      return {
-        title: `Issue credit note ${v.number} against invoice ${v.credits_invoice?.number} to ${clientName(db, v.client_id)} for ${dollars(v.total_cents)}?`,
-        items: [doc(v)],
-      };
-    }
-    case "payment_instructions": {
-      const from = getProfile(db).payment_instructions;
-      return {
-        title: `Change the payment instructions printed on invoices to "${input.payment_instructions}"?`,
-        items: [{ from, to: input.payment_instructions }],
-      };
-    }
-    case "gate_settings": {
-      const items = ACTIONS.filter((a) => input[a] !== undefined).map((a) => ({ action: a, what: WHAT[a], from: levelOf(db, a), to: input[a] }));
-      return { title: `Change approval levels: ${items.map((i) => `${i.what} from ${i.from} to ${i.to}`).join("; ")}?`, items };
-    }
-  }
+/**
+ * Everything issuing freezes into a document, read from the row as the action leaves it: what the person approves
+ * and, at approval, what must still be true. Only the number may differ later.
+ */
+function frozen(db: Books, id: number, reason?: string) {
+  const r = getInvoiceRow(db, id)!;
+  const v = invoiceView(db, id);
+  return {
+    invoice_id: r.id,
+    kind: r.kind,
+    number: v.number,
+    credits_invoice: v.credits_invoice?.number ?? null,
+    client: r.client_name,
+    client_address: r.client_address,
+    client_email: r.client_email,
+    seller: { legal_name: r.seller_legal_name, address: r.seller_address, ein: r.seller_ein, email: r.seller_email },
+    payment_instructions: r.payment_instructions,
+    period_start: r.period_start,
+    period_end: r.period_end,
+    invoice_date: r.invoice_date,
+    terms_days: r.terms_days,
+    due_date: r.due_date,
+    note: r.note,
+    lines: v.lines.map((l) => ({ kind: l.kind, description: l.description, amount_cents: l.amount_cents })),
+    tax: v.tax ? { label: v.tax.label, rate_ppm: v.tax.rate_ppm, amount_cents: v.tax.amount_cents } : null,
+    subtotal_cents: v.subtotal_cents,
+    total_cents: v.total_cents,
+    ...(reason !== undefined && { reason }),
+  };
 }
 
 /**
  * What a gated request would do, as the person is asked it. The action runs inside a savepoint, so a request that
- * would be refused is refused now, and is then rolled back.
+ * would be refused is refused now; what it would freeze is read before the savepoint is rolled back.
+ * The question itself carries no text the agent wrote: that goes only in labeled fields.
  */
 export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ctx, action: GateAction): Prompt {
+  const levelsBefore = Object.fromEntries(ACTIONS.map((a) => [a, levelOf(db, a)]));
+  const instructionsBefore = getProfile(db).payment_instructions;
   db.exec("SAVEPOINT gate_preview");
-  let preview: Record<string, any>;
   try {
     const r = op.run(db, input, ctx);
     if (r instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
-    preview = r;
+    const preview = r as Record<string, any>;
+    switch (action) {
+      case "invoice_issue": {
+        const ids: number[] = preview.invoice ? [preview.invoice.id] : preview.invoices.map((v: { id: number }) => v.id);
+        const items = ids.map((id) => frozen(db, id));
+        if (input.ids === undefined) return { title: `Issue invoice ${items[0]!.number} for ${dollars(items[0]!.total_cents)}?`, items };
+        const n = items.length;
+        const total = items.reduce((sum, i) => sum + i.total_cents, 0);
+        return { title: `Issue ${n} invoice${n === 1 ? "" : "s"} totalling ${dollars(total)}?`, items };
+      }
+      case "invoice_void": {
+        const doc = frozen(db, preview.invoice.id, input.reason);
+        const name = doc.kind === "credit" ? `credit note ${doc.number}` : `invoice ${doc.number}`;
+        return { title: `Void ${name} for ${dollars(doc.total_cents)}?`, items: [doc] };
+      }
+      case "invoice_credit": {
+        const doc = frozen(db, preview.credit_note.id, input.reason);
+        return { title: `Issue credit note ${doc.number} for ${dollars(doc.total_cents)} against invoice ${doc.credits_invoice}?`, items: [doc] };
+      }
+      case "payment_instructions":
+        return { title: "Change the payment instructions printed on invoices?", items: [{ from: instructionsBefore, to: input.payment_instructions }] };
+      case "gate_settings": {
+        const items = ACTIONS.filter((a) => input[a] !== undefined).map((a) => ({ action: a, what: WHAT[a], from: levelsBefore[a], to: input[a] }));
+        return { title: "Change approval levels?", items };
+      }
+    }
   } finally {
     db.exec("ROLLBACK TO gate_preview");
     db.exec("RELEASE gate_preview");
     ctx.files.length = 0;
   }
-  return describe(db, action, input, preview);
+}
+
+/** Agent-written text as one capped line, so it can only ever fill its own field. */
+export const FIELD_MAX = 240;
+export function field(v: unknown): string {
+  const s = String(v ?? "").replace(/\s+/g, " ").trim();
+  return s.length > FIELD_MAX ? `${s.slice(0, FIELD_MAX - 1)}…` : s;
+}
+
+/** One pending action's fields, label first, as the page card and the chat prompt both show them. */
+export function promptFields(p: Pick<PendingAction, "action" | "items">): [string, string][][] {
+  if (p.action === "payment_instructions") {
+    const [i] = p.items as { from: string | null; to: string }[];
+    return [[["Current", i!.from === null ? "(none)" : field(i!.from)], ["New", field(i!.to)]]];
+  }
+  if (p.action === "gate_settings") {
+    return [(p.items as { what: string; from: string; to: string }[]).map((i) => [i.what, `${i.from} → ${i.to}`] as [string, string])];
+  }
+  return (p.items as ReturnType<typeof frozen>[]).map((d) => {
+    const out: [string, string][] = [];
+    if (d.kind === "credit") out.push(["Credit note", `${d.number ?? "draft"} against invoice ${d.credits_invoice}`]);
+    else out.push(["Invoice", d.number ?? "draft"]);
+    out.push(["Client", field(d.client)]);
+    if (d.client_address) out.push(["Client address", field(d.client_address)]);
+    for (const l of d.lines) out.push(["Line", `${field(l.description)}: ${dollars(l.amount_cents)}`]);
+    if (d.tax) out.push(["Tax", `${field(d.tax.label)}: ${dollars(d.tax.amount_cents)}`]);
+    out.push(["Total", dollars(d.total_cents)]);
+    if (d.note) out.push(["Note", field(d.note)]);
+    if (d.kind === "invoice") out.push(["Terms", `${termsText(d.terms_days)}, due ${d.due_date}`]);
+    out.push(["Payment instructions", d.payment_instructions ? field(d.payment_instructions) : "(none)"]);
+    if (d.reason !== undefined) out.push(["Reason", field(d.reason)]);
+    return out;
+  });
+}
+
+/** Draft invoices a pending issue is holding, so nothing about them can change before the person decides. */
+function heldDrafts(db: Books): Set<number> {
+  const held = new Set<number>();
+  const rows = db.query("SELECT input FROM pending_actions WHERE status = 'pending' AND op = 'invoice_issue'").all() as { input: string }[];
+  for (const r of rows) {
+    const i = JSON.parse(r.input) as { id?: number; ids?: number[] };
+    for (const id of i.ids ?? [i.id!]) held.add(id);
+  }
+  return held;
+}
+
+/** Refuses a write that would change a draft waiting for approval: its lines, note, terms, time or client. */
+export function refuseIfHeld(db: Books, op: string, input: Record<string, any>): void {
+  const held = heldDrafts(db);
+  if (held.size === 0) return;
+  const ids = (sql: string, v: number) => (db.query(sql).all(v) as { id: number }[]).map((r) => r.id);
+  const touched =
+    op === "invoice_edit" || op === "invoice_delete" ? [input.id as number]
+    : op === "time_edit" || op === "time_delete" ? ids("SELECT invoice_id AS id FROM invoice_lines WHERE time_entry_id = ?", input.id)
+    : op === "client_edit" ? ids("SELECT id FROM invoices WHERE status = 'draft' AND client_id = ?", input.id)
+    : [];
+  const hit = touched.find((id) => held.has(id));
+  if (hit !== undefined) {
+    throw new Refusal(`Draft invoice ${hit} is waiting for approval, so it can't change until the person approves or rejects it.`, "id");
+  }
 }
 
 /**
- * Whether what an approval would do now is what the person was shown: the same documents, clients, amounts and
- * changes. Only an invoice number may move, when another invoice was issued in between.
+ * Whether what an approval would do now is exactly what the person was shown: every line, note, term, date, client
+ * and seller detail and payment instruction. Only an invoice number may move, when another invoice was issued first.
  */
 export function stillAsShown(shown: Record<string, unknown>[], now: Record<string, unknown>[]): boolean {
   const strip = (xs: Record<string, unknown>[]) => JSON.stringify(xs.map(({ number, ...rest }) => rest));
