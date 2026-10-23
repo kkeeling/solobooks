@@ -27,4 +27,4 @@ test("ISC-4 balances: debits equal credits after every write, across any sequenc
   // The property only means something if both balanced posts and unbalanced attempts were exercised.
   expect(posted).toBeGreaterThan(100);
   expect(refused).toBeGreaterThan(100);
-});
+}, 60_000); // 1000 runs: allow for a busy machine

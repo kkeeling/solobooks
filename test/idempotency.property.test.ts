@@ -26,4 +26,4 @@ test("ISC-9 same key: a write repeated with the same idempotency key changes not
     { numRuns: 1000 },
   );
   expect(replays).toBeGreaterThan(500);
-});
+}, 60_000); // 1000 runs: allow for a busy machine

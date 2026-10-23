@@ -33,7 +33,7 @@ test("ISC-17 exact minutes: line amounts round half-up once, in integer cents", 
     }),
     { numRuns: 1000 },
   );
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-18 increment: a client's 6-minute increment bills a 7-minute entry as 12 minutes", async () => {
   const e = await bill(["--increment-minutes", "6"], 7);

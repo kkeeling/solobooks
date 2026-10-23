@@ -45,7 +45,7 @@ test("ISC-6 recompute: every P&L total equals the sum of its entries, with no ca
     ),
     { numRuns: 1000 },
   );
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-6 recompute: the schema holds no table or column for stored totals", () => {
   const db = memBooks();

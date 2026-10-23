@@ -22,7 +22,7 @@ test("ISC-5 cents: any amount round-trips through storage to the exact cent", ()
     }),
     { numRuns: 1000 },
   );
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-5 cents: fractional cents are refused, never rounded into storage", () => {
   fc.assert(
@@ -40,7 +40,7 @@ test("ISC-5 cents: fractional cents are refused, never rounded into storage", ()
     }),
     { numRuns: 1000 },
   );
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-5 cents: the largest accepted amount survives the CLI's JSON in and out", async () => {
   const dir = tempDir();

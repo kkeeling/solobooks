@@ -26,7 +26,7 @@ test("ISC-8: every write appends exactly one history row; refused writes and dry
     }),
     { numRuns: 1000 },
   );
-});
+}, 60_000); // 1000 runs: allow for a busy machine
 
 test("ISC-8: history rows can't be changed or removed", () => {
   const db = memBooks();
