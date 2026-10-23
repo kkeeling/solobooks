@@ -23,7 +23,9 @@ export const json = (cmd: string[], body: unknown) => [...cmd, "--json", JSON.st
 export async function acmeBooks(client: Record<string, unknown> = {}) {
   const dir = tempDir();
   letAgentDecideIn(dir);
-  await ok(dir, json(["profile", "set"], SELLER));
+  const { payment_instructions, ...seller } = SELLER;
+  await ok(dir, json(["profile", "set"], seller));
+  await ok(dir, json(["profile", "set"], { payment_instructions })); // payment instructions always travel alone
   await ok(dir, json(["client", "add"], { name: "Acme Corp", address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", ...client }));
   await ok(dir, json(["engagement", "add"], {
     client_id: 1,

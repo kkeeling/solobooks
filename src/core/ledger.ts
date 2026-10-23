@@ -5,6 +5,25 @@ import { currency, MAX_CENTS } from "./validate.ts";
 
 export const ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"] as const;
 
+/**
+ * The accounts invoices post to. Only invoice issue, void and credit move them, all three gated, so no journal entry
+ * or expense may touch them: otherwise an ungated write could quietly reverse an issued invoice.
+ */
+export const INVOICE_ACCOUNTS = {
+  receivable: { name: "Accounts receivable", type: "asset" },
+  services: { name: "Consulting income", type: "income" },
+  reimbursed: { name: "Reimbursed expense income", type: "income" },
+  salesTax: { name: "Sales tax payable", type: "liability" },
+} as const;
+
+/** Refuses an account invoices post to, naming the field that holds it. */
+export function refuseInvoiceAccount(db: Books, id: number, field: string): void {
+  const a = getAccount(db, id);
+  if (a && Object.values(INVOICE_ACCOUNTS).some((x) => x.name.toLowerCase() === a.name.toLowerCase())) {
+    throw new Refusal(`Account ${id} is one invoices post to, so change what an invoice owes with invoice void or invoice credit instead.`, field);
+  }
+}
+
 export function getAccount(db: Books, id: number) {
   return db.query("SELECT id, name, type, source FROM accounts WHERE id = ?").get(id) as
     | { id: number; name: string; type: string; source: string }
@@ -88,6 +107,7 @@ const entryPost: Op = {
       const has = (l.debit_cents !== undefined ? 1 : 0) + (l.credit_cents !== undefined ? 1 : 0);
       if (has !== 1) throw new Refusal(`Line ${i} needs exactly one of debit_cents or credit_cents.`, `lines[${i}].debit_cents`);
       if (!getAccount(db, l.account_id)) throw new Refusal(`There is no account with id ${l.account_id}.`, `lines[${i}].account_id`);
+      refuseInvoiceAccount(db, l.account_id, `lines[${i}].account_id`);
       debits += l.debit_cents ?? 0;
       credits += l.credit_cents ?? 0;
     });

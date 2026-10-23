@@ -2,6 +2,7 @@ import { parseKinds, requireClient, TAX_KINDS, type TaxKind } from "./clients.ts
 import type { Books } from "./db.ts";
 import { addDays, monthName, taxCents, today } from "./format.ts";
 import type { Ctx, Op } from "./op.ts";
+import { INVOICE_ACCOUNTS } from "./ledger.ts";
 import { getProfile, nextInvoiceNumber } from "./profile.ts";
 import { Refusal } from "./refusal.ts";
 import { getTimeEntry, timeLine } from "./time.ts";
@@ -155,12 +156,7 @@ export function invoiceView(db: Books, id: number) {
 
 // ---------------------------------------------------------------- ledger
 
-const ACCOUNTS = {
-  receivable: { name: "Accounts receivable", type: "asset" },
-  services: { name: "Consulting income", type: "income" },
-  reimbursed: { name: "Reimbursed expense income", type: "income" },
-  salesTax: { name: "Sales tax payable", type: "liability" },
-} as const;
+const ACCOUNTS = INVOICE_ACCOUNTS;
 
 /** The account a posting needs, created on first use. */
 function account(db: Books, which: keyof typeof ACCOUNTS, ctx: Ctx): number {

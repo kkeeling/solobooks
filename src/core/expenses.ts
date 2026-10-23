@@ -3,7 +3,7 @@ import { extname, resolve } from "node:path";
 import { requireClient } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { sha256 } from "./files.ts";
-import { getAccount } from "./ledger.ts";
+import { getAccount, refuseInvoiceAccount } from "./ledger.ts";
 import type { Op } from "./op.ts";
 import { Refusal } from "./refusal.ts";
 import { currency, MAX_CENTS } from "./validate.ts";
@@ -65,6 +65,7 @@ const expenseAdd: Op = {
   run(db, input, ctx) {
     const expense = requireAccount(db, input.account_id, "account_id", ["expense"], "an expense account");
     requireAccount(db, input.paid_from_account_id, "paid_from_account_id", ["asset", "liability", "equity"], "a bank, card or owner account");
+    refuseInvoiceAccount(db, input.paid_from_account_id, "paid_from_account_id");
     if (input.pass_through_client_id !== undefined) requireClient(db, input.pass_through_client_id, "pass_through_client_id");
 
     let receipt: { file: string; sha: string; size: number } | null = null;

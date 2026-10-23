@@ -43,7 +43,7 @@ const profileSet: Op = {
   name: "profile_set",
   kind: "write",
   description:
-    "Set the business details issued invoices carry: legal name, address, EIN, the email invoices come from, payment instructions and the first invoice number. Only the fields given change. Changing payment_instructions is gated: unless the person lets the agent decide, the whole change waits as a pending action for them to approve.",
+    "Set the business details issued invoices carry: legal name, address, EIN, the email invoices come from, payment instructions and the first invoice number. Only the fields given change. Changing payment_instructions is gated and goes in a request of its own: unless the person lets the agent decide, it waits as a pending action for them to approve.",
   gate: (input) => (input.payment_instructions !== undefined ? "payment_instructions" : null),
   fields: {
     legal_name: { type: "text", description: "The business's legal name." },
@@ -58,6 +58,10 @@ const profileSet: Op = {
   },
   run(db, input, ctx) {
     if (Object.keys(input).length === 0) throw new Refusal("Give at least one business detail to set.", "legal_name");
+    // A gated change is approved on what the person is shown, so payment instructions travel alone.
+    if (input.payment_instructions !== undefined && Object.keys(input).length > 1) {
+      throw new Refusal("Change payment_instructions on its own, with no other business detail in the same request.", "payment_instructions");
+    }
     const next: Profile = { ...getProfile(db), ...input, source: ctx.source };
     if (input.ein !== undefined) {
       const digits = String(input.ein).replace(/-/g, "");

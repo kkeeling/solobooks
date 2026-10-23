@@ -9,11 +9,11 @@ export const RECEIPT = join(import.meta.dir, "..", "fixtures", "receipt.png");
  */
 export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "account_add", input: { name: "Checking", type: "asset" } },
-  { op: "account_add", input: { name: "Consulting income", type: "income" } },
+  { op: "account_add", input: { name: "Interest income", type: "income" } },
   { op: "account_add", input: { name: "Software", type: "expense" } },
   {
     op: "entry_post",
-    input: { date: "2026-10-01", memo: "Acme paid", lines: [{ account_id: 1, debit_cents: 92500 }, { account_id: 2, credit_cents: 92500 }] },
+    input: { date: "2026-10-01", memo: "Bank interest", lines: [{ account_id: 1, debit_cents: 92500 }, { account_id: 2, credit_cents: 92500 }] },
   },
   {
     op: "entry_post",
@@ -42,10 +42,10 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
       address: "1 Main St\nSpringfield, IL 62701",
       ein: "12-3456789",
       email: "jane@example.com",
-      payment_instructions: "ACH to First Bank, routing 011000015, account 1234567",
       next_invoice_number: 1043,
     },
   },
+  { op: "profile_set", input: { payment_instructions: "ACH to First Bank, routing 011000015, account 1234567" } },
   {
     op: "client_edit",
     input: { id: 1, address: "500 Market St\nSan Francisco, CA 94105", email: "ap@acme.example", tax_rate_ppm: 62500, tax_label: "IL sales tax", tax_applies_to: ["time", "recurring", "manual"] },
