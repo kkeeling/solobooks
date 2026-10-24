@@ -2,8 +2,8 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: complete
-progress: 112/112
+phase: climbing
+progress: 112/118
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-24T01:49:26Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -246,6 +246,12 @@ Why: the person can see the books and approve things when their agent's app can'
   - [x] ISC-102.4: The page renders all four panels with populated books.
 - [x] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
 - [x] ISC-104: Anti: the page server listens only on loopback.
+- [ ] ISC-113: The page opens with a summary strip of four figures: owed, overdue, net profit this year, and actions waiting for approval, each equal to what the unpaid report, the P&L and the pending list say.
+- [ ] ISC-114: Figures, section labels and the wordmark are set in the system monospace face with tabular figures, and the page loads no font files.
+- [ ] ISC-115: At 1280px wide the four panels sit in two columns; at 375px they stack in one column with no horizontal page scroll.
+- [ ] ISC-116: Body and muted text reach 4.5:1 contrast against the page background in both the light and dark themes.
+- [ ] ISC-117: Anti: no element on the page has a corner radius over 4px, a shadow, or a gradient.
+- [ ] ISC-118: Antecedent: the page reads as one technical instrument: uppercase monospace section labels with counts, 1px rules between rows, panels on the page itself rather than in cards, and color only where it marks state (waiting, overdue, error).
 
 
 ## Test Strategy
@@ -364,6 +370,12 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-102.4 | screenshot | page with fixture books | four panels populated | Interceptor capture | derived: human-page |
 | ISC-103 | bun-test | page HTML forms | approve and reject only | bun test test/page.test.ts -t "no entry forms" | derived: human-page |
 | ISC-104 | bash | listening sockets of page server | loopback only | `sh scripts/page-loopback-check.sh` | derived: manifest |
+| ISC-113 | bun-test | /data summary against the reports | all four equal | bun test test/page.test.ts -t "summary strip" | derived: human-page |
+| ISC-114 | bun-test | page CSS and markup | mono stack with tabular figures, no font files | bun test test/page.test.ts -t "type" | derived: human-page |
+| ISC-115 | screenshot | page at 1280px and 375px | two columns, then one with no page scroll | Interceptor capture plus scrollWidth read | derived: human-page |
+| ISC-116 | bun-test | theme tokens | 4.5:1 or more, both themes | bun test test/page.test.ts -t "contrast" | derived: human-page |
+| ISC-117 | bun-test | page CSS | no radius over 4px, no shadow, no gradient | bun test test/page.test.ts -t "flat" | derived: human-page |
+| ISC-118 | screenshot | populated page, light and dark | labels, rules, no cards, color only on state | Interceptor capture | derived: human-page |
 
 ## Decisions
 
@@ -418,6 +430,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Fog on Grok Build and Muse Code log formats closed: those agents were moved out of v1 by the maintainer (see 2026-10-22), so the add-on supports Claude Code and Codex; their formats wait with the install tests in Remaining Work.
 - 2026-10-23: Trademark search skipped. The maintainer: "I'm not going to sell this anyway. If I do infringe upon someone's trademark, they'll send a cease and desist, and then we'll make a change."
 - 2026-10-23: Fog on the invoice PDF look closed. A throwaway prototype showed one sample invoice three ways: the current plain Helvetica layout, a modern one with an accent color, logo spot and amount-due box, and a classic serif one. The maintainer picked the current look ("A"), so the renderer stays as built and the existing PDF claims cover it.
+- 2026-10-24: The maintainer asked for a better page design: minimal and technical, not over-designed. References from Inspo: MotherDuck (uppercase monospace labels on warm-gray paper) and the Cursor changelog (system faces, thin rules, near-black ink). Kept to system fonts so the page still loads nothing from the network. Claims ISC-113 to ISC-118 added to F14; ships as v0.1.1 with the narrowed approval-prompt wording.
 - 2026-10-23: Both approval-prompt fog items closed by narrowing the promise, at the maintainer's call, instead of testing each app. The README and the approvals guide now say only Claude Code asks in chat (a real `claude -p` run refused a flagged tool with "MCPTool requires permission"); every other app, Codex and Claude Desktop included, is described as using the local approval page. Safety never rested on the prompt: a gated action stays pending until approved on the page or with a passkey. Per-app chat-prompt tests move to Remaining Work.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 
