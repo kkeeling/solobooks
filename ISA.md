@@ -249,7 +249,6 @@ Why: the person can see the books and approve things when their agent's app can'
 
 ## Not yet specified
 
-- fog: what the invoice PDF looks like (layout, logo, typography) — needs a throwaway prototype the maintainer reacts to before a claim can name what "looks professional" means.
 - fog: which agent apps actually render the in-chat approval prompt — the docs say Claude Code, Codex, ChatGPT, Cursor, VS Code, Goose and OpenCode, and that's untested. Each app sharpens into a claim once a test build exists.
 - fog: whether Claude Desktop honors `requiresUserInteraction` — unverified in Anthropic's docs. It resolves with a test build in Claude Desktop.
 
@@ -422,6 +421,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: refined: sales tax owed was first built to follow the money, at my instruction. Most states tax at the sale, and which rule applies is the person's state's call, so the report now gives charged, collected and paid side by side and names no amount due (ISC-51 refined). New books also get a seeded Schedule C chart of accounts, which the Constraints promised.
 - 2026-10-23: Fog on Grok Build and Muse Code log formats closed: those agents were moved out of v1 by the maintainer (see 2026-10-22), so the add-on supports Claude Code and Codex; their formats wait with the install tests in Remaining Work.
 - 2026-10-23: Trademark search skipped. The maintainer: "I'm not going to sell this anyway. If I do infringe upon someone's trademark, they'll send a cease and desist, and then we'll make a change."
+- 2026-10-23: Fog on the invoice PDF look closed. A throwaway prototype showed one sample invoice three ways: the current plain Helvetica layout, a modern one with an accent color, logo spot and amount-due box, and a classic serif one. The maintainer picked the current look ("A"), so the renderer stays as built and the existing PDF claims cover it.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 
 ## Learning
