@@ -468,7 +468,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
 - [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
 - [x] Flip the repo public — done 2026-10-23 by the maintainer; INSTALL.md fetches anonymously (HTTP 200).
-- [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
+- [x] Rerun the installer check against the real GitHub Releases URL — done 2026-10-23 on release v0.1.0: the README one-liner in a bare fresh home (no bun on PATH) installed `solobooks 0.1.0`, and its hash matches the release's SHA256SUMS.
 - [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
 - [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
 - [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
