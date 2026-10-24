@@ -4,7 +4,7 @@ description: Use when the person says "bill my agent time", "bill my time for Ac
 license: MIT
 compatibility: Needs the solobooks app (check with `solobooks doctor`). Reads Claude Code logs in ~/.claude/projects and Codex logs in ~/.codex/sessions. Runs through `solobooks addon run`, so nothing else needs installing.
 metadata:
-  version: "0.1.3"
+  version: "0.1.4"
 ---
 
 # Bill agent time
