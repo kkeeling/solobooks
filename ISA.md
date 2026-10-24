@@ -421,6 +421,8 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: refined: review of step 4 found three gaps, now claims. A refund mirrored the processor fee, but processors keep it (ISC-42 refined). An overpayment credit couldn't be used (ISC-111). A wrong bank match couldn't be undone (ISC-112). And income was booked when invoiced, while Out of Scope rules out accrual books, so reports must count income when paid (ISC-110).
 - 2026-10-23: refined: sales tax owed was first built to follow the money, at my instruction. Most states tax at the sale, and which rule applies is the person's state's call, so the report now gives charged, collected and paid side by side and names no amount due (ISC-51 refined). New books also get a seeded Schedule C chart of accounts, which the Constraints promised.
 - 2026-10-23: Fog on Grok Build and Muse Code log formats closed: those agents were moved out of v1 by the maintainer (see 2026-10-22), so the add-on supports Claude Code and Codex; their formats wait with the install tests in Remaining Work.
+- 2026-10-23: Trademark search skipped. The maintainer: "I'm not going to sell this anyway. If I do infringe upon someone's trademark, they'll send a cease and desist, and then we'll make a change."
+- 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 
 ## Learning
 
@@ -458,14 +460,14 @@ Why: the person can see the books and approve things when their agent's app can'
 
 ## Remaining Work
 
-- [ ] Trademark search on "solobooks" before the repo goes public — not a product claim; it waits on the maintainer.
-- [ ] Keep the planning docs (`docs/brief.md`, `docs/proposal.md`, `docs/research/`) out of the public repo or scrub them first. They name the maintainer's clients and personal tax situation — they're a release step, not a product claim.
+- [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
+- [x] Keep the planning docs (`docs/brief.md`, `docs/proposal.md`, `docs/research/`) out of the public repo or scrub them first. They name the maintainer's clients and personal tax situation — they're a release step, not a product claim.
 - [ ] First real test: the maintainer's own month of client work becomes a correct invoice through the agent-time add-on — dogfood, not part of the product's definition of done.
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
 - [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
-- [ ] Flip the repo public — waits on the trademark search and the docs scrub above.
+- [ ] Flip the repo public — scrub done (Decisions 2026-10-23); waits on the maintainer running the visibility change, which the permission check reserves for him.
 - [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
 - [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
 - [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
