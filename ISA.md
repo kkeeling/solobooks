@@ -2,8 +2,8 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: climbing
-progress: 112/118
+phase: complete
+progress: 118/118
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-24T01:49:26Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -246,12 +246,12 @@ Why: the person can see the books and approve things when their agent's app can'
   - [x] ISC-102.4: The page renders all four panels with populated books.
 - [x] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
 - [x] ISC-104: Anti: the page server listens only on loopback.
-- [ ] ISC-113: The page opens with a summary strip of four figures: owed, overdue, net profit this year, and actions waiting for approval, each equal to what the unpaid report, the P&L and the pending list say.
-- [ ] ISC-114: Figures, section labels and the wordmark are set in the system monospace face with tabular figures, and the page loads no font files.
-- [ ] ISC-115: At 1280px wide the four panels sit in two columns; at 375px they stack in one column with no horizontal page scroll.
-- [ ] ISC-116: Body and muted text reach 4.5:1 contrast against the page background in both the light and dark themes.
-- [ ] ISC-117: Anti: no element on the page has a corner radius over 4px, a shadow, or a gradient.
-- [ ] ISC-118: Antecedent: the page reads as one technical instrument: uppercase monospace section labels with counts, 1px rules between rows, panels on the page itself rather than in cards, and color only where it marks state (waiting, overdue, error).
+- [x] ISC-113: The page opens with a summary strip of four figures: owed, overdue, net profit this year, and actions waiting for approval, each equal to what the unpaid report, the P&L and the pending list say.
+- [x] ISC-114: Figures, section labels and the wordmark are set in the system monospace face with tabular figures, and the page loads no font files.
+- [x] ISC-115: At 1280px wide the four panels sit in two columns; at 375px they stack in one column with no horizontal page scroll.
+- [x] ISC-116: Body and muted text reach 4.5:1 contrast against the page background in both the light and dark themes.
+- [x] ISC-117: Anti: no element on the page has a corner radius over 4px, a shadow, or a gradient.
+- [x] ISC-118: Antecedent: the page reads as one technical instrument: uppercase monospace section labels with counts, 1px rules between rows, panels on the page itself rather than in cards, and color only where it marks state (waiting, overdue, error).
 
 
 ## Test Strategy
@@ -468,6 +468,8 @@ Why: the person can see the books and approve things when their agent's app can'
 - ISC-103, 104: probes as written, rerun independently 2026-10-23 — `-t "no entry forms"` 2 pass; `sh scripts/page-loopback-check.sh` PASS (127.0.0.1 and ::1 only); full `bun test` 184 pass 0 fail in 57s — commits 6f37cbe..328ee66
 - ISC-102.1..102.4: real Brave via Interceptor (context interceptor-test) 2026-10-23 — populated books show all four panels in dollars with historical tags and overdue in red; loading skeletons with data held back; plain-words error with the file path and doctor hint when the books file is unreadable; per-panel empty hints for new books
 
+- ISC-113, 114, 116, 117: `bun test test/page.test.ts` 11 pass 0 fail; 114, 116 and 117 proven to fail on planted violations (12px radius with a shadow, a low-contrast muted color, money not in the mono face); full `bun test` 188 pass 0 fail, eval selftest 11 of 11
+- ISC-115, 118: real Brave via Interceptor (context interceptor-test) 2026-10-24: at 1470px the grid is two 520px columns; in a 375px frame one 341px column with scrollWidth equal to the viewport; populated books in light and dark, plus loading, empty and error states re-shot under the new design
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { serve } from "../src/cli.ts";
+import { run, serve } from "../src/cli.ts";
 import { openBooks } from "../src/core/db.ts";
 import { startPage, type Page } from "../src/page.ts";
 import { clickAcme, draftOctober, json, ok, S } from "./support/billing.ts";
@@ -252,3 +252,78 @@ test("ISC-103 no entry forms: the page, in every state, has no controls besides 
     for (const html of await everything(p)) expect(await entryControls(html)).toEqual([]);
   }
 }, 60_000);
+
+// ---------------------------------------------------------------- the design (ISC-113..117)
+
+/** The page's own stylesheet, as the browser gets it. */
+const styles = (html: string) => html.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+
+test("ISC-113 summary strip: owed, overdue, net profit and waiting each equal the reports they come from", async () => {
+  const dir = await populated();
+  const p = start(dir);
+  const html = await page(p);
+  for (const id of ["owed", "overdue", "net", "waiting"]) expect(html).toContain(`id="fig-${id}"`);
+  const { body } = await data(p);
+  // The reports as the agent would run them, on the page's clock.
+  const report = async (args: string[]) => JSON.parse((await run([...args, ...S, "--books", dir], ENV)).stdout);
+  const unpaidReport = await report(["report", "unpaid"]);
+  const pnlReport = await report(["report", "pnl", "--from", "2026-01-01", "--to", "2026-12-15"]);
+  const db = openBooks(dbPath(dir));
+  const { n } = db.query("SELECT COUNT(*) AS n FROM pending_actions WHERE status = 'pending'").get() as { n: number };
+  db.close();
+  expect(body.summary).toMatchObject({
+    owed_cents: unpaidReport.open_total_cents,
+    overdue_cents: unpaidReport.overdue_total_cents,
+    net_cents: pnlReport.net_cents,
+    year: "2026",
+    waiting: n,
+  });
+  expect(body.summary.overdue_cents).toBeGreaterThan(0);
+  expect(body.summary.counts.unpaid).toBe(unpaidReport.invoices.length);
+}, 60_000);
+
+test("ISC-114 type: figures, labels and the wordmark use the system monospace face with tabular figures; no font files", async () => {
+  const html = await page(start(fresh()));
+  const css = styles(html);
+  expect(css).toMatch(/--mono:ui-monospace,/);
+  for (const sel of [".label", ".mark", ".fig .value", "td.num", "th", "button"]) {
+    const rules = [...css.matchAll(new RegExp(`(^|[\\s},])${sel.replace(/\./g, "\\.")} \\{([^}]*)\\}`, "gm"))].map((m) => m[2]!);
+    expect(rules.some((r) => r.includes("var(--mono)"))).toBe(true);
+  }
+  expect(css).toMatch(/\.fig \.value \{[^}]*tabular-nums/);
+  expect(css).toMatch(/table \{[^}]*tabular-nums/);
+  expect(html).not.toMatch(/@font-face|url\(|<link\b|fonts\.googleapis/i);
+});
+
+/** WCAG contrast ratio of two #rrggbb colors. */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+test("ISC-116 contrast: body and muted text reach 4.5:1 on the page background, light and dark", async () => {
+  const css = styles(await page(start(fresh())));
+  const light = css.match(/^:root \{([^}]*)\}/m)![1]!;
+  const dark = css.match(/prefers-color-scheme: dark\) \{ :root \{([^}]*)\}/)![1]!;
+  const token = (block: string, name: string) => block.match(new RegExp(`--${name}:(#[0-9a-f]{6})`))![1]!;
+  for (const block of [light, dark]) {
+    for (const name of ["ink", "muted", "bad", "wait"]) expect(contrast(token(block, name), token(block, "bg"))).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+test("ISC-117 flat: no corner radius over 4px, no shadow, no gradient anywhere on the page", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]); // a waiting card on the page
+  const html = await page(start(dir));
+  const css = styles(html);
+  for (const m of css.matchAll(/border-radius:\s*([\d.]+)(px|%|em|rem)?/g)) {
+    expect(m[2] ?? "px").toBe("px");
+    expect(Number(m[1])).toBeLessThanOrEqual(4);
+  }
+  expect(html).not.toMatch(/box-shadow|text-shadow|gradient\(/);
+}, 30_000);

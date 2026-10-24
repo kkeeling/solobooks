@@ -38,6 +38,30 @@ export function panels(db: Books, nowIso: string): Panels {
   return { invoices: invoices(db), unpaid: unpaid(db, nowIso), pnl: profit(db, nowIso), changes: changes(db) };
 }
 
+/** The four figures across the top of the page, and the counts beside each panel's label. */
+export interface Summary {
+  owed_cents: number;
+  overdue_cents: number;
+  net_cents: number;
+  year: string;
+  waiting: number;
+  counts: { invoices: number; unpaid: number; changes: number };
+}
+
+export function summary(db: Books, nowIso: string): Summary {
+  const u = findOp("report_unpaid")!.run(db, {}, ctx(nowIso)) as { invoices: unknown[]; open_total_cents: number; overdue_total_cents: number };
+  const to = today(nowIso);
+  const count = (sql: string) => (db.query(sql).get() as { n: number }).n;
+  return {
+    owed_cents: u.open_total_cents,
+    overdue_cents: u.overdue_total_cents,
+    net_cents: pnl(db, `${to.slice(0, 4)}-01-01`, to).net_cents,
+    year: to.slice(0, 4),
+    waiting: count("SELECT COUNT(*) AS n FROM pending_actions WHERE status = 'pending'"),
+    counts: { invoices: count("SELECT COUNT(*) AS n FROM invoices"), unpaid: u.invoices.length, changes: count("SELECT COUNT(*) AS n FROM history") },
+  };
+}
+
 function clientNames(db: Books): Map<number, string> {
   const rows = db.query("SELECT id, name FROM clients").all() as { id: number; name: string }[];
   return new Map(rows.map((r) => [r.id, r.name]));

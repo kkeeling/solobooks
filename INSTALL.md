@@ -1,6 +1,6 @@
 # Installing solobooks
 
-These are the steps for an agent installing solobooks 0.1.0 for the person it works for. Follow them in order, run each command yourself, and tell the person what happened in plain words. Each step ends with a check; don't move on until it passes.
+These are the steps for an agent installing solobooks 0.1.1 for the person it works for. Follow them in order, run each command yourself, and tell the person what happened in plain words. Each step ends with a check; don't move on until it passes.
 
 solobooks runs on macOS and Linux this way. On Windows, stop and tell the person the one-line installer doesn't support Windows yet; they can download `solobooks-windows-x64.exe` from https://github.com/kkeeling/solobooks/releases/latest and you can continue from step 2 with that file.
 
@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/kkeeling/solobooks/main/install.sh 
 
 It downloads the solobooks binary for this machine, checks it against the release's checksums, and puts it at `~/.local/bin/solobooks`. Nothing else gets installed.
 
-Check: `~/.local/bin/solobooks --version` prints `solobooks 0.1.0` or later. If the installer said `~/.local/bin` isn't on the PATH, pass that line on to the person; meanwhile use the full path `~/.local/bin/solobooks` in every command below.
+Check: `~/.local/bin/solobooks --version` prints `solobooks 0.1.1` or later. If the installer said `~/.local/bin` isn't on the PATH, pass that line on to the person; meanwhile use the full path `~/.local/bin/solobooks` in every command below.
 
 ## 2. Connect it
 

@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import type { Server } from "bun";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
@@ -7,7 +8,7 @@ import { openOptions } from "./durability.ts";
 import { field, getPending, hasPasskey, levelToApprove, type PendingAction, promptFields } from "./core/gate.ts";
 import { authenticationOptions, registrationOptions, verifyPasskey, verifyRegistration } from "./core/passkey.ts";
 import { Refusal } from "./core/refusal.ts";
-import { esc, panels } from "./panels.ts";
+import { esc, panels, summary } from "./panels.ts";
 
 // The local page: the list of pending actions with Approve and Reject, passkey registration, and four read-only
 // panels (invoices, unpaid, the year's P&L, recent changes) that load from /data. It listens on loopback only and
@@ -30,6 +31,9 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
   const file = booksFile(o.books);
   if (!existsSync(file)) throw new Refusal(`There are no books in ${o.books} yet, so there is nothing to approve.`, "books");
 
+  // The books folder as the header shows it, with the home folder written as ~.
+  const home = homedir();
+  const shownBooks = home && (o.books === home || o.books.startsWith(home + "/")) ? "~" + o.books.slice(home.length) : o.books;
   const grants = new Map<string, Grant>();
   const mint = (g: Grant) => {
     const code = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
@@ -89,7 +93,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       try {
         page = await readBooks(render);
       } catch (e) {
-        page = html({ error: unreadable(e) });
+        page = html({ error: unreadable(e), books: shownBooks });
       }
       return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
@@ -98,7 +102,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       // the loading state can be seen.
       if (o.dataDelayMs) await Bun.sleep(o.dataDelayMs);
       try {
-        return json(200, { ok: true, panels: await readBooks((db) => panels(db, now(o.env))) });
+        return json(200, { ok: true, ...(await readBooks((db) => ({ panels: panels(db, now(o.env)), summary: summary(db, now(o.env)) }))) });
       } catch (e) {
         return refused(503, unreadable(e), "books");
       }
@@ -174,7 +178,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       register = { options, code: mint({ kind: "register", challenge: options.challenge, expires: Date.now() + GRANT_MS }) };
     }
     const data = { pending: items.map((i) => ({ id: i.p.id, code: i.code, passkey: i.passkey ?? null })), register: register ?? null };
-    return html({ cards: items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), passkeyCreated: keyRow?.created_at ?? null, data });
+    return html({ cards: items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), passkeyCreated: keyRow?.created_at ?? null, data, books: shownBooks });
   }
 
   const fetch = (req: Request) =>
@@ -225,11 +229,18 @@ function card(p: PendingAction, level: keyof typeof LEVEL_TEXT, passkeyReady: bo
 const PANELS = [
   ["invoices", "Invoices", "invoices"],
   ["unpaid", "Unpaid", "what is owed"],
-  ["pnl", "Profit and loss this year", "the profit and loss"],
+  ["pnl", "Profit and loss", "the profit and loss"],
   ["changes", "Recent changes", "recent changes"],
 ] as const;
 
-type View = { cards: string[]; passkeyCreated: string | null; data: unknown } | { error: string };
+const FIGURES = [
+  ["owed", "Owed to you"],
+  ["overdue", "Overdue"],
+  ["net", "Net profit"],
+  ["waiting", "Waiting for you"],
+] as const;
+
+type View = ({ cards: string[]; passkeyCreated: string | null; data: unknown } | { error: string }) & { books: string };
 
 function html(v: View): string {
   const error = "error" in v ? v.error : null;
@@ -241,82 +252,112 @@ function html(v: View): string {
     approvals = `<p class="state error">solobooks can't read the books, so it can't show what is waiting for your approval, and nothing can be approved here until it can.</p>`;
   } else {
     approvals = v.cards.length ? v.cards.join("\n") : `<p class="empty">Nothing is waiting for approval.</p>`;
-    passkey = `<section class="passkey"><h2>Passkey</h2>${
+    passkey = `<section class="passkey"><h2 class="label">Passkey</h2>${
       v.passkeyCreated
         ? `<p>A passkey is registered for these books (since ${esc(v.passkeyCreated.slice(0, 10))}). Actions set to passkey need it.</p>`
         : `<p>No passkey yet. Register one to use the passkey level for any action.</p>
        <button id="register">Register a passkey</button><p class="outcome" id="register-outcome" role="status"></p>`
     }</section>`;
   }
+  const waiting = "error" in v ? "" : String(v.cards.length);
   const loading = (label: string) =>
     `<p class="state loading">Loading ${label}…</p><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>`;
   const panelHtml = PANELS.map(
     ([id, title, label]) =>
-      `<section class="block" aria-labelledby="h-${id}"><h2 id="h-${id}">${title}</h2><div class="panel" id="panel-${id}" data-label="${label}" aria-busy="true" aria-live="polite">${loading(label)}</div></section>`,
+      `<section class="block" aria-labelledby="h-${id}"><h2 class="label" id="h-${id}">${title} <span class="count" id="count-${id}"></span></h2><div class="panel" id="panel-${id}" data-label="${label}" aria-busy="true" aria-live="polite">${loading(label)}</div></section>`,
   ).join("\n");
+  const figures = FIGURES.map(
+    ([id, label]) => `<div class="fig" id="fig-${id}"><span class="label">${label}</span><span class="value">${id === "waiting" && waiting ? waiting : "—"}</span></div>`,
+  ).join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>solobooks</title>
 <style>
-:root { color-scheme:light dark; --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc; --ok:#1f7a4d; --on-ok:#fff; --bad:#a33a2b; --accent:#2c5fd6; }
-@media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#21211f; --ink:#ecebe7; --muted:#a09e98; --line:#34332f; --ok:#5cc28f; --on-ok:#0d2418; --bad:#e07b6c; --accent:#7ea2ff; } }
+:root { color-scheme:light dark; --bg:#f3f2ee; --ink:#141413; --muted:#5c5b57; --line:#d8d6cf; --faint:#e6e4de; --wait:#8a5600; --ok:#1d6b43; --on-ok:#fff; --bad:#a8301f;
+  --sans:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono:ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg:#121211; --ink:#ebeae5; --muted:#9d9b94; --line:#2f2e2b; --faint:#222120; --wait:#e2a740; --ok:#5cc28f; --on-ok:#0b1f14; --bad:#ef8070; } }
 * { box-sizing: border-box; }
 html { background:var(--bg); }
-body { margin:0; min-height:100vh; min-height:100dvh; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-main { max-width:720px; margin:0 auto; padding:32px 16px 64px; }
-h1 { font-size:22px; margin:0 0 4px; } .lede { color:var(--muted); margin:0 0 28px; }
-.alert { border:1px solid var(--bad); color:var(--bad); background:var(--card); border-radius:12px; padding:12px 16px; margin:0 0 24px; overflow-wrap:anywhere; }
+body { margin:0; min-height:100vh; min-height:100dvh; background:var(--bg); color:var(--ink); font:15px/1.5 var(--sans); }
+main { max-width:1120px; margin:0 auto; padding:0 16px 64px; }
+.label { font:500 11px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0; }
+.count { color:var(--ink); margin-left:6px; }
+.top { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px; padding:20px 0 14px; border-bottom:1px solid var(--ink); }
+.mark { font:600 14px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
+.where { font:12px/1.4 var(--mono); color:var(--muted); overflow-wrap:anywhere; }
+.where b { font-weight:500; color:var(--ink); } .state-line { white-space:nowrap; margin-left:auto; }
+.lede { color:var(--muted); margin:12px 0 20px; }
+.alert { border:1px solid var(--bad); border-left-width:3px; color:var(--bad); padding:10px 14px; margin:0 0 20px; overflow-wrap:anywhere; }
 .alert p { margin:0; } .alert[hidden] { display:none; }
-.block { margin:0 0 28px; } .block > h2, .approvals > h2 { font-size:17px; margin:0 0 10px; }
-.approvals > .lede { margin:-6px 0 14px; font-size:15px; }
-.panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:2px 16px 4px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:0 0 16px; }
-.card header { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
-.level { font-weight:600; color:var(--accent); }
-.card h3 { font-size:18px; margin:8px 0; overflow-wrap:anywhere; }
-.card ul.docs { list-style:none; margin:0 0 8px; padding:0; overflow-wrap:anywhere; } .card ul.docs > li { margin:8px 0; padding-top:8px; border-top:1px solid var(--line); }
-.card dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; margin:6px 0 0; font-size:15px; }
-.card dt { color:var(--muted); } .card dd { margin:0; overflow-wrap:anywhere; }
-.hint { color:var(--muted); font-size:14px; margin:0 0 8px; }
+.strip { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:0 0 32px; }
+.fig { padding:14px 16px 16px 0; min-width:0; }
+.fig + .fig { padding-left:16px; border-left:1px solid var(--line); }
+.fig .value { display:block; margin-top:6px; font:500 24px/1.15 var(--mono); font-variant-numeric:tabular-nums; letter-spacing:-.01em; overflow-wrap:anywhere; }
+.fig.late .value { color:var(--bad); } .fig.wait .value { color:var(--wait); }
+.approvals { margin:0 0 36px; } .approvals > h2 { margin-bottom:4px; }
+.approvals > .note { color:var(--muted); margin:0 0 14px; font-size:14px; }
+.card { border:1px solid var(--line); border-left:3px solid var(--wait); padding:14px 16px; margin:0 0 12px; }
+.card header { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font:12px/1.4 var(--mono); color:var(--muted); }
+.level { font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--wait); }
+.card h3 { font-size:17px; font-weight:600; margin:8px 0; overflow-wrap:anywhere; }
+.card ul.docs { list-style:none; margin:0 0 8px; padding:0; overflow-wrap:anywhere; } .card ul.docs > li { margin:8px 0; padding-top:8px; border-top:1px solid var(--faint); }
+.card dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 14px; margin:6px 0 0; font-size:14px; }
+.card dt { font:12px/1.6 var(--mono); color:var(--muted); } .card dd { margin:0; overflow-wrap:anywhere; }
+.hint { color:var(--muted); font-size:13px; margin:0 0 8px; }
 .actions { display:flex; gap:8px; margin-top:12px; }
-button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
-button.approve { background:var(--ok); border-color:var(--ok); color:var(--on-ok); } button:disabled { opacity:.5; cursor:default; }
-.outcome { margin:8px 0 0; font-size:14px; } .outcome.ok { color:var(--ok); } .outcome.bad { color:var(--bad); }
-section.passkey { border-top:1px solid var(--line); margin-top:36px; padding-top:16px; color:var(--muted); } section.passkey h2 { font-size:17px; color:var(--ink); }
+button { font:500 12px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; padding:10px 14px; border-radius:2px; border:1px solid var(--ink); background:transparent; color:var(--ink); cursor:pointer; }
+button.approve { background:var(--ok); border-color:var(--ok); color:var(--on-ok); } button:disabled { opacity:.45; cursor:default; }
+.outcome { margin:8px 0 0; font:12px/1.5 var(--mono); } .outcome.ok { color:var(--ok); } .outcome.bad { color:var(--bad); }
+.grid { display:grid; grid-template-columns:minmax(0, 1fr); gap:36px 48px; }
+@media (min-width: 960px) { .grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+.block { min-width:0; } .block > h2 { padding-bottom:8px; border-bottom:1px solid var(--ink); }
+section.passkey { border-top:1px solid var(--line); margin-top:44px; padding-top:14px; color:var(--muted); font-size:14px; }
+section.passkey p { margin:6px 0 10px; }
 .empty { color:var(--muted); }
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-th { text-align:left; font-size:12px; font-weight:500; color:var(--muted); padding:12px 8px 6px 0; border-bottom:1px solid var(--line); }
-td { padding:10px 8px 10px 0; vertical-align:top; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+th { text-align:left; font:500 11px/1.4 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:10px 8px 6px 0; border-bottom:1px solid var(--line); }
+td { padding:9px 8px 9px 0; vertical-align:top; border-bottom:1px solid var(--faint); overflow-wrap:anywhere; }
 tbody:last-of-type tr:last-child td { border-bottom:0; }
 th.num, td.num { text-align:right; white-space:nowrap; padding-right:0; }
+td.num { font-family:var(--mono); font-size:14px; }
 td.two > span { display:block; } .sub { display:block; font-size:13px; color:var(--muted); } .sub.inline { display:inline; }
 .strong { font-weight:600; } .bad { color:var(--bad); } .muted { color:var(--muted); }
-.tag { display:inline-block; font-size:11px; line-height:16px; padding:0 6px; border:1px solid var(--line); border-radius:999px; color:var(--muted); vertical-align:1px; }
-tfoot td { font-weight:600; border-top:1px solid var(--line); border-bottom:0; } tfoot .late-total td { color:var(--bad); font-weight:500; }
-.pnl .group th { padding-top:16px; font-size:13px; font-weight:600; color:var(--ink); border-bottom:0; }
-.pnl .line { display:inline-block; min-width:2.4em; color:var(--muted); }
+.tag { display:inline-block; font:500 10px/16px var(--mono); letter-spacing:.06em; text-transform:uppercase; padding:0 5px; border:1px solid var(--line); border-radius:2px; color:var(--muted); vertical-align:1px; }
+tfoot td { font-weight:600; border-top:1px solid var(--ink); border-bottom:0; } tfoot .late-total td { color:var(--bad); font-weight:500; border-top-color:var(--line); }
+.pnl .group th { padding-top:16px; color:var(--ink); border-bottom:0; }
+.pnl .line { display:inline-block; min-width:2.6em; font:12px var(--mono); color:var(--muted); }
 .pnl .subtotal td { color:var(--muted); }
-.basis { font-size:13px; color:var(--muted); margin:12px 0 0; }
-.changes { list-style:none; margin:0; padding:0; } .changes li { padding:10px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; } .changes li:last-child { border-bottom:0; }
-.changes .what { display:block; }
+.basis { font-size:13px; color:var(--muted); margin:10px 0 0; }
+.changes { list-style:none; margin:0; padding:0; } .changes li { padding:9px 0; border-bottom:1px solid var(--faint); overflow-wrap:anywhere; } .changes li:last-child { border-bottom:0; }
+.changes .what { display:block; } .changes .sub { font-family:var(--mono); font-size:12px; }
 .state { margin:12px 0; color:var(--muted); } .state strong { color:var(--ink); font-weight:600; } .state.error { color:var(--bad); }
-.foot { font-size:13px; color:var(--muted); margin:8px 0; }
-.skeleton i { display:block; height:12px; margin:0 0 14px; border-radius:6px; background:var(--line); animation:pulse 1.4s ease-in-out infinite; }
+.foot { font:12px/1.5 var(--mono); color:var(--muted); margin:8px 0; }
+.skeleton i { display:block; height:10px; margin:14px 0; border-radius:2px; background:var(--line); animation:pulse 1.4s ease-in-out infinite; }
 .skeleton i:nth-child(2) { width:80%; } .skeleton i:nth-child(3) { width:60%; }
 @keyframes pulse { 50% { opacity:.45; } }
 @media (prefers-reduced-motion: reduce) { .skeleton i { animation:none; } }
+@media (max-width: 640px) {
+  .strip { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .fig:nth-child(3) { padding-left:0; border-left:0; }
+  .fig:nth-child(n+3) { border-top:1px solid var(--line); }
+  .fig .value { font-size:20px; }
+}
 </style></head>
 <body><main>
-<h1>Your books</h1>
-<p class="lede">Your agent keeps them. This page is for a look, and for approving what it asks.</p>
+<header class="top"><span class="mark">solobooks</span><span class="where"><b>${esc(v.books)}</b></span><span class="where state-line">localhost · read-only</span></header>
+<p class="lede">Your agent keeps these books. This page is for a look, and for approving what it asks.</p>
 <div class="alert" id="alert" role="alert"${error ? "" : " hidden"}><p>${esc(error ?? "")}</p></div>
+<section class="strip" id="strip" aria-label="Summary">${figures}</section>
 <section class="approvals" aria-labelledby="h-approvals">
-<h2 id="h-approvals">Waiting for your approval</h2>
-<p class="lede">Your agent asked for these. Nothing happens until you approve.</p>
+<h2 class="label" id="h-approvals">Waiting for your approval <span class="count">${waiting}</span></h2>
+<p class="note">Your agent asked for these. Nothing happens until you approve.</p>
 ${approvals}
 </section>
+<div class="grid">
 ${panelHtml}
+</div>
 ${passkey}
 </main>
 <script type="application/json" id="data">${payload}</script>
@@ -380,11 +421,26 @@ async function loadPanels() {
   for (const el of document.querySelectorAll(".panel[aria-busy]")) {
     const name = el.id.slice("panel-".length);
     el.removeAttribute("aria-busy");
-    if (r.ok) { el.innerHTML = r.panels[name]; continue; }
+    if (r.ok) {
+      el.innerHTML = r.panels[name];
+      const c = document.getElementById("count-" + name);
+      if (c) c.textContent = name === "pnl" ? r.summary.year : String(r.summary.counts[name]);
+      continue;
+    }
     const p = document.createElement("p");
     p.className = "state error";
     p.textContent = "Can't show " + el.dataset.label + " while the books can't be read.";
     el.replaceChildren(p);
+  }
+  if (r.ok) {
+    const s = r.summary;
+    const usd = (c) => (c < 0 ? "\u2212" : "") + "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fig = (id, text, cls) => { const el = document.getElementById("fig-" + id); el.querySelector(".value").textContent = text; if (cls) el.classList.add(cls); };
+    fig("owed", usd(s.owed_cents));
+    fig("overdue", usd(s.overdue_cents), s.overdue_cents > 0 ? "late" : "");
+    fig("net", usd(s.net_cents));
+    fig("waiting", String(s.waiting), s.waiting > 0 ? "wait" : "");
+    document.querySelector("#fig-net .label").textContent = "Net profit " + s.year;
   }
   if (!r.ok) {
     const a = document.getElementById("alert");
