@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import type { Server } from "bun";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
@@ -31,9 +30,6 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
   const file = booksFile(o.books);
   if (!existsSync(file)) throw new Refusal(`There are no books in ${o.books} yet, so there is nothing to approve.`, "books");
 
-  // The books folder as the header shows it, with the home folder written as ~.
-  const home = homedir();
-  const shownBooks = home && (o.books === home || o.books.startsWith(home + "/")) ? "~" + o.books.slice(home.length) : o.books;
   const grants = new Map<string, Grant>();
   const mint = (g: Grant) => {
     const code = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
@@ -93,7 +89,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       try {
         page = await readBooks(render);
       } catch (e) {
-        page = html({ error: unreadable(e), books: shownBooks });
+        page = html({ error: unreadable(e) });
       }
       return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
@@ -178,7 +174,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       register = { options, code: mint({ kind: "register", challenge: options.challenge, expires: Date.now() + GRANT_MS }) };
     }
     const data = { pending: items.map((i) => ({ id: i.p.id, code: i.code, passkey: i.passkey ?? null })), register: register ?? null };
-    return html({ cards: items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), passkeyCreated: keyRow?.created_at ?? null, data, books: shownBooks });
+    return html({ cards: items.map((i) => card(i.p, levelToApprove(db, i.p), !!i.passkey)), passkeyCreated: keyRow?.created_at ?? null, data });
   }
 
   const fetch = (req: Request) =>
@@ -240,7 +236,7 @@ const FIGURES = [
   ["waiting", "Waiting for you"],
 ] as const;
 
-type View = ({ cards: string[]; passkeyCreated: string | null; data: unknown } | { error: string }) & { books: string };
+type View = { cards: string[]; passkeyCreated: string | null; data: unknown } | { error: string };
 
 function html(v: View): string {
   const error = "error" in v ? v.error : null;
@@ -252,12 +248,10 @@ function html(v: View): string {
     approvals = `<p class="state error">solobooks can't read the books, so it can't show what is waiting for your approval, and nothing can be approved here until it can.</p>`;
   } else {
     approvals = v.cards.length ? v.cards.join("\n") : `<p class="empty">Nothing is waiting for approval.</p>`;
-    passkey = `<section class="passkey"><h2 class="label">Passkey</h2>${
-      v.passkeyCreated
-        ? `<p>A passkey is registered for these books (since ${esc(v.passkeyCreated.slice(0, 10))}). Actions set to passkey need it.</p>`
-        : `<p>No passkey yet. Register one to use the passkey level for any action.</p>
-       <button id="register">Register a passkey</button><p class="outcome" id="register-outcome" role="status"></p>`
-    }</section>`;
+    // Once a passkey is registered there is nothing to say here; until then, the one button that registers it.
+    passkey = v.passkeyCreated
+      ? ""
+      : `<section class="passkey"><button id="register">Register a passkey</button><p class="outcome" id="register-outcome" role="status"></p></section>`;
   }
   const waiting = "error" in v ? "" : String(v.cards.length);
   const loading = (label: string) =>
@@ -286,8 +280,6 @@ main { max-width:1120px; margin:0 auto; padding:0 16px 64px; }
 .count { color:var(--ink); margin-left:6px; }
 .top { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px; padding:20px 0 14px; border-bottom:1px solid var(--ink); }
 .mark { font:600 14px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
-.where { font:12px/1.4 var(--mono); color:var(--muted); overflow-wrap:anywhere; }
-.where b { font-weight:500; color:var(--ink); } .state-line { white-space:nowrap; margin-left:auto; }
 .lede { color:var(--muted); margin:12px 0 20px; }
 .alert { border:1px solid var(--bad); border-left-width:3px; color:var(--bad); padding:10px 14px; margin:0 0 20px; overflow-wrap:anywhere; }
 .alert p { margin:0; } .alert[hidden] { display:none; }
@@ -313,8 +305,7 @@ button.approve { background:var(--ok); border-color:var(--ok); color:var(--on-ok
 .grid { display:grid; grid-template-columns:minmax(0, 1fr); gap:36px 48px; }
 @media (min-width: 960px) { .grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 .block { min-width:0; } .block > h2 { padding-bottom:8px; border-bottom:1px solid var(--ink); }
-section.passkey { border-top:1px solid var(--line); margin-top:44px; padding-top:14px; color:var(--muted); font-size:14px; }
-section.passkey p { margin:6px 0 10px; }
+section.passkey { border-top:1px solid var(--line); margin-top:44px; padding-top:16px; }
 .empty { color:var(--muted); }
 table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
 th { text-align:left; font:500 11px/1.4 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:10px 8px 6px 0; border-bottom:1px solid var(--line); }
@@ -346,7 +337,7 @@ tfoot td { font-weight:600; border-top:1px solid var(--ink); border-bottom:0; } 
 }
 </style></head>
 <body><main>
-<header class="top"><span class="mark">solobooks</span><span class="where"><b>${esc(v.books)}</b></span><span class="where state-line">localhost · read-only</span></header>
+<header class="top"><span class="mark">solobooks</span></header>
 <p class="lede">Your agent keeps these books. This page is for a look, and for approving what it asks.</p>
 <div class="alert" id="alert" role="alert"${error ? "" : " hidden"}><p>${esc(error ?? "")}</p></div>
 <section class="strip" id="strip" aria-label="Summary">${figures}</section>

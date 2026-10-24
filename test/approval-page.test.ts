@@ -110,7 +110,7 @@ test("ISC-74 passkey: at passkey level approval completes only with a valid WebA
   expect(reg.status).toBe(200);
   const second = await load(page);
   expect(second.data.register).toBeNull(); // one passkey per books; no second registration offered
-  expect(second.html).toContain("A passkey is registered");
+  expect(second.html).not.toContain("Register a passkey"); // registered: the page says nothing more about it
   expect((await post(page, "/passkey/register", { code: first.data.register.code, response: {} })).status).toBe(403); // spent
   // The agent's unspent code reaches the one-passkey rule, which refuses a second passkey.
   const rogue = await SoftAuthenticator.create({ impostor: true, ownId: true });
