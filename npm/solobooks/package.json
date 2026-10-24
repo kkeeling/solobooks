@@ -1,6 +1,6 @@
 {
   "name": "solobooks",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local, agent-run books for US solo consultants. Runs the solobooks binary for this machine; nothing is downloaded at runtime.",
   "license": "MIT",
   "author": "Keenan Keeling",
@@ -19,10 +19,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@solobooks/darwin-arm64": "0.1.2",
-    "@solobooks/darwin-x64": "0.1.2",
-    "@solobooks/linux-arm64": "0.1.2",
-    "@solobooks/linux-x64": "0.1.2",
-    "@solobooks/windows-x64": "0.1.2"
+    "@solobooks/darwin-arm64": "0.1.3",
+    "@solobooks/darwin-x64": "0.1.3",
+    "@solobooks/linux-arm64": "0.1.3",
+    "@solobooks/linux-x64": "0.1.3",
+    "@solobooks/windows-x64": "0.1.3"
   }
 }
