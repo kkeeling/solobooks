@@ -301,6 +301,7 @@ main { max-width:1120px; margin:0 auto; padding:0 16px 64px; }
 .actions { display:flex; gap:8px; margin-top:12px; }
 button { font:500 12px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; padding:10px 14px; border-radius:2px; border:1px solid var(--ink); background:transparent; color:var(--ink); cursor:pointer; }
 button.approve { background:var(--ok); border-color:var(--ok); color:var(--on-ok); } button:disabled { opacity:.45; cursor:default; }
+.card { transition:opacity .4s; } .card.gone { opacity:0; } @media (prefers-reduced-motion: reduce) { .card { transition:none; } }
 .outcome { margin:8px 0 0; font:12px/1.5 var(--mono); } .outcome.ok { color:var(--ok); } .outcome.bad { color:var(--bad); }
 .grid { display:grid; grid-template-columns:minmax(0, 1fr); gap:36px 48px; }
 @media (min-width: 960px) { .grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
@@ -371,11 +372,23 @@ async function assertion(o) {
     response: { clientDataJSON: enc(c.response.clientDataJSON), authenticatorData: enc(c.response.authenticatorData),
       signature: enc(c.response.signature), userHandle: c.response.userHandle ? enc(c.response.userHandle) : undefined } };
 }
+function settle(card) {
+  card.classList.add("gone");
+  setTimeout(() => {
+    const list = card.parentElement;
+    card.remove();
+    const left = list.querySelectorAll(".card").length;
+    document.querySelector("#h-approvals .count").textContent = String(left);
+    if (!left) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "Nothing is waiting for approval."; list.append(p); }
+    for (const el of document.querySelectorAll(".panel")) el.setAttribute("aria-busy", "true");
+    loadPanels();
+  }, 400);
+}
 for (const item of data.pending) {
   const card = document.getElementById("pending-" + item.id);
   const out = card.querySelector(".outcome");
   const done = (r, verb) => {
-    if (r.ok) { card.querySelectorAll("button, input").forEach((b) => (b.disabled = true)); say(out, true, verb); }
+    if (r.ok) { card.querySelectorAll("button, input").forEach((b) => (b.disabled = true)); say(out, true, verb); setTimeout(() => settle(card), 2500); }
     else say(out, false, (r.refusal && r.refusal.reason) + " Reload the page to try again.");
   };
   card.querySelector("[data-approve]").onclick = async () => {
@@ -426,7 +439,7 @@ async function loadPanels() {
   if (r.ok) {
     const s = r.summary;
     const usd = (c) => (c < 0 ? "\u2212" : "") + "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const fig = (id, text, cls) => { const el = document.getElementById("fig-" + id); el.querySelector(".value").textContent = text; if (cls) el.classList.add(cls); };
+    const fig = (id, text, cls) => { const el = document.getElementById("fig-" + id); el.querySelector(".value").textContent = text; el.classList.remove("late", "wait"); if (cls) el.classList.add(cls); };
     fig("owed", usd(s.owed_cents));
     fig("overdue", usd(s.overdue_cents), s.overdue_cents > 0 ? "late" : "");
     fig("net", usd(s.net_cents));
