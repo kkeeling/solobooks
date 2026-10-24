@@ -1,8 +1,31 @@
 # solobooks
 
-Books for US solo consultants, run by the coding agent you already use. Paste one prompt into your agent, answer a few questions, and it bills your clients, records your expenses and keeps a ledger that always balances. Every invoice waits for your approval before it reaches a client, at the level you choose.
+Books for US solo consultants, kept by the coding agent you already use. You tell Claude Code or Codex what happened ("Acme paid", "bill everyone for October", "here's my bank statement"), and solobooks keeps a double-entry ledger, numbers your invoices, makes the PDFs and holds every invoice until you approve it.
 
-solobooks runs on your machine. It sends no email, connects to no bank, holds no passwords and has no AI inside: your agent does the talking and the outside world, and solobooks holds the math and the rules.
+It runs on your machine. It sends no email, connects to no bank, holds no passwords and has no AI inside. Your agent does the talking and the outside world; solobooks holds the math and the rules.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/page-dark.png">
+  <img alt="The solobooks page: what you're owed, what's overdue, net profit, and an invoice waiting for approval, above the invoices and unpaid lists" src="media/page-light.png">
+</picture>
+
+## A month, start to finish
+
+You ask your agent to bill a client. It drafts the invoice from your logged time and recurring fees, shows you every line, and asks to issue it. Nothing reaches the client yet:
+
+![Claude Code drafting October's invoice for Acme Robotics and asking for approval](media/agent-billing.gif)
+
+You approve on the local page that `solobooks serve` opens, with a click or with Touch ID, depending on the level you set for that kind of action. Your agent can't approve for you, and no tool lets it:
+
+![Approving invoice 1047 on the solobooks page](media/page-approve.gif)
+
+Then your agent makes the PDF and the email text, leaves the email as a draft in your mail, and records it as sent once you send it. When the client pays, you tell your agent, or hand it the bank statement, and the payment lands against the invoice.
+
+## Who it's for
+
+One person, a US sole proprietor or single-member LLC, who bills clients hourly, by fixed-fee milestones, on a monthly retainer, or a mix, and already works through a coding agent. If you'd rather tell an agent what happened than click through a books app, this is for you.
+
+It isn't for teams, payroll, inventory, multi-currency, accrual accounting, or anyone who wants a web app. It keeps one US business, in dollars, on one machine.
 
 ## Install
 
@@ -66,6 +89,22 @@ Install the app with the installer above and run `solobooks setup` to pick the b
 
 </details>
 
+## What it keeps
+
+- **Clients and terms:** hourly rates, fixed-fee milestones, monthly retainers or any mix, with per-client time rounding and payment terms.
+- **Invoices:** numbered with no gaps, PDFs and email text ready for your agent to send, credit notes, voids, overdue reminders, and past invoices brought in with their original numbers.
+- **Money:** payments recorded gross plus fee (so it matches your 1099-K), refunds, client credit, bank and card statements matched line by line, and your own money (draws, contributions, transfers) kept out of the P&L.
+- **Expenses:** receipts attached, pass-through costs billed on to clients, each on its Schedule C line.
+- **Year end:** a cash-basis P&L by Schedule C line, sales tax charged and collected, a mileage log at the IRS rate, home office, estimated taxes, and contractors, plus a CSV of the year for your accountant.
+- **Approvals:** set per kind of action. Let the agent decide, click to approve, or require your passkey. Approvals happen on the local page; your agent's own "run this tool?" prompt is not the approval.
+- **Safety:** daily backups to a folder you choose, a backup before every upgrade, and a warning if the books sit in a synced folder.
+
+## Billing your agent time
+
+solobooks stores time; it never tracks it. If you bill for the time you spend directing Claude Code and Codex, the optional **agent-time add-on** counts it from their session logs on your machine, by a fixed rule: from each of your own messages until 10 minutes after your last action, with parallel sessions merged so no hour bills more than 60 minutes. It asks once which project folders belong to which client, previews the hours before writing anything, and can't bill a day twice.
+
+In Claude Code: `claude plugin install solobooks-agent-time@solobooks`. For other agents, copy [addons/agent-time/skills/bill-agent-time](addons/agent-time/skills/bill-agent-time) into `~/.agents/skills/`. Then ask your agent to "bill my agent time for October". Setup never installs it on its own.
+
 ## Supported agents
 
 Agents that run on your machine: Claude Code, Claude Desktop, Codex, the ChatGPT desktop app, Grok Build, Meta Muse Code, Gemini CLI, Cursor, VS Code with Copilot, OpenCode, Amp, Cline, Goose and Devin CLI. solobooks is tested with Claude Code and Codex on every release.
@@ -79,22 +118,6 @@ claude.ai and ChatGPT on the web and on phones, Grok on the web (unless local ex
 
 Your books stay on your disk, in one folder you own (`~/solobooks` unless you choose another), and solobooks never sends them anywhere.
 Whatever your agent reads from them, though, goes to that agent's model vendor as part of the conversation, the same as any file you show it.
-
-## What it does
-
-- Clients billed hourly, by fixed-fee milestones, on a recurring retainer, or any mix, with per-client time rounding.
-- Invoices numbered with no gaps, PDFs and email text ready for your agent to send, credit notes, voids, overdue reminders.
-- Expenses with receipts, pass-through costs billed on to clients, and a double-entry ledger with a P&L by account.
-- Past invoices brought in from a spreadsheet with their original numbers.
-- An approval gate you set per action: let the agent decide, click to approve, or approve with your passkey. Claude Code asks you right in the chat; other apps, and passkeys, use the local approval page. Either way nothing happens until you approve.
-
-US dollars, one US business, one machine.
-
-## Add-ons
-
-solobooks stores time; it never tracks it. Optional add-ons do that, and setup never installs one.
-
-- **Agent time** bills the time you spent directing Claude Code and Codex, from their session logs on your machine, by a fixed rule: from each of your own messages until 10 minutes after your last action, with parallel sessions merged so no hour bills more than 60 minutes. It previews before writing anything and can't bill a day twice. In Claude Code: `claude plugin install solobooks-agent-time@solobooks`. For other agents, copy [addons/agent-time/skills/bill-agent-time](addons/agent-time/skills/bill-agent-time) into `~/.agents/skills/`.
 
 ## License
 

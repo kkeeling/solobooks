@@ -1,6 +1,6 @@
 ---
 name: solobooks
-description: Use when the person mentions solobooks, "my books", bookkeeping, "invoice a client", "bill a client", "bill everyone", "draft invoices", unbilled time, an hourly rate, a retainer or fixed fee, "record an expense", receipts, "a client paid", payments or refunds, "import my bank statement", a bank or card CSV, reconciling, transfers or owner draws, "who owes me", overdue invoices, their P&L or profit, sales tax, mileage, home office, estimated taxes, contractors, 1099s or W-9s, Schedule C, "year end", "what does my accountant need", backups, "a new machine", or "move off QuickBooks, Zoho or a spreadsheet". Keeps the books for a US solo consultant with the local solobooks app - setup, invoices issued through the person's approval, expenses, payments, bank reconciliation, owner money kept out of the P&L, sales tax, year-end records, and bringing in past data.
+description: Use when the person mentions solobooks, "my books", bookkeeping, "invoice a client", "bill a client", "bill everyone", "draft invoices", unbilled time, an hourly rate, a retainer or fixed fee, "record an expense", receipts, "a client paid", payments or refunds, "import my bank statement", a bank or card CSV, reconciling, transfers or owner draws, "who owes me", overdue invoices, their P&L or profit, sales tax, mileage, home office, estimated taxes, contractors, 1099s or W-9s, Schedule C, "year end", "what does my accountant need", backups, "a new machine", or "move off QuickBooks, Zoho or a spreadsheet", or "bill my agent time". Keeps the books for a US solo consultant with the local solobooks app - setup, invoices issued through the person's approval, expenses, payments, bank reconciliation, owner money kept out of the P&L, sales tax, year-end records, and bringing in past data.
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
@@ -34,6 +34,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **They have past invoices or expenses somewhere else:** follow [references/prior-data.md](references/prior-data.md).
 - **A client paid, a bank or card statement, or the person's own money moving:** follow [references/money.md](references/money.md). Import the statement first, so payments are backed by the bank.
 - **"Bill everyone for October" and other day-to-day work:** see [references/billing.md](references/billing.md).
+- **"Bill my agent time", or hours from their Claude Code or Codex sessions:** follow [references/agent-time.md](references/agent-time.md).
 - **Sales tax, a trip, estimated taxes, a contractor, or "what does my accountant need?":** follow [references/year-end.md](references/year-end.md).
 - **Backups, a `warnings` line about a synced folder or a backup, or a new machine:** follow [references/backups.md](references/backups.md).
 
@@ -44,6 +45,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Set their business details | `profile set` (name, address, EIN, email, next invoice number); payment instructions go through `profile payment instructions set` (waits for approval) |
 | Add a client and how they pay | `client add`, then `engagement add` (hourly rate, milestones, or a recurring fee) |
 | Log time | `time add` (client, date, minutes, note) |
+| Count time spent directing agents | the bill-agent-time add-on, see [references/agent-time.md](references/agent-time.md) |
 | Bill a period | `invoice draft` → show it → `invoice issue` (waits for approval) |
 | Send it | `invoice pdf` + `invoice email` → send → `invoice sent` |
 | Record a cost | `expense add`, with `receipt_path` for the receipt file |
