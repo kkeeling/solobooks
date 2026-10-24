@@ -467,7 +467,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
 - [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
-- [ ] Flip the repo public — scrub done (Decisions 2026-10-23); waits on the maintainer running the visibility change, which the permission check reserves for him.
+- [x] Flip the repo public — done 2026-10-23 by the maintainer; INSTALL.md fetches anonymously (HTTP 200).
 - [ ] Rerun the installer check against the real GitHub Releases URL — waits on the repo going public.
 - [ ] Publish the npm wrapper — needs an npm sign-in entered by the maintainer through hidden input.
 - [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
