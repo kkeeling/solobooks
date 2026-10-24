@@ -4,7 +4,11 @@ Goal: from a fresh install to a first draft invoice in one conversation, with no
 
 ## 0. Make sure it's installed
 
-Run `solobooks doctor`. If it fails, fix what it says (usually `solobooks setup`) before going on. If the solobooks MCP tools aren't in your tool list yet, the person may need to restart their agent app once after setup; until then, use the CLI.
+Run `solobooks doctor`. If it fails, fix what it says (usually `solobooks setup`) before going on. If the solobooks MCP tools aren't in your tool list yet, use the CLI for all of onboarding. Don't ask the person to restart their agent app now; that would end this conversation partway through. The restart comes at the end (see Finish).
+
+## How to ask
+
+If your app has a tool for asking the person questions, use it for every question below. In Claude Code that is AskUserQuestion, which takes up to four questions per call. Give real options wherever they exist (net 15 or net 30, hourly or retainer, details you already know from this machine or the conversation). For a free-text answer such as a name or an address, don't pad with placeholders like "I'll type it"; the free-text answer is always there, so offer only options that mean something, such as "Skip for now". Go straight from one step to the next without asking whether to carry on. In an app without such a tool, ask in plain chat.
 
 ## The five things to ask for
 
@@ -31,7 +35,7 @@ How clients pay them: bank details for ACH or wire, or a payment link. It is pri
 solobooks profile payment instructions set --payment-instructions "ACH to First Bank, routing 011000015, account 1234567" --source agent:<you>
 ```
 
-Payment instructions have their own command (the `profile_payment_instructions_set` tool); `profile set` refuses them. Changing them waits for the person's approval, because a swapped bank account is how invoice fraud works. You'll get a pending result: tell them to approve it in the prompt their app shows, or on the approval page (see approvals.md). Carry on with the next questions while it waits.
+Payment instructions have their own command (the `profile_payment_instructions_set` tool); `profile set` refuses them. Changing them waits for the person's approval, because a swapped bank account is how invoice fraud works. You'll get a pending result: tell them it is waiting, and that they approve it on the solobooks page (see approvals.md). Carry on with the next questions while it waits.
 
 ### 4. Numbering
 
@@ -82,3 +86,7 @@ Ask where daily backups should go, ideally somewhere that leaves this machine, a
 ## Then ask about the past
 
 Ask whether they have earlier invoices or expenses this year, and where they live (a spreadsheet, another books app, a folder of PDFs). If they do, follow prior-data.md.
+
+## Finish
+
+If you did onboarding through the CLI because the solobooks tools weren't loaded, tell the person to restart their agent app now (in Claude Code, quit and run `claude` again), so the tools load from the next conversation on. Nothing is lost: the books are on disk.

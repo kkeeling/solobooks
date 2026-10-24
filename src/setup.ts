@@ -66,6 +66,6 @@ export function setup(argv: string[], env: Env) {
     agents: connected,
     skills,
     warnings,
-    next: "Run solobooks doctor to check every connection, then restart your agent app so it loads the solobooks tools.",
+    next: "Run solobooks doctor to check every connection. Set up your business details now, through the CLI, then restart your agent app so it loads the solobooks tools.",
   };
 }

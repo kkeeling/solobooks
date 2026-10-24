@@ -34,12 +34,12 @@ Check: the output's `warnings` list is empty. If it warns that the books folder 
 
 Check: it prints `"ok": true` and exits 0. If not, each failed check has a `fix`; do what it says and run doctor again. Don't continue past a failing doctor.
 
-## 4. Load the tools
+## 4. Don't restart yet
 
-Agent apps load MCP servers when they start, so the person may need to restart this app once to see the solobooks tools. Tell them so. Until then, everything works through the CLI: `~/.local/bin/solobooks help` lists every command.
+Agent apps load MCP servers when they start, so the solobooks tools won't appear in this conversation. Don't ask the person to restart now: that would end the conversation partway through setup. Do onboarding (step 5) here through the CLI, where `~/.local/bin/solobooks help` lists every command. Onboarding ends by telling them to restart.
 
 ## 5. Start onboarding
 
-Read the solobooks skill (`~/.agents/skills/solobooks/SKILL.md`; Claude Code has the same file in its own skills folder), then follow its `references/onboarding.md`. It takes the person from here to their first draft invoice by asking for five things. Ask; don't assume.
+Read the solobooks skill (`~/.agents/skills/solobooks/SKILL.md`; Claude Code has the same file in its own skills folder), then follow its `references/onboarding.md`. It takes the person from here to their first draft invoice by asking for five things. Ask; don't assume. If your app has a tool for asking the person questions (in Claude Code, AskUserQuestion), ask through it.
 
 Two rules from the skill that matter from the first minute: when solobooks answers `"status": "pending"`, nothing has happened yet and the person must approve it; and solobooks is not tax or accounting advice, so never present it as such.

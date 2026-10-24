@@ -58,7 +58,7 @@ claude plugin install solobooks@solobooks
 ~/.local/bin/solobooks doctor
 ```
 
-Restart Claude Code so it loads the solobooks tools.
+Restart Claude Code so it loads the solobooks tools. If your agent is setting you up, it does that first and tells you when to restart.
 
 </details>
 
