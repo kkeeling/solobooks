@@ -21,7 +21,7 @@ You'll get something like:
 
 - **Say it plainly:** "Invoice 1043 for $1,350.00 is waiting for your approval. It hasn't been issued yet."
 - **Don't claim it happened.** No "I've issued your invoice", no PDF or email for it, no `invoice sent`, until it's approved.
-- **Where they approve:** many agent apps show the prompt right in the chat, inside the same tool call. If the person approved there, the result already says `"status": "approved"` with the outcome. Otherwise they approve on the local approval page: start it with `solobooks serve` (it keeps running; start it in the background if you can) and give them the `approve_url`. Passkey level always uses the page.
+- **Where they approve:** Claude Code shows the prompt right in the chat, inside the same tool call; other apps may or may not. If the person approved there, the result already says `"status": "approved"` with the outcome. Otherwise they approve on the local approval page: start it with `solobooks serve` (it keeps running; start it in the background if you can) and give them the `approve_url`. Passkey level always uses the page.
 - **Checking back:** `pending get --id <pending_id>` shows `pending`, `approved` (with the result) or `rejected`. Look before you continue.
 - **Rejected** means the person said no. Ask what they'd like changed; don't resubmit the same thing.
 - **While a draft waits,** it can't be edited. If something needs to change, the person rejects it, you edit the draft, and you ask again.

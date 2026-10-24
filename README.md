@@ -86,7 +86,7 @@ Whatever your agent reads from them, though, goes to that agent's model vendor a
 - Invoices numbered with no gaps, PDFs and email text ready for your agent to send, credit notes, voids, overdue reminders.
 - Expenses with receipts, pass-through costs billed on to clients, and a double-entry ledger with a P&L by account.
 - Past invoices brought in from a spreadsheet with their original numbers.
-- An approval gate you set per action: let the agent decide, click to approve in chat, or approve with your passkey.
+- An approval gate you set per action: let the agent decide, click to approve, or approve with your passkey. Claude Code asks you right in the chat; other apps, and passkeys, use the local approval page. Either way nothing happens until you approve.
 
 US dollars, one US business, one machine.
 

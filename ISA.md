@@ -2,10 +2,10 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: climbing
+phase: complete
 progress: 112/112
 started: 2026-10-23T01:31:17Z
-updated: 2026-10-23T02:30:00Z
+updated: 2026-10-24T01:49:26Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
@@ -247,10 +247,6 @@ Why: the person can see the books and approve things when their agent's app can'
 - [x] ISC-103: Anti: the page has no data-entry forms besides approve and reject.
 - [x] ISC-104: Anti: the page server listens only on loopback.
 
-## Not yet specified
-
-- fog: which agent apps actually render the in-chat approval prompt — the docs say Claude Code, Codex, ChatGPT, Cursor, VS Code, Goose and OpenCode, and that's untested. Each app sharpens into a claim once a test build exists.
-- fog: whether Claude Desktop honors `requiresUserInteraction` — unverified in Anthropic's docs. It resolves with a test build in Claude Desktop.
 
 ## Test Strategy
 
@@ -422,6 +418,7 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-23: Fog on Grok Build and Muse Code log formats closed: those agents were moved out of v1 by the maintainer (see 2026-10-22), so the add-on supports Claude Code and Codex; their formats wait with the install tests in Remaining Work.
 - 2026-10-23: Trademark search skipped. The maintainer: "I'm not going to sell this anyway. If I do infringe upon someone's trademark, they'll send a cease and desist, and then we'll make a change."
 - 2026-10-23: Fog on the invoice PDF look closed. A throwaway prototype showed one sample invoice three ways: the current plain Helvetica layout, a modern one with an accent color, logo spot and amount-due box, and a classic serif one. The maintainer picked the current look ("A"), so the renderer stays as built and the existing PDF claims cover it.
+- 2026-10-23: Both approval-prompt fog items closed by narrowing the promise, at the maintainer's call, instead of testing each app. The README and the approvals guide now say only Claude Code asks in chat (a real `claude -p` run refused a flagged tool with "MCPTool requires permission"); every other app, Codex and Claude Desktop included, is described as using the local approval page. Safety never rested on the prompt: a gated action stays pending until approved on the page or with a passkey. Per-app chat-prompt tests move to Remaining Work.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 
 ## Learning
@@ -472,4 +469,5 @@ Why: the person can see the books and approve things when their agent's app can'
 - [x] Publish the npm wrapper — done 2026-10-23: `solobooks` and the five `@solobooks/<os>-<arch>` packages at 0.1.0, built from the v0.1.0 release binaries. npm staged them until the maintainer cleared them. A fresh registry install printed `solobooks 0.1.0`, its binary hash matches the release, and MCP answered with 66 tools.
 - [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
 - [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
+- [ ] Test which other agent apps (Codex, Claude Desktop, Cursor, ChatGPT, VS Code and the rest) show the in-chat approval prompt for a gated tool; each one that does gets named in the README.
 - [ ] `backup set` and `move` are CLI-only, so an MCP-only app such as Claude Desktop can't pick a backup folder or move the books.
