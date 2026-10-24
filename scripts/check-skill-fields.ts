@@ -34,7 +34,11 @@ export function checkSkill(path: string): string[] {
   }
   const description = f.description;
   if (typeof description !== "string" || !description.trim()) problems.push("description: required.");
-  else if (description.length > 1024) problems.push("description: at most 1024 characters.");
+  else {
+    if (description.length > 1024) problems.push("description: at most 1024 characters.");
+    // House rule: lead with when to use the skill, so the trigger phrases are what an agent reads first.
+    if (!/^Use when /.test(description)) problems.push('description: must start with "Use when", followed by the phrases and terms that should trigger the skill.');
+  }
 
   if (f.license !== undefined && typeof f.license !== "string") problems.push("license: must be text.");
   if (f.compatibility !== undefined && (typeof f.compatibility !== "string" || f.compatibility.length > 500)) {

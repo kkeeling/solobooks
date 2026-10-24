@@ -1,6 +1,6 @@
 ---
 name: bill-agent-time
-description: Turns the time a consultant spent directing Claude Code and Codex into solobooks time entries, from the session logs on this machine - asks once which project folders belong to which client, counts the hours by a fixed rule, previews them, then writes them through solobooks. Use when the person wants to bill their agent time, asks how many hours they worked for a client from their sessions, says "bill my time for Acme" or "log my October hours", or asks why the counter gave the hours it did.
+description: Use when the person says "bill my agent time", "bill my time for Acme", "log my October hours", "how many hours did I work for a client", "count my hours from my sessions", "turn my Claude Code or Codex sessions into hours", "fill in my timesheet", "time tracking", "which folders belong to which client", or asks why the counter gave the hours it did. Counts the time a consultant spent directing Claude Code and Codex from the session logs on this machine (a 10-minute idle cap, and at most 60 minutes per clock hour across all clients), maps project folders to clients once, previews the entries, then writes them to solobooks as time entries.
 license: MIT
 compatibility: Needs the solobooks app (check with `solobooks doctor`). Reads Claude Code logs in ~/.claude/projects and Codex logs in ~/.codex/sessions. Runs through `solobooks addon run`, so nothing else needs installing.
 metadata:
