@@ -94,7 +94,7 @@ Install the app with the installer above and run `solobooks setup` to pick the b
 - **Clients and terms:** hourly rates, fixed-fee milestones, monthly retainers or any mix, with per-client time rounding and payment terms.
 - **Invoices:** numbered with no gaps, PDFs and email text ready for your agent to send, credit notes, voids, overdue reminders, and past invoices brought in with their original numbers.
 - **Money:** payments recorded gross plus fee (so it matches your 1099-K), refunds, client credit, bank and card statements matched line by line, and your own money (draws, contributions, transfers) kept out of the P&L.
-- **Expenses:** receipts attached, pass-through costs billed on to clients, each on its Schedule C line.
+- **Expenses:** receipts attached, each on its Schedule C line. Costs spent for a client, such as API usage, are billed back at cost on their next invoice, decided whenever the agent learns of them.
 - **Year end:** a cash-basis P&L by Schedule C line, sales tax charged and collected, a mileage log at the IRS rate, home office, estimated taxes, and contractors, plus a CSV of the year for your accountant.
 - **Approvals:** set per kind of action. Let the agent decide, click to approve, or require your passkey. Approvals happen on the local page; your agent's own "run this tool?" prompt is not the approval.
 - **Safety:** daily backups to a folder you choose, a backup before every upgrade, and a warning if the books sit in a synced folder.

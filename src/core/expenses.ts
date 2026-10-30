@@ -1,8 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { addCharge, chargeView, unchargedCents } from "./charges.ts";
 import { requireClient } from "./clients.ts";
 import type { Books } from "./db.ts";
-import { sha256 } from "./files.ts";
+import { keepFile } from "./files.ts";
 import { getAccount, refuseInvoiceAccount } from "./ledger.ts";
 import type { Op } from "./op.ts";
 import { contributionAccount, recordPersonalCost } from "./owner.ts";
@@ -11,19 +10,12 @@ import { currency, MAX_CENTS } from "./validate.ts";
 
 // Expenses, each posted to the ledger when recorded, with an optional receipt kept in the books folder.
 
-const MAX_RECEIPT_BYTES = 25 * 1024 * 1024;
-
 /** How an expense was paid. */
 export const PAYMENT_METHODS = ["ach", "wire", "check", "cash", "zelle", "card", "paypal", "other"] as const;
 
 export function expenseView(db: Books, id: number) {
   const e = db.query("SELECT * FROM expenses WHERE id = ?").get(id) as Record<string, any>;
-  const recovered = db
-    .query(
-      `SELECT i.id, i.number, i.status FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
-       WHERE l.expense_id = ? AND i.status <> 'void'`,
-    )
-    .get(id) as { id: number; number: number | null; status: string } | null;
+  const charges = (db.query("SELECT id FROM charges WHERE expense_id = ? AND deleted_at IS NULL ORDER BY id").all(id) as { id: number }[]).map((c) => chargeView(db, c.id));
   return {
     id: e.id,
     date: e.date,
@@ -33,14 +25,12 @@ export function expenseView(db: Books, id: number) {
     account_id: e.account_id,
     paid_from_account_id: e.paid_from_account_id,
     entry_id: e.entry_id,
-    pass_through_client_id: e.pass_through_client_id,
     contractor_id: e.contractor_id,
     payment_method: e.payment_method,
     receipt: e.receipt_file ? { file: e.receipt_file, sha256: e.receipt_sha256, bytes: e.receipt_bytes } : null,
-    // The invoice that bills this cost on to the client, if any.
-    recovered_by_invoice: recovered
-      ? { invoice_id: recovered.id, number: recovered.number === null ? null : String(recovered.number), status: recovered.status }
-      : null,
+    // The charges billing this cost on to clients, and what is left that no charge bills.
+    charges,
+    not_yet_charged_cents: unchargedCents(db, id),
     source: e.source,
   };
 }
@@ -56,7 +46,7 @@ const expenseAdd: Op = {
   name: "expense_add",
   kind: "write",
   description:
-    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and as a pass-through cost to bill on to a client. When the person paid it with their own money, such as a personal card, set paid_personally instead of paid_from_account_id: it is recorded as the expense plus an owner contribution of the same amount. A payment to a contractor names them with contractor_id and says how it was paid with payment_method.",
+    "Record a business expense and post it to the books, optionally with its receipt file (copied into the books folder) and, with pass_through_client_id, billed on to a client in full at cost. Recording an expense needs no billing choice: charge_add bills all or part of it to one or more clients any time later. When the person paid it with their own money, such as a personal card, set paid_personally instead of paid_from_account_id: it is recorded as the expense plus an owner contribution of the same amount. A payment to a contractor names them with contractor_id and says how it was paid with payment_method.",
   fields: {
     date: { type: "date", required: true, description: "Day of the expense, YYYY-MM-DD." },
     amount_cents: { type: "int", required: true, min: 1, max: MAX_CENTS, unit: "cents", description: "Amount in cents." },
@@ -69,7 +59,7 @@ const expenseAdd: Op = {
       description: "true when the person paid it with their own money, such as a personal card: the books then record an owner contribution for it.",
     },
     receipt_path: { type: "text", description: "Path to the receipt file on this machine; it is copied into the books folder." },
-    pass_through_client_id: { type: "int", min: 1, description: "Client this cost is billed on to at cost; their next draft for its date picks it up." },
+    pass_through_client_id: { type: "int", min: 1, description: "Client this whole cost is billed on to at cost: it records one charge for the full amount, which their next draft for its date picks up." },
     contractor_id: { type: "int", min: 1, description: "The contractor paid, when this is a payment for someone's work (see contractor add); needs payment_method." },
     payment_method: {
       type: "enum", values: PAYMENT_METHODS,
@@ -102,24 +92,7 @@ const expenseAdd: Op = {
       }
     }
 
-    let receipt: { file: string; sha: string; size: number } | null = null;
-    if (input.receipt_path !== undefined) {
-      const path = resolve(input.receipt_path);
-      let bytes: Uint8Array;
-      try {
-        if (!statSync(path).isFile()) throw new Error("not a file");
-        if (statSync(path).size > MAX_RECEIPT_BYTES) throw new Refusal("The receipt is larger than 25 MB, so shrink it first.", "receipt_path");
-        bytes = readFileSync(path);
-      } catch (e) {
-        if (e instanceof Refusal) throw e;
-        throw new Refusal("There is no readable file at receipt_path.", "receipt_path");
-      }
-      const sha = sha256(bytes);
-      const ext = extname(path).toLowerCase();
-      const file = `receipts/${sha}${/^\.[a-z0-9]{1,5}$/.test(ext) ? ext : ""}`;
-      ctx.files.push({ path: file, bytes, field: "receipt_path" });
-      receipt = { file, sha, size: bytes.length };
-    }
+    const receipt = input.receipt_path === undefined ? null : keepFile(ctx, input.receipt_path, "receipts", "receipt_path", "receipt");
 
     const memo = input.memo ? `${input.vendor}: ${input.memo}` : input.vendor;
     const { id: entryId } = db
@@ -143,7 +116,7 @@ const expenseAdd: Op = {
         input.account_id,
         paidFrom,
         entryId,
-        input.pass_through_client_id ?? null,
+        null, // billed on through a charge now, never this column
         receipt?.file ?? null,
         receipt?.sha ?? null,
         receipt?.size ?? null,
@@ -151,6 +124,10 @@ const expenseAdd: Op = {
         input.payment_method ?? null,
         ctx.source,
       ) as { id: number };
+    if (input.pass_through_client_id !== undefined) {
+      const what = input.memo ? `${input.vendor}, ${input.memo}` : input.vendor;
+      addCharge(db, { client_id: input.pass_through_client_id, date: input.date, amount_cents: input.amount_cents, line_text: `${input.date} ${what} (pass-through cost)`, expense_id: id }, ctx);
+    }
     if (!personal) return { expense: expenseView(db, id) };
     return { expense: expenseView(db, id), owner_contribution: recordPersonalCost(db, input.date, input.amount_cents, `Paid personally: ${memo}`, entryId, id, ctx) };
   },
@@ -159,13 +136,26 @@ const expenseAdd: Op = {
 const expenseList: Op = {
   name: "expense_list",
   kind: "read",
-  description: "List expenses with their receipt file (inside the books folder) and, for pass-through costs, the invoice that recovers them.",
-  fields: { pass_through_client_id: { type: "int", min: 1, description: "Only pass-through costs for this client." } },
+  description:
+    "List expenses with their receipt file (inside the books folder), the charges billing them on to clients, and the amount not yet charged. Filter by vendor, dates, a client charged, or only what still has an amount left to charge, to find the expense a cost came out of.",
+  fields: {
+    vendor: { type: "text", description: "Only expenses whose vendor contains this text, ignoring case." },
+    from: { type: "date", description: "Only expenses on or after this day, YYYY-MM-DD." },
+    to: { type: "date", description: "Only expenses on or before this day, YYYY-MM-DD." },
+    client_id: { type: "int", min: 1, description: "Only expenses with a charge to this client." },
+    uncharged: { type: "bool", description: "true for only expenses with some amount no charge bills yet." },
+  },
   run(db, input) {
     const rows = db
-      .query("SELECT id FROM expenses WHERE ?1 IS NULL OR pass_through_client_id = ?1 ORDER BY date, id")
-      .all(input.pass_through_client_id ?? null) as { id: number }[];
-    return { expenses: rows.map((r) => expenseView(db, r.id)) };
+      .query(
+        `SELECT id FROM expenses x
+         WHERE (?1 IS NULL OR instr(lower(x.vendor), lower(?1)) > 0) AND (?2 IS NULL OR x.date >= ?2) AND (?3 IS NULL OR x.date <= ?3)
+           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM charges c WHERE c.expense_id = x.id AND c.client_id = ?4 AND c.deleted_at IS NULL))
+         ORDER BY date, id`,
+      )
+      .all(input.vendor ?? null, input.from ?? null, input.to ?? null, input.client_id ?? null) as { id: number }[];
+    const expenses = rows.map((r) => expenseView(db, r.id));
+    return { expenses: input.uncharged === true ? expenses.filter((e) => e.not_yet_charged_cents > 0) : expenses };
   },
 };
 

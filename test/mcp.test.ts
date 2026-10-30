@@ -187,13 +187,13 @@ test("elicitation: the chat prompt is a fixed question with labeled one-line fie
  * invoice_pdf only reads the books but saves a file into the books folder, so to an agent app it is a write.
  */
 const READ_ONLY = [
-  "profile_get", "client_list", "engagement_list", "time_list", "expense_list", "invoice_list", "invoice_get", "invoice_email",
+  "profile_get", "client_list", "engagement_list", "time_list", "expense_list", "charge_list", "invoice_list", "invoice_get", "invoice_email",
   "invoice_reminder", "account_list", "entry_list", "report_pnl", "history_list", "gate_list", "pending_list", "pending_get",
   "owner_list", "payment_list", "client_credits", "report_unpaid", "bank_list",
   "report_ytd", "report_sales_tax", "report_yearend", "mileage_list", "contractor_list", "export",
 ];
 const WRITES = [
-  "profile_set", "profile_payment_instructions_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete",
+  "profile_set", "profile_payment_instructions_set", "client_add", "client_edit", "engagement_add", "milestone_billable", "time_add", "time_edit", "time_delete", "charge_add", "charge_edit", "charge_delete",
   "expense_add", "invoice_draft", "invoice_edit", "invoice_delete", "invoice_issue", "invoice_sent", "invoice_void", "invoice_credit",
   "invoice_import", "invoice_pdf", "account_add", "entry_post", "gate_set",
   "transfer_add", "owner_draw", "owner_contribute", "payment_add", "payment_refund", "bank_import", "bank_match",

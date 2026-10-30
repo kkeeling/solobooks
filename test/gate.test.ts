@@ -305,6 +305,9 @@ const swapAndEdits = (id: number, line: { id: number; amount_cents: number }) =>
   ["time", "edit", "--id", "1", "--note", "Wire to First Evil Bank 666666", ...S],
   ["time", "delete", "--id", "1", ...S],
   ["client", "edit", "--id", "1", "--address", "1 Evil Way", ...S],
+  // Charge 1, the $42.00 print-shop cost, is on the October draft.
+  ["charge", "edit", "--id", "1", "--line-text", "Wire to First Evil Bank 666666", ...S],
+  ["charge", "delete", "--id", "1", ...S],
 ];
 
 test("ISC-63 parks: a draft waiting for approval refuses every change to what would be issued, at click and passkey", async () => {

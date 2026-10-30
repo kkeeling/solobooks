@@ -315,7 +315,7 @@ function heldDrafts(db: Books): Set<number> {
   return held;
 }
 
-/** Refuses a write that would change a draft waiting for approval: its lines, note, terms, time or client. */
+/** Refuses a write that would change a draft waiting for approval: its lines, note, terms, time, charges or client. */
 export function refuseIfHeld(db: Books, op: string, input: Record<string, any>): void {
   const held = heldDrafts(db);
   if (held.size === 0) return;
@@ -323,6 +323,7 @@ export function refuseIfHeld(db: Books, op: string, input: Record<string, any>):
   const touched =
     op === "invoice_edit" || op === "invoice_delete" ? [input.id as number]
     : op === "time_edit" || op === "time_delete" ? ids("SELECT invoice_id AS id FROM invoice_lines WHERE time_entry_id = ?", input.id)
+    : op === "charge_edit" || op === "charge_delete" ? ids("SELECT invoice_id AS id FROM invoice_lines WHERE charge_id = ?", input.id)
     : op === "client_edit" ? ids("SELECT id FROM invoices WHERE status = 'draft' AND client_id = ?", input.id)
     : [];
   const hit = touched.find((id) => held.has(id));

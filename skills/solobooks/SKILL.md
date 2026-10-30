@@ -49,6 +49,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Bill a period | `invoice draft` → show it → `invoice issue` (waits for approval) |
 | Send it | `invoice pdf` + `invoice email` → send → `invoice sent` |
 | Record a cost | `expense add`, with `receipt_path` for the receipt file |
+| Bill a cost back to a client at cost | `charge add` (client, date, amount, line text), any time later; see [references/billing.md](references/billing.md) |
 | Import a bank or card statement | `bank import` with the CSV's column map, then `bank list --status unmatched` |
 | Record a client's payment | `payment add` (gross, fee, and the bank line it is) |
 | Refund a payment, or use a client's credit | `payment refund` (full or part; the fee stays spent unless the processor returned it), `client credit apply` |

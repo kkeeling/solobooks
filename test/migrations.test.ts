@@ -3,6 +3,8 @@ import { expect, test } from "bun:test";
 import { openBooks } from "../src/core/db.ts";
 import { MIGRATIONS } from "../src/db/migrations.ts";
 import { dbPath, dumpDb, tempDir } from "./support/books.ts";
+import { buildFixture } from "../scripts/compat-fixtures.ts";
+import { perform } from "../src/core/perform.ts";
 
 test("migrations: books saved before the payment gate open with every gate level and pending action kept, still locked", () => {
   const path = dbPath(tempDir());
@@ -122,7 +124,7 @@ test("migrations: books saved before bank unmatch open with every match kept and
 test("migrations: books saved before the Schedule C chart get it, keeping every account, id and posting they had", () => {
   const path = dbPath(tempDir());
   const old = new Database(path, { create: true, strict: true });
-  const before = MIGRATIONS.length - 1; // everything up to the chart
+  const before = 12; // everything up to the chart, which is migration 13
   for (const [v, sql] of MIGRATIONS.slice(0, before).entries()) {
     old.exec(sql);
     old.exec(`PRAGMA user_version = ${v + 1}`);
@@ -181,4 +183,50 @@ test("migrations: new books, in memory or in a new file, are exactly books migra
   expect(file.query("SELECT name FROM clients").all()).toEqual([{ name: "Acme" }]);
   expect(file.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
   file.close();
+});
+
+test("ISC-134 pass-through to charges: books from an earlier release open with each pass-through cost as one charge, keeping its invoice link", () => {
+  // The v13 fixture: expense 1 ($42.00, Print shop) billed on to Acme, on issued invoice 1001. Added here: expense 4
+  // billed on to Acme on an invoice since voided, and expense 5 billed on to Beta on its January draft.
+  const path = dbPath(tempDir());
+  const old = buildFixture(13);
+  const supplies = "(SELECT id FROM accounts WHERE name = 'Supplies')";
+  for (const sql of [
+    `INSERT INTO entries (id, date, memo, source) VALUES (40, '2026-03-01', 'Courier', 'agent:fixture'), (41, '2026-01-12', 'Binding', 'agent:fixture')`,
+    `INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES
+       (40, ${supplies}, 1500, 0, 'agent:fixture'), (40, 1, 0, 1500, 'agent:fixture'), (41, ${supplies}, 2599, 0, 'agent:fixture'), (41, 1, 0, 2599, 'agent:fixture')`,
+    `INSERT INTO expenses (id, date, amount_cents, vendor, memo, account_id, paid_from_account_id, entry_id, pass_through_client_id, source) VALUES
+       (4, '2026-03-01', 1500, 'Courier', NULL, ${supplies}, 1, 40, 1, 'agent:fixture'), (5, '2026-01-12', 2599, 'Binding', 'Spec copies', ${supplies}, 1, 41, 2, 'agent:fixture')`,
+    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, expense_id, source) VALUES (2, 'pass_through', 'Binding', 2599, 5, 'agent:fixture')`,
+    `INSERT INTO invoices (id, kind, status, client_id, period_start, period_end, terms_days, created_at, source)
+       VALUES (9, 'invoice', 'draft', 1, '2026-03-01', '2026-03-31', 15, '2026-03-31T10:00:00.000Z', 'agent:fixture')`,
+    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, expense_id, source) VALUES (9, 'pass_through', 'Courier', 1500, 4, 'agent:fixture')`,
+    `UPDATE invoices SET status = 'issued', number = 1009, invoice_date = '2026-03-31', issued_at = '2026-03-31T10:05:00.000Z', seller_legal_name = 'Jane Doe Consulting LLC' WHERE id = 9`,
+    `UPDATE invoices SET status = 'void', voided_at = '2026-04-01T09:00:00.000Z', void_reason = 'wrong client' WHERE id = 9`,
+  ]) old.run(sql);
+  old.query("VACUUM INTO ?").run(path);
+  old.close();
+
+  const db = openBooks(path);
+  expect(db.query("SELECT id, client_id, date, amount_cents, line_text, reference, expense_id, source FROM charges").all()).toEqual([
+    { id: 1, client_id: 1, date: "2026-01-09", amount_cents: 4200, line_text: "2026-01-09 Print shop, Workshop handouts (pass-through cost)", reference: null, expense_id: 1, source: "agent:fixture" },
+    { id: 2, client_id: 1, date: "2026-03-01", amount_cents: 1500, line_text: "2026-03-01 Courier (pass-through cost)", reference: null, expense_id: 4, source: "agent:fixture" },
+    { id: 3, client_id: 2, date: "2026-01-12", amount_cents: 2599, line_text: "2026-01-12 Binding, Spec copies (pass-through cost)", reference: null, expense_id: 5, source: "agent:fixture" },
+  ]);
+  // Issued, voided and draft lines alike now name their charge, so each reads as billed, waiting or on its draft.
+  expect(db.query("SELECT invoice_id, kind, expense_id, charge_id FROM invoice_lines WHERE kind = 'pass_through' ORDER BY id").all()).toEqual([
+    { invoice_id: 1, kind: "pass_through", expense_id: 1, charge_id: 1 },
+    { invoice_id: 2, kind: "pass_through", expense_id: 5, charge_id: 3 },
+    { invoice_id: 9, kind: "pass_through", expense_id: 4, charge_id: 2 },
+  ]);
+  const listed = perform(db, "charge_list", {}, { source: "test", now: "2026-10-29T12:00:00.000Z" });
+  expect(listed.ok && (listed.result as any).charges.map((c: any) => [c.id, c.status, c.invoice?.number ?? null])).toEqual([
+    [1, "billed", "1001"], [3, "on_draft", null], [2, "waiting", null], // by date
+  ]);
+  // The lock is back whole: an issued line can't change, and a draft line can't be moved onto an issued invoice.
+  expect(() => db.exec("UPDATE invoice_lines SET charge_id = NULL WHERE invoice_id = 1 AND kind = 'pass_through'")).toThrow(/locked/);
+  expect(() => db.exec("UPDATE invoice_lines SET invoice_id = 1 WHERE invoice_id = 2 AND kind = 'pass_through'")).toThrow(/locked/);
+  const sql = (n: string) => (db.query("SELECT sql FROM sqlite_master WHERE name = ?").get(n) as { sql: string }).sql;
+  expect(sql("invoice_lines_locked_update")).toContain("NEW.invoice_id");
+  db.close();
 });

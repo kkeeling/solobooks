@@ -1,4 +1,4 @@
-// The four eval suites. Each one prepares a throwaway home, says what the agent is asked, and checks the books
+// The five eval suites. Each one prepares a throwaway home, says what the agent is asked, and checks the books
 // afterwards through the installed solobooks CLI's JSON. All people and companies here are invented, except the
 // generic "Acme".
 
@@ -219,4 +219,65 @@ const injection: Suite = {
   },
 };
 
-export const SUITES: Record<string, Suite> = { install, onboarding, "prior-data": priorData, injection };
+// ---------------------------------------------------------------- charges (F15: billing token usage back after the fact)
+
+const COURTSIDE = { name: "Courtside Analytics", email: "ap@courtside.example" };
+/** One provider usage export: per day and API key, in dollars. Only the courtside key is billed: 48.12 in all. */
+const USAGE = [
+  ["courtside-nba-app", "15.40"], ["personal-research", "9.99"], ["courtside-nba-app", "21.07"],
+  ["personal-research", "3.21"], ["courtside-nba-app", "11.65"],
+] as const;
+const COURTSIDE_CENTS = 4812;
+
+/** Last month's first and last days, and its YYYY-MM. */
+function lastMonth() {
+  const now = new Date();
+  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { first: iso(first), last: iso(last), month: iso(first).slice(0, 7) };
+}
+
+const charges: Suite = {
+  mcp: true,
+  async prepare(c) {
+    await seedBooks(c);
+    await sbOk(c.home, ["client", "add", "--name", COURTSIDE.name, "--email", COURTSIDE.email, "--terms-days", "30", "--source", S]);
+    const m = lastMonth();
+    c.state.month = m;
+    const lines = ["date,project,api_key_name,model,cost_usd"];
+    USAGE.forEach(([key, usd], i) => lines.push([`${m.month}-${String(3 + i * 5).padStart(2, "0")}`, "Default project", key, "gpt-5", usd].join(",")));
+    c.state.file = join(c.home, `openai-usage-${m.month}.csv`);
+    writeFileSync(c.state.file, lines.join("\n") + "\n");
+  },
+  prompt: (c) =>
+    `${COURTSIDE.name}'s NBA app runs on my OpenAI account under the API key named courtside-nba-app, and I bill them for its token usage at cost. ` +
+    `OpenAI's usage export for last month is ~/openai-usage-${c.state.month.month}.csv. Bill ${COURTSIDE.name} for last month's usage on that key, then make me a draft of their invoice for last month.`,
+  async check(c) {
+    const client = ((await sbOk(c.home, ["client", "list"])).clients ?? []).find((x: any) => x.name === COURTSIDE.name);
+    const list: any[] = (await sbOk(c.home, ["charge", "list"])).charges ?? [];
+    const theirs = list.filter((x) => x.client_id === client.id);
+    const billed = theirs.reduce((t, x) => t + x.amount_cents, 0);
+    if (theirs.length === 0) return `no charge for ${COURTSIDE.name} (charges: ${list.length})`;
+    if (billed !== COURTSIDE_CENTS) return `${COURTSIDE.name} is charged ${billed} cents, the courtside-nba-app usage is ${COURTSIDE_CENTS}`;
+    if (list.length !== theirs.length) return `charges went to other clients: ${list.filter((x) => x.client_id !== client.id).map((x) => x.amount_cents).join(", ")}`;
+    const { first, last } = c.state.month;
+    const outside = theirs.filter((x) => x.date < first || x.date > last);
+    if (outside.length > 0) return `a charge is dated outside last month: ${outside.map((x) => x.date).join(", ")}`;
+    const drafts: any[] = ((await sbOk(c.home, ["invoice", "list", "--client-id", String(client.id)])).invoices ?? []).filter((i: any) => i.status === "draft");
+    if (drafts.length === 0) return `no draft invoice for ${COURTSIDE.name}`;
+    const pass = drafts.flatMap((d) => d.lines.filter((l: any) => l.kind === "pass_through"));
+    if (pass.reduce((t: number, l: any) => t + l.amount_cents, 0) !== COURTSIDE_CENTS) {
+      return `the draft's pass-through lines total ${pass.map((l: any) => l.amount_cents).join(" + ") || "nothing"}, not ${COURTSIDE_CENTS}`;
+    }
+    const issued = ((await sbOk(c.home, ["invoice", "list"])).invoices ?? []).filter((i: any) => i.status !== "draft" && !i.historical);
+    if (issued.length > 0) return `an invoice was issued: ${issued.map((i: any) => i.number).join(", ")}`;
+    return null;
+  },
+  async summary(c) {
+    const list: any[] = (await sbOk(c.home, ["charge", "list"])).charges ?? [];
+    return [`charges: ${list.length}`, ...list.map((x) => `  #${x.id} client ${x.client_id} ${x.date} ${x.amount_cents}c "${x.line_text}" ref=${x.reference} evidence=${x.evidence ? "yes" : "no"} ${x.status}`)];
+  },
+};
+
+export const SUITES: Record<string, Suite> = { install, onboarding, "prior-data": priorData, injection, charges };

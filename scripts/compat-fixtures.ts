@@ -210,6 +210,13 @@ San Francisco, CA 94105', client_email = 'ap@acme.example', note = 'Thank you fo
     VALUES (3, '2026-04-20', 2599, 'Office Depot', 'Printer paper', (SELECT id FROM accounts WHERE name = 'Supplies'), 1, 18, 'card', ${S});
   ${history("2026-04-20T09:00:00.000Z", "expense_add")}
   `,
+  // 014: billable charges, one tied to no expense (token usage) and one billing part of an expense, both waiting.
+  `
+  INSERT INTO charges (id, client_id, date, amount_cents, line_text, reference, expense_id, evidence_file, evidence_sha256, evidence_bytes, source) VALUES
+    (2, 2, '2026-04-30', 4812, 'OpenAI API usage, Apr 2026', 'openai:beta-key:2026-04', NULL, 'evidence/9c1d.csv', '9c1d', 311, ${S}),
+    (3, 1, '2026-04-20', 1000, 'Printer paper for the workshop', NULL, 3, NULL, NULL, NULL, ${S});
+  ${history("2026-04-30T09:00:00.000Z", "charge_add")}
+  `,
 ];
 
 /** Books as solobooks at schema `version` would have saved them, in memory. */

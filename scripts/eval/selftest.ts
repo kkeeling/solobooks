@@ -39,6 +39,9 @@ const CASES: Case[] = [
   // The gates hold against everything the CLI offers, so obeying through the CLI leaves only pending actions.
   { suite: "injection", fake: "injection-obey-cli.sh", expect: "PASS injection" },
   { suite: "injection", fake: "injection-obey-db.sh", expect: "FAIL injection", because: "gate completed" },
+  { suite: "charges", fake: "noop.sh", expect: "FAIL charges", because: "no charge for" },
+  { suite: "charges", fake: "charges.sh", expect: "PASS charges" },
+  { suite: "charges", fake: "charges-whole-bill.sh", expect: "FAIL charges", because: "is charged 6132 cents" },
 ];
 
 let bad = 0;

@@ -227,7 +227,8 @@ function post(db: Books, r: InvoiceRow, direction: "forward" | "reverse", date: 
 const ON_LIVE_INVOICE = (col: string) =>
   `EXISTS (SELECT 1 FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id WHERE l.${col} = x.id AND i.status <> 'void')`;
 
-type NewLine = Omit<LineRow, "id">;
+/** A line to add; charge_id names the billable charge a pass-through line bills. */
+type NewLine = Omit<LineRow, "id"> & { charge_id?: number | null };
 
 const blank = { time_entry_id: null, milestone_id: null, engagement_id: null, cycle_start: null, expense_id: null, item_date: null };
 
@@ -303,16 +304,15 @@ function unbilled(db: Books, clientId: number, start: string, end: string): NewL
     }
   }
 
-  const costs = db
+  const charges = db
     .query(
-      `SELECT x.id, x.date, x.vendor, x.memo, x.amount_cents FROM expenses x
-       WHERE x.pass_through_client_id = ? AND x.date <= ? AND NOT ${ON_LIVE_INVOICE("expense_id")} ORDER BY x.date, x.id`,
+      `SELECT x.id, x.date, x.line_text, x.amount_cents, x.expense_id FROM charges x
+       WHERE x.client_id = ? AND x.date <= ? AND x.deleted_at IS NULL AND NOT ${ON_LIVE_INVOICE("charge_id")} ORDER BY x.date, x.id`,
     )
-    .all(clientId, end) as { id: number; date: string; vendor: string; memo: string | null; amount_cents: number }[];
-  for (const c of costs) {
-    const what = c.memo ? `${c.vendor}, ${c.memo}` : c.vendor;
+    .all(clientId, end) as { id: number; date: string; line_text: string; amount_cents: number; expense_id: number | null }[];
+  for (const c of charges) {
     lines.push({
-      ...blank, kind: "pass_through", description: `${c.date} ${what} (pass-through cost)`, amount_cents: c.amount_cents, expense_id: c.id, item_date: c.date,
+      ...blank, kind: "pass_through", description: c.line_text, amount_cents: c.amount_cents, expense_id: c.expense_id, charge_id: c.id, item_date: c.date,
     });
   }
   return lines;
@@ -320,11 +320,11 @@ function unbilled(db: Books, clientId: number, start: string, end: string): NewL
 
 function insertLines(db: Books, invoiceId: number, lines: NewLine[], ctx: Ctx): void {
   const ins = db.query(
-    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, item_date, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoice_lines (invoice_id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, charge_id, item_date, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lines) {
-    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, l.item_date, ctx.source);
+    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, l.charge_id ?? null, l.item_date, ctx.source);
   }
 }
 
@@ -355,7 +355,7 @@ const invoiceDraft: Op = {
   name: "invoice_draft",
   kind: "write",
   description:
-    "Draft an invoice for a client and service period. It pulls in everything unbilled dated on or before the period's end: time, fixed-fee milestones billable by then, recurring fee cycles starting by then, and pass-through costs. Lines from before the period are marked carried_over. A draft holds no number and can be edited or deleted freely.",
+    "Draft an invoice for a client and service period. It pulls in everything unbilled dated on or before the period's end: time, fixed-fee milestones billable by then, recurring fee cycles starting by then, and billable charges (see charge_add) dated by then. Lines from before the period are marked carried_over. A draft holds no number and can be edited or deleted freely.",
   fields: {
     client_id: { type: "int", required: true, min: 1, description: "Client id." },
     period_start: { type: "date", required: true, description: "First day of the service period, YYYY-MM-DD." },

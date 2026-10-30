@@ -65,6 +65,10 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
       account_id: acct(3), paid_from_account_id: acct(1), receipt_path: RECEIPT, pass_through_client_id: 1,
     },
   },
+  { op: "charge_add", input: { client_id: 1, date: "2026-11-30", amount_cents: 4812, line_text: "OpenAI API usage, Nov 2026", reference: "openai:acme-key:2026-11" } },
+  { op: "charge_add", input: { client_id: 2, date: "2026-11-30", amount_cents: 500, line_text: "Stock photo" } },
+  { op: "charge_edit", input: { id: 3, amount_cents: 400 } },
+  { op: "charge_delete", input: { id: 3 } },
   { op: "invoice_draft", input: { client_id: 1, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Setup", amount_cents: 10000 }] } },
   { op: "invoice_edit", input: { id: 1, terms_days: 15, note: "Thank you for your business" } },
   { op: "invoice_draft", input: { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31" } },
@@ -138,6 +142,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "invoice_email", input: { id: 1 } },
   { op: "invoice_reminder", input: { id: 6, as_of: "2099-01-01" } }, // invoice 1 was overpaid
   { op: "expense_list", input: {} },
+  { op: "charge_list", input: {} },
   { op: "owner_list", input: {} },
   { op: "payment_list", input: { invoice_id: 1 } },
   { op: "client_credits", input: {} },
