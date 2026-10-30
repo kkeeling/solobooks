@@ -506,6 +506,10 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
   refuted by: a real `claude -p` past-invoice import was refused "MCPTool requires permission" for `profile_set` setting only the next invoice number, so the import and the planted-instruction eval both stalled
   learned: the flag is per tool, not per call, so a tool mixing gated and ungated fields makes every call need the person
   criterion now: the payment-instructions change is its own gated tool, and a test holds that the flag sits only on tools whose every call can be gated
+- 2026-10-29 | conjectured: ISC-128 (edit and delete until issued) and ISC-129 (void returns charges to waiting) together cover a charge's whole life
+  refuted by: an independent review found a wrong charge on a voided invoice could be neither deleted nor zeroed, so it came back on every draft, and an edit moving a charge's date past its draft's period left it billed there
+  learned: claims about each state on its own miss the paths between states (voided then deleted, drafted then re-dated); a reviewer reading the code finds those faster than the claims do
+  criterion now: tests in test/charges.test.ts cover deleting after a void, re-dating a drafted charge, a client change and a delete; each fails when its fix is undone
 
 ## Verification
 
