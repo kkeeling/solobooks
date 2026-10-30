@@ -11,7 +11,7 @@
       "name": "solobooks",
       "source": "./",
       "description": "Connects Claude Code to solobooks: its MCP tools and the skill that onboards you, bills clients and brings in past invoices. Install the solobooks app first.",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "license": "MIT",
       "category": "productivity"
     },
@@ -19,7 +19,7 @@
       "name": "solobooks-agent-time",
       "source": "./addons/agent-time",
       "description": "Optional add-on: bills the time you spent directing Claude Code and Codex, from their session logs, as solobooks time entries. Install solobooks first.",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "license": "MIT",
       "category": "productivity"
     }

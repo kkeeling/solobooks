@@ -4,7 +4,7 @@ description: Use when the person mentions solobooks, "my books", bookkeeping, "i
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
-  version: "0.1.4"
+  version: "0.1.5"
 ---
 
 # solobooks

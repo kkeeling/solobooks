@@ -1,6 +1,6 @@
 {
   "name": "solobooks",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Connects Claude Code to solobooks, local books for US solo consultants: its MCP tools and the solobooks skill. The solobooks app itself comes from the installer.",
   "author": {
     "name": "Keenan Keeling"
