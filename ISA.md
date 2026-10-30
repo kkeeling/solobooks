@@ -2,7 +2,7 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: complete
+phase: learn
 progress: 137/137
 started: 2026-10-23T01:31:17Z
 updated: 2026-10-29T00:00:00Z
@@ -12,6 +12,9 @@ principal_stated_goal_signal: 2
 principal_stated_goal_locked: 2026-10-21
 context_sufficient: true
 interview_invoked: true
+iteration: 2
+resumed_at: 2026-10-30T02:18:51.993Z
+resumed_from_phase: complete
 ---
 
 # solobooks
@@ -483,7 +486,9 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
 - 2026-10-29: Billing costs back to clients after the fact (the maintainer's example: a client's app spends OpenAI tokens, and that usage goes on the client's next invoice). F15 added; ISC-29 and ISC-45 reworded and reopened. Rulings: charges bill at cost with no markup; the line text is a short plain line the agent writes, such as "OpenAI API usage, Oct 2026", shown on the approval page like every other line; the whole-expense pass-through is folded into charges, so one mechanism is left; billed charges post to Reimbursed expense income. A charge needs no expense, because token usage usually matches no single transaction. Adding a charge isn't gated, since nothing reaches the client until the invoice is issued, and issuing is gated.
 - 2026-10-29: refined: F15 was first written with unit-test claims only, which left out every surface a person meets. The maintainer asked whether the outcomes would be verified on those surfaces. ISC-135 (a real agent, guide only, billing from a usage export), ISC-136 (the approval page) and ISC-137 (the client's PDF) were added.
 - 2026-10-29: An independent review of the F15 build found no double-billing and no path to change an issued invoice, and three defects, all fixed with tests that fail when the fix is undone. A wrong charge on a voided invoice couldn't be removed, so it came back on every draft: deleting it now marks it deleted, and the voided invoice keeps its line. An edit couldn't clear a charge's expense or reference: `unlink_expense` and `clear_reference` do that. Moving a charge's date past its draft's period left it on that draft: the draft now drops it. Invoice lines still don't show their charge id, which is deferred to Remaining Work: adding it changes the line shape that a parked approval compares against.
+- 2026-10-29: npm now refuses publishes from accounts without two-factor (403), so the maintainer turned it on with a passkey for v0.1.5. `bun publish` can't answer a passkey check. What worked: `script -q /dev/null bunx npm publish --access public --auth-type=web < /dev/null` in each `dist/npm/<package>` folder. The first package prints an npmjs.com/auth link; once the maintainer approves it on a trusted device, the other five go through with no link. Each package shows "being processed" for up to about 10 minutes before `latest` moves. Check the registry rather than the publish output.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
+- D-auto-2026-10-30T02:18:51.993Z: Auto-resumed from complete to learn at 2026-10-30T02:18:51.993Z — iteration 2
 
 ## Learning
 
