@@ -2,10 +2,10 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: complete
-progress: 118/118
+phase: climbing
+progress: 116/134
 started: 2026-10-23T01:31:17Z
-updated: 2026-10-24T01:49:26Z
+updated: 2026-10-29T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
@@ -38,6 +38,9 @@ _Avoid_: any phrasing that suggests an agent or AI lives inside solobooks. There
 
 **Gate**: solobooks' own refusal to run a gated action until the person approves it at the level they chose (agent decides, click in chat, or passkey).
 _Avoid_: "confirmation" or "are you sure?" A prompt the agent can answer for itself isn't a gate.
+
+**Billable charge**: an amount billed back to one client at cost, waiting for that client's next invoice. It may name the expense it came out of, or none.
+_Avoid_: treating billing back as splitting a bank or card transaction. Token usage billed back to a client usually matches no single transaction, because the card is charged at each credit top-up, not per client; the first gap discussion (2026-10-29) assumed every billed-back cost was a share of one expense.
 
 **Grok Build / Muse Code**: the local terminal agents from xAI and Meta, which solobooks supports.
 _Avoid_: "Grok Bot" and "Muse", which are those companies' cloud products and can't reach local data.
@@ -118,7 +121,7 @@ Why: solobooks keeps time from any source and never decides how it was tracked.
 ### F4 · Invoices and client documents
 Why: what reaches a client is always correct, numbered without gaps, and never sent final before approval.
 
-- [x] ISC-29: A period's draft includes its unbilled time, fixed fees, recurring fees and pass-through costs.
+- [ ] ISC-29: A period's draft includes its unbilled time, fixed fees, recurring fees and waiting billable charges.
 - [x] ISC-30: A draft invoice PDF is stamped DRAFT and carries no final number.
 - [x] ISC-31: An issued PDF carries every standard field (seller name, address, EIN, client, number, invoice date, service period, lines, subtotal, tax, total, terms, due date).
 - [x] ISC-32: Invoice numbers continue from the configured next number with no gaps.
@@ -143,7 +146,7 @@ Why: what lands in the bank, what the client paid and what the processor kept al
 Why: the bank statement becomes the books with the person seeing only the few lines that need a human.
 
 - [x] ISC-44: An expense carries an attached receipt file.
-- [x] ISC-45: A pass-through cost links to the invoice that recovers it.
+- [ ] ISC-45: A billable charge links to the invoice that bills it, and an expense lists its charges and the amount not yet charged.
 - [x] ISC-46: Importing the same bank CSV twice adds zero lines the second time.
 - [x] ISC-47: Exact matches to payments and expenses are made automatically on import.
 - [x] ISC-48: Unmatched lines land on one list.
@@ -253,6 +256,26 @@ Why: the person can see the books and approve things when their agent's app can'
 - [x] ISC-117: Anti: no element on the page has a corner radius over 4px, a shadow, or a gradient.
 - [x] ISC-118: Antecedent: the page reads as one technical instrument: uppercase monospace section labels with counts, 1px rules between rows, panels on the page itself rather than in cards, and color only where it marks state (waiting, overdue, error).
 
+### F15 · Billable charges
+Why: money spent on a client's behalf, such as token usage for their app, gets billed back at cost whenever the agent learns about it, so recording an expense never forces a billing decision and nothing spent for a client is left off their invoice.
+
+- [ ] ISC-119: A billable charge carries client, date, amount, line text and source, and needs no expense.
+- [ ] ISC-120: A charge may name an expense, and a charge that would bring that expense's charges past its amount is refused.
+- [ ] ISC-121: One expense carries charges to several clients.
+- [ ] ISC-122: A charge added to an expense recorded earlier leaves the expense row and its ledger entry unchanged.
+- [ ] ISC-123: A client's next draft includes every waiting charge dated on or before the period end, as a pass-through line reading exactly the charge's line text.
+- [ ] ISC-124: Anti: a charge has no markup or rate field; the billed line equals the charge amount to the cent.
+- [ ] ISC-125: A billed charge posts to Reimbursed expense income and is taxed only when the client's tax rate lists pass-through lines.
+- [ ] ISC-126: A second charge with the same reference for the same client is refused.
+- [ ] ISC-127: A charge carries an optional evidence file, such as a usage export, copied into the books folder like a receipt.
+- [ ] ISC-128: Waiting charges can be edited and deleted freely; editing or deleting a charge on an issued invoice is refused with a reason.
+- [ ] ISC-129: Voiding an invoice returns its charges to waiting, to be billed again.
+- [ ] ISC-130: The unbilled list shows every waiting charge by client, with each client's total.
+- [ ] ISC-131: The expense list filters by vendor, date range and whether any amount is not yet charged.
+- [ ] ISC-132: Naming a client when recording an expense records one charge for its full amount.
+- [ ] ISC-133: Anti: recording an expense never requires a client or billing choice.
+- [ ] ISC-134: Books from an earlier release open with each pass-through cost as one full-amount charge, keeping its invoice link.
+
 
 ## Test Strategy
 
@@ -303,7 +326,7 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-111 | bun-test | overpayment credit applied to next invoice | balance drops by the credit | bun test test/payments.test.ts -t "apply credit" | derived: payments |
 | ISC-43 | bun-test | unpaid list vs fixture | all overdue, days late | bun test test/reports.test.ts -t "unpaid" | literal |
 | ISC-44 | bun-test | expense with receipt | file linked and readable | bun test test/expenses.test.ts -t "receipt" | literal |
-| ISC-45 | bun-test | pass-through link | invoice id set | bun test test/expenses.test.ts -t "pass-through" | literal |
+| ISC-45 | bun-test | charge and expense views after billing | invoice id set; expense shows charges and remainder | bun test test/charges.test.ts -t "links" | literal |
 | ISC-46 | bun-test | import same CSV twice | 0 new lines | bun test test/bank.test.ts -t "dedupe" | derived: retry-safe |
 | ISC-47 | bun-test | fixture CSV exact matches | all matched | bun test test/bank.test.ts -t "exact match" | literal |
 | ISC-48 | bun-test | fixture CSV leftovers | one list, all present | bun test test/bank.test.ts -t "unmatched" | literal |
@@ -376,6 +399,22 @@ Why: the person can see the books and approve things when their agent's app can'
 | ISC-116 | bun-test | theme tokens | 4.5:1 or more, both themes | bun test test/page.test.ts -t "contrast" | derived: human-page |
 | ISC-117 | bun-test | page CSS | no radius over 4px, no shadow, no gradient | bun test test/page.test.ts -t "flat" | derived: human-page |
 | ISC-118 | screenshot | populated page, light and dark | labels, rules, no cards, color only on state | Interceptor capture | derived: human-page |
+| ISC-119 | bun-test | charge with no expense | recorded with all fields | bun test test/charges.test.ts -t "standalone" | literal |
+| ISC-120 | bun-property | random charges against one expense | total never exceeds expense; excess refused | bun test test/charges.property.test.ts -t "over-charge" | derived: never-double-bill |
+| ISC-121 | bun-test | one expense, two clients | both charges recorded | bun test test/charges.test.ts -t "split" | literal |
+| ISC-122 | bun-test | expense and entry rows before vs after a later charge | identical | bun test test/charges.test.ts -t "after the fact" | literal |
+| ISC-123 | bun-test | draft with waiting charges | every charge dated by period end, line text exact | bun test test/charges.test.ts -t "next draft" | literal |
+| ISC-124 | bun-test | charge schema and billed line | no markup field; line equals amount | bun test test/charges.test.ts -t "at cost" | derived: at-cost |
+| ISC-125 | bun-test | issued charge line, client taxed with and without pass-through | reimbursed income; tax only when listed | bun test test/charges.test.ts -t "reimbursed" | derived: not-an-accountant |
+| ISC-126 | bun-test | same reference, same client | refused | bun test test/charges.test.ts -t "reference" | derived: never-double-bill |
+| ISC-127 | bun-test | charge with evidence file | file copied and readable | bun test test/charges.test.ts -t "evidence" | literal |
+| ISC-128 | bun-test | edit and delete waiting vs billed charge | waiting both succeed; billed refused | bun test test/charges.test.ts -t "locked" | derived: free-until-issued |
+| ISC-129 | bun-test | void an invoice carrying charges | charges waiting again | bun test test/charges.test.ts -t "void" | derived: free-until-issued |
+| ISC-130 | bun-test | unbilled list | every waiting charge, per-client totals | bun test test/charges.test.ts -t "unbilled list" | literal |
+| ISC-131 | bun-test | expense list filters | vendor, dates and not-yet-charged each narrow it | bun test test/expenses.test.ts -t "filters" | literal |
+| ISC-132 | bun-test | expense recorded with a client | one full-amount charge | bun test test/charges.test.ts -t "on record" | derived: one-mechanism |
+| ISC-133 | bun-test | expense recorded with no client | recorded, no charge | bun test test/charges.test.ts -t "no billing choice" | literal |
+| ISC-134 | bun-test | earlier-release books with pass-through costs | one charge each, invoice links kept | bun test test/migrations.test.ts -t "pass-through to charges" | derived: one-mechanism |
 
 ## Decisions
 
@@ -435,9 +474,15 @@ Why: the person can see the books and approve things when their agent's app can'
 - 2026-10-24: refined: the 2026-10-23 narrowing was still wrong. Recording a real Claude Code 2.1.310 session, its "Do you want to proceed?" prompt only permitted the tool call; solobooks did not get an MCP elicitation and parked the invoice as pending, and the agent pointed the person to the page. So no app is verified to approve in chat; the README and approvals guide now say the page is where approval happens, and in-chat approval is unverified for every app.
 - 2026-10-24: The maintainer trimmed the page after seeing it: no books path or "localhost · read-only" line in the header, and no passkey text at the foot. Once a passkey exists the page says nothing about it; until then it shows only the Register a passkey button. v0.1.1 was already tagged and built, so these ship as v0.1.2, and npm skips 0.1.1.
 - 2026-10-23: Both approval-prompt fog items closed by narrowing the promise, at the maintainer's call, instead of testing each app. The README and the approvals guide now say only Claude Code asks in chat (a real `claude -p` run refused a flagged tool with "MCPTool requires permission"); every other app, Codex and Claude Desktop included, is described as using the local approval page. Safety never rested on the prompt: a gated action stays pending until approved on the page or with a passkey. Per-app chat-prompt tests move to Remaining Work.
+- 2026-10-29: Billing costs back to clients after the fact (the maintainer's example: a client's app spends OpenAI tokens, and that usage goes on the client's next invoice). F15 added; ISC-29 and ISC-45 reworded and reopened. Rulings: charges bill at cost with no markup; the line text is a short plain line the agent writes, such as "OpenAI API usage, Oct 2026", shown on the approval page like every other line; the whole-expense pass-through is folded into charges, so one mechanism is left; billed charges post to Reimbursed expense income. A charge needs no expense, because token usage usually matches no single transaction. Adding a charge isn't gated, since nothing reaches the client until the invoice is issued, and issuing is gated.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 
 ## Learning
+
+- 2026-10-29 | conjectured: billing a cost back to a client means billing a share of one recorded expense
+  refuted by: the maintainer bills token usage he tracks per API key; the card is charged at each credit top-up, so the usage matches no single transaction
+  learned: the thing waiting to be billed is the charge; the expense it came from is optional context
+  criterion now: ISC-119 records a charge with no expense; ISC-120 holds the over-charge check only when one is named
 
 - 2026-10-23 | conjectured: a period's invoice draft should hold only items dated inside that period
   refuted by: a September entry recorded in October lands on no draft, ever; it would go unbilled silently
