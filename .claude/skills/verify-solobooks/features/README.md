@@ -40,7 +40,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 ## Features
 
-- [Approve on the page](./approve-on-page.md) covers approving, rejecting, batches, and why only the person can approve.
+- [Approve on the page](./approve-on-page.md) covers approving, rejecting, batches, letting the agent decide, and why only the person can approve.
 - [Bill a client](./bill-a-client.md) covers drafting from time and charges, issuing, the PDF and email text, recording it sent, and the MCP entry.
 - [Record money](./record-money.md) covers bank statements, payments backed by a bank line, and unbacked payments that wait for approval.
 - [Read the page](./read-the-page.md) covers the summary and panels when populated, empty, loading and unreadable.
