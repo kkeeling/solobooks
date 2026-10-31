@@ -6,15 +6,15 @@ An agent turns logged time and costs into a draft invoice and asks to issue it. 
 
 - `bill-draft` builds a draft from unbilled time and charges.
 - `bill-dry` previews a write without changing the books.
-- `bill-issue` numbers the invoice only after the person's approval.
+- `bill-issue` numbers the invoice only after the person's approval, unless they have let the agent decide.
 - `bill-docs` produces the client's PDF and the email text.
 - `bill-sent` records delivery, and an issued invoice can't be issued again.
 - `bill-mcp` does the same work through the MCP tools an agent app uses.
 
 ## How to get to it (user POV)
 
-- The person tells their agent "bill Acme for October", and the agent calls the `time_add`, `charge_add`, `invoice_draft`, `invoice_issue`, `invoice_pdf`, `invoice_email` and `invoice_sent` tools.
-- An agent or person runs `solobooks time add`, `charge add`, `invoice draft`, `invoice issue`, `invoice pdf`, `invoice email` and `invoice sent`.
+- The person tells their agent "bill Acme for October", and the agent calls the `engagement_add`, `time_add`, `charge_add`, `invoice_draft`, `invoice_issue`, `invoice_pdf`, `invoice_email` and `invoice_sent` tools.
+- An agent or person runs `solobooks engagement add`, `time add`, `charge add`, `invoice draft`, `invoice issue`, `invoice pdf`, `invoice email` and `invoice sent`.
 
 ## Driving it with control.ts
 
@@ -37,6 +37,9 @@ Preconditions:
 
 - `invoice issue` is parked even while the payment instructions are still waiting, so approve those first, as the recipe does.
 - Issuing refuses when the profile lacks a legal name, address or EIN. The `billing` seed sets all three. An `empty` run has no draft to issue, so it refuses earlier with `There is no invoice or credit note with id 1.`
+- Issuing also refuses a client with no address, with `Set client 2's billing address with client edit before issuing an invoice.`
+- Time logged for a client with no engagement has no rate. `invoice draft` refuses with `Time entry 2 has no hourly rate, so give it the engagement_id of an hourly engagement.` until the client has an hourly engagement.
+- A draft can also carry manual lines through `--json '{"lines":[{"description":"Setup","amount_cents":5000}]}'`, which gets past the `Nothing unbilled` refusal.
 - A draft has a PDF too: `invoice pdf --id 1` before approval saves `invoices/draft-1.pdf`. Only the numbered file proves the issue.
 - `invoice pdf` returns a path relative to the books folder. The scratch folder is gone after `down`, so read the copy under `books-final/`.
 - Output past 64 KB is cut when the real `solobooks` writes to a pipe (kkeeling/solobooks#1). `control.ts` captures it to files and passes all of it on, so a pipe after `control.ts cli` is safe. A pipe after a bare `solobooks` isn't.
