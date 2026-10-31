@@ -15,3 +15,6 @@ dist/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# verify-solobooks proof: transcripts, screenshots and throwaway books
+.verify/
