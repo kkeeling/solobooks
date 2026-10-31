@@ -70,12 +70,17 @@ function backUpBeforeUpgrade(db: Database, path: string, o: OpenOptions): void {
   }
 }
 
+/** Whether books are really at this path: an empty file, as a failed restore leaves, isn't books. */
+export function hasBooks(path: string): boolean {
+  return existsSync(path) && statSync(path).size > 0;
+}
+
 /** Refuses when the books aren't there, so a moved file or an unplugged drive can never read as new, empty books. */
 function refuseMissing(path: string): void {
-  if (existsSync(path) && statSync(path).size > 0) return;
+  if (hasBooks(path)) return;
   const dir = dirname(path);
   throw new Refusal(
-    `There are no books in ${dir}, so nothing was done; if they moved or their drive is unplugged, put them back, and to start new books there run solobooks setup --books ${dir}.`,
+    `There are no books in "${dir}", so nothing was done; if they moved or their drive is unplugged, put them back, and to start new books there run solobooks setup --books "${dir}".`,
     "books",
   );
 }
@@ -91,9 +96,11 @@ export function openBooks(path: string, o: OpenOptions = {}): Books {
   if (path === ":memory:") {
     db = Database.deserialize(freshImage(), { strict: true });
   } else {
-    mkdirSync(dirname(path), { recursive: true });
-    if (!existsSync(path)) placeFresh(path);
-    db = new Database(path, { create: true, strict: true });
+    if (o.create) {
+      mkdirSync(dirname(path), { recursive: true });
+      if (!existsSync(path)) placeFresh(path);
+    }
+    db = new Database(path, { readwrite: true, create: false, strict: true });
   }
   try {
     db.exec("PRAGMA foreign_keys = ON");

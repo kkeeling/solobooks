@@ -26,6 +26,6 @@ grep -q '"mcp": "added"' "$H/setup.json" || fail "setup connected no agent; see 
 found="$(cd "$H" && find . \( -name 'bill-agent-time' -o -name 'count-time.ts' -o -name 'billing-rule.md' -o -name '*agent-time*' \) ! -path '*/skills/solobooks/references/agent-time.md' -print)"
 [ -z "$found" ] || fail "setup installed add-on files: $found"
 # And no mention of it in any file setup wrote or printed, such as a plugin entry in an agent config.
-mentions="$(grep -rIl --exclude-dir=solobooks -e 'agent-time' "$H" 2> /dev/null || true)"
+mentions="$(grep -rIl -e 'agent-time' "$H" 2> /dev/null | grep -v '/skills/solobooks/' || true)"
 [ -z "$mentions" ] || fail "setup mentions the add-on in: $mentions"
 echo "PASS: setup connected $(grep -c '"mcp": "added"' "$H/setup.json") agents and installed no add-on: no add-on files, skill, plugin entry or mention in the home"

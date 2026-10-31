@@ -2,12 +2,13 @@
 // First, before anything that loads the passkey library: in a compiled binary its dependency injection would otherwise
 // start before this polyfill and crash.
 import "reflect-metadata";
-import { booksDir, booksFile, now, pagePort, pageUrl, saveConfig, type Env } from "./config.ts";
+import { resolve } from "node:path";
+import { booksDir, booksFile, now, pagePort, pageUrl, readConfig, saveConfig, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
-import { beforeWrite, openOptions, withWarnings } from "./durability.ts";
+import { beforeWrite, onlyFlags, openOptions, withWarnings } from "./durability.ts";
 import { startPage } from "./page.ts";
 import { VERSION } from "./version.ts";
 
@@ -143,23 +144,39 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
 
 /** Starts the approval page for `solobooks serve`; returns a refusal instead when it can't. */
 export async function serve(argv: string[], env: Env = process.env) {
+  onlyFlags(argv.slice(1), "books", "port");
   const { flags } = parse(argv.slice(1));
+  if (flags.port === "") throw new Refusal("That flag needs a value after it.", "port");
+  if (flags.port !== undefined && env.SOLOBOOKS_PORT && env.SOLOBOOKS_PORT !== flags.port) {
+    throw new Refusal(`SOLOBOOKS_PORT says ${env.SOLOBOOKS_PORT} and --port says ${flags.port}, and approval links would follow the variable, so use one or the other.`, "port");
+  }
   const port = flags.port !== undefined ? pagePort({ SOLOBOOKS_PORT: flags.port }) : pagePort(env);
   // A test seam: holds the page's data back this many milliseconds, so its loading state can be seen and captured.
   const delay = env.SOLOBOOKS_PAGE_DELAY_MS ? Number(env.SOLOBOOKS_PAGE_DELAY_MS) : 0;
   if (!Number.isInteger(delay) || delay < 0 || delay > 600_000) {
     throw new Refusal("SOLOBOOKS_PAGE_DELAY_MS must be a whole number of milliseconds from 0 to 600000.", "SOLOBOOKS_PAGE_DELAY_MS");
   }
+  const books = booksDir(flags.books, env);
   let page;
   try {
-    page = startPage({ books: booksDir(flags.books, env), port, env, dataDelayMs: delay });
+    page = startPage({ books, port, env, dataDelayMs: delay });
   } catch (e) {
     if ((e as { code?: string }).code !== "EADDRINUSE") throw e;
     throw new Refusal(`Port ${port} is already in use, so solobooks serve may already be running at http://localhost:${port}/; open that, or choose another port with solobooks serve --port <n>.`, "port");
   }
-  // Pending actions are made by other processes, so they learn the port from the settings.
-  if (flags.port !== undefined) saveConfig(env, { port });
+  // Pending actions are made by other processes, so they learn the port from the settings. Books other than the
+  // recorded ones are a one-off, and don't move the page for the person's real books.
+  if (flags.port !== undefined) rememberPort(port, books, env);
   return page;
+}
+
+function rememberPort(port: number, books: string, env: Env): void {
+  try {
+    const recorded = readConfig(env).books;
+    if (!recorded || resolve(recorded) === resolve(books)) saveConfig(env, { port });
+  } catch (e) {
+    console.error(`solobooks serve: couldn't record port ${port} in the settings, so approval links may point elsewhere: ${e instanceof Error ? e.message : e}`);
+  }
 }
 
 /** Runs setup, doctor, backup set or move and prints its JSON; doctor exits 1 when a check failed. */
@@ -182,7 +199,8 @@ export async function install(word: string, argv: string[], env: Env = process.e
 /** Prints everything, then exits. Exiting straight after a write loses whatever a pipe hasn't taken yet. */
 function finish(text: string, code: number): void {
   process.stdout.on("error", () => process.exit(code)); // the reader went away, as in solobooks help | head -1
-  process.stdout.write(text, () => process.exit(code));
+  // A full disk is a failure: exit 0 would make a cut-off export look complete.
+  process.stdout.write(text, (e) => process.exit(e && (e as { code?: string }).code !== "EPIPE" ? 1 : code));
 }
 
 const word = process.argv[2];

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { run, serve } from "../src/cli.ts";
-import { pagePort } from "../src/config.ts";
+import { pagePort, saveConfig } from "../src/config.ts";
 import { setup } from "../src/setup.ts";
 import { tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
@@ -55,6 +55,25 @@ test("ISC-143: SOLOBOOKS_PORT still outranks the remembered port, and with neith
   const page = await serve(["serve", "--port", String(port)], env);
   page.stop();
   expect(pagePort({ ...env, SOLOBOOKS_PORT: "45000" })).toBe(45000);
+});
+
+test("ISC-143: serve refuses what would leave approve_url wrong, and serving other books doesn't move the real page", async () => {
+  const { env, books } = person();
+  await expect(serve(["serve", "--port="], env)).rejects.toThrow("needs a value");
+  await expect(serve(["serve", "--port", "45001"], { ...env, SOLOBOOKS_PORT: "45000" })).rejects.toThrow("use one or the other");
+  await expect(serve(["serve", "--book", books], env)).rejects.toThrow("has no --book flag");
+  const other = join(env.HOME, "other");
+  setup(["--books", other], env);
+  setup(["--books", books], env);
+  const page = await serve(["serve", "--books", other, "--port", String(freePort())], env);
+  page.stop();
+  expect(pagePort(env)).toBe(7317);
+});
+
+test("ISC-143: a recorded port out of range is ignored, not blamed on SOLOBOOKS_PORT", async () => {
+  const { env } = person();
+  saveConfig(env, { port: 70000 });
+  expect(pagePort(env)).toBe(7317);
 });
 
 test("ISC-144: a second serve on a port already in use refuses in plain words, and leaves the settings alone", async () => {

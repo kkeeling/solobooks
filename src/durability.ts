@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { absolute, booksDir, booksFile, type Env, homeDir, now, readConfig, saveConfig, syncedFolder } from "./config.ts";
 import { backupInto } from "./core/backup.ts";
-import { type Books, openBooks, type OpenOptions } from "./core/db.ts";
+import { type Books, hasBooks, openBooks, type OpenOptions } from "./core/db.ts";
 import { today } from "./core/format.ts";
 import { Refusal } from "./core/refusal.ts";
 
@@ -81,12 +81,17 @@ export function flag(argv: string[], name: string): string | undefined {
   return v;
 }
 
-/** Refuses any flag this command doesn't read, so a typo can't quietly put the books somewhere else. */
+/** Refuses anything this command doesn't read, so a typo or an unquoted folder can't quietly put the books somewhere else. */
 export function onlyFlags(argv: string[], ...names: string[]): void {
-  for (const a of argv) {
-    if (!a.startsWith("--")) continue;
+  const takes = names.map((n) => `--${n}`).join(" and ");
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!a.startsWith("--")) {
+      throw new Refusal(`This command doesn't take "${a}"; it takes ${takes}, and a folder with a space in its name needs quotes.`, a.replace(/^-+/, ""));
+    }
     const name = a.slice(2).split("=")[0]!;
-    if (!names.includes(name)) throw new Refusal(`This command has no --${name} flag; it takes ${names.map((n) => `--${n}`).join(" and ")}.`, name);
+    if (!names.includes(name)) throw new Refusal(`This command has no --${name} flag; it takes ${takes}.`, name);
+    if (!a.includes("=")) i++; // its value
   }
 }
 
@@ -119,7 +124,7 @@ export function backupSet(argv: string[], env: Env) {
     if (!(e instanceof Refusal)) throw e;
   }
   let latest: string | null = null;
-  if (dir && existsSync(booksFile(dir))) {
+  if (dir && hasBooks(booksFile(dir))) {
     const db = openBooks(booksFile(dir), openOptions(env));
     try {
       const warning = dailyBackup(db, env);
@@ -133,6 +138,7 @@ export function backupSet(argv: string[], env: Env) {
     backups: folder,
     settings,
     latest,
+    ...(dir && !latest && { warnings: [`There are no books in "${dir}" to back up yet, so no copy was written.`] }),
     next: "solobooks now writes a dated copy of the books here once a day, the first time they change that day, and keeps every one. Getting copies off this machine, such as to another drive or a cloud folder, is up to you or your agent.",
   };
 }

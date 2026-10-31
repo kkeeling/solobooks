@@ -1,10 +1,10 @@
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, knownAgents, mcpCommand, sharedSkillDir, writeEntry } from "./agents.ts";
-import { absolute, booksFile, type Config, configFile, type Env, homeDir, readConfig, syncedFolder, writeIfChanged } from "./config.ts";
-import { openBooks } from "./core/db.ts";
+import { absolute, booksFile, type Config, configFile, type Env, homeDir, now, readConfig, syncedFolder, writeIfChanged } from "./config.ts";
+import { hasBooks, openBooks } from "./core/db.ts";
 import { Refusal } from "./core/refusal.ts";
-import { flag, onlyFlags, openOptions } from "./durability.ts";
+import { flag, onlyFlags } from "./durability.ts";
 import { SKILL_FILES, SKILL_NAME } from "./skill.ts";
 
 // `solobooks setup`: settles the books folder, registers the MCP server with every agent it finds, and copies the
@@ -26,37 +26,52 @@ export function setup(argv: string[], env: Env) {
   const home = homeDir(env);
   if (!home) throw new Refusal("solobooks can't tell where your home folder is, because HOME isn't set.", "HOME");
   onlyFlags(argv, "books");
-  const asked = flag(argv, "books") ?? env.SOLOBOOKS_DIR;
+  const named = flag(argv, "books");
   const warnings: string[] = [];
 
-  // Damaged settings can't say where the books are, so setup only rewrites them once told. The damaged copy stays.
+  // Damaged settings can't say where the books are, so setup only rewrites them once told.
   let recorded: Config = {};
+  let damaged = false;
   try {
     recorded = readConfig(env);
   } catch (e) {
-    if (!(e instanceof Refusal) || !asked) throw e;
-    const settings = configFile(env)!;
-    renameSync(settings, `${settings}.damaged`);
-    warnings.push(`The settings file was damaged, so it is saved as ${settings}.damaged and written again; if you had picked a backup folder, pick it again with solobooks backup set --folder <dir>.`);
+    if (!(e instanceof Refusal) || e.field !== "config" || !(named || env.SOLOBOOKS_DIR)) throw e;
+    damaged = true;
   }
 
-  // The books folder: the one asked for, else the one already chosen, else ~/solobooks.
-  const dir = absolute(asked ?? recorded.books ?? join(home, "solobooks"), home);
-  if (!asked && recorded.books && !existsSync(booksFile(dir))) {
+  // The books folder: the one asked for, else the one already chosen, else ~/solobooks. Only --books, or a first
+  // setup with nothing chosen yet, may start new books; a folder that was already chosen and has none is a problem.
+  const chosen = env.SOLOBOOKS_DIR || recorded.books;
+  const dir = absolute(named ?? chosen ?? join(home, "solobooks"), home);
+  const fresh = !hasBooks(booksFile(dir));
+  if (fresh && !named && chosen) {
     throw new Refusal(
-      `Your books were in ${dir} and aren't there now, so setup changed nothing; if they moved or their drive is unplugged, put them back, and to start new books there run solobooks setup --books ${dir}.`,
+      `There are no books in "${dir}", so setup changed nothing; if they moved or their drive is unplugged, put them back, and to start new books there run solobooks setup --books "${dir}".`,
       "books",
     );
   }
+  const left = recorded.books ? absolute(recorded.books, home) : null;
+  if (fresh && left && left !== dir && hasBooks(booksFile(left))) {
+    warnings.push(`solobooks now uses new, empty books in "${dir}", and your books are still in "${left}"; to carry them over, run solobooks setup --books "${left}", then solobooks move --to <empty folder>.`);
+  }
+  if (fresh && damaged) {
+    warnings.push(`solobooks started new, empty books in "${dir}"; if your books are somewhere else, run solobooks setup --books <that folder>.`);
+  }
   const synced = syncedFolder(dir, home);
   if (synced) {
-    warnings.push(
-      `The books folder ${dir} is inside ${synced}, and syncing a live books file can corrupt it, so choose a folder outside it, such as ${join(home, "solobooks")}, with solobooks setup --books <dir>.`,
-    );
+    const how = fresh ? "solobooks setup --books <dir>" : "solobooks move --to <empty folder>, which carries the books with it";
+    warnings.push(`The books folder ${dir} is inside ${synced}, and syncing a live books file can corrupt it, so choose a folder outside it, such as ${join(home, "solobooks")}, with ${how}.`);
   }
-  openBooks(booksFile(dir), { ...openOptions(env), create: true }).close();
+  openBooks(booksFile(dir), { backups: recorded.backups ?? null, now: now(env), create: true }).close();
   const settings = configFile(env)!;
-  writeIfChanged(settings, JSON.stringify({ ...readConfig(env), books: dir }, null, 2) + "\n");
+  // The damaged copy stays, and only now, once the folder has proved it works.
+  if (damaged) {
+    let copy = `${settings}.damaged`;
+    for (let n = 2; existsSync(copy); n++) copy = `${settings}.damaged-${n}`;
+    renameSync(settings, copy);
+    warnings.push(`The settings file was damaged, so it is saved as ${copy} and written again; if you had picked a backup folder, pick it again with solobooks backup set --folder <dir>.`);
+  }
+  writeIfChanged(settings, JSON.stringify({ ...recorded, books: dir }, null, 2) + "\n");
 
   const agents = knownAgents(env);
   const command = mcpCommand();
@@ -78,6 +93,7 @@ export function setup(argv: string[], env: Env) {
 
   return {
     books: dir,
+    ...(fresh && { started_new_books: true }),
     settings,
     mcp_command: command,
     agents: connected,

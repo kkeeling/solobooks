@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
+import { hasBooks } from "./core/db.ts";
 import { join } from "node:path";
 import { knownAgents, mcpCommand, readEntry } from "./agents.ts";
 import { booksDir, booksFile, type Env } from "./config.ts";
@@ -27,8 +28,8 @@ function checkBooks(argv: string[], env: Env): Check {
     return { check: "books", ok: false, detail: e.reason, fix: e.field === "config" ? "Run solobooks setup --books <folder>, naming the folder that holds your books." : SETUP };
   }
   const file = booksFile(dir);
-  if (!existsSync(file)) {
-    return { check: "books", ok: false, detail: `There are no books in ${dir}.`, fix: `If they moved or their drive is unplugged, put them back. To start new books there, run solobooks setup --books ${dir}.` };
+  if (!hasBooks(file)) {
+    return { check: "books", ok: false, detail: `There are no books in "${dir}".`, fix: `If they moved or their drive is unplugged, put them back. To start new books there, run solobooks setup --books "${dir}".` };
   }
   try {
     const db = new Database(file, { readonly: true });
@@ -91,7 +92,9 @@ export async function handshake(command: string[], env: Env, timeoutMs = 20_000)
     // One read through the server proves it finds the books on its own, as it will for the agent.
     send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "gate_list", arguments: {} } });
     const read = await next(3);
-    if (read.error || read.result?.isError) {
+    // Refusing because of the books or the settings proves the server works; the books check reports those.
+    const about = read.result?.structuredContent?.field;
+    if (read.error || (read.result?.isError && about !== "books" && about !== "config")) {
       const why = read.result?.structuredContent?.reason ?? read.error?.message ?? "it refused";
       throw new Error(`it couldn't read the books: ${why}`);
     }
@@ -202,7 +205,12 @@ function durabilityWarnings(argv: string[], env: Env): string[] {
   const out: string[] = [];
   const synced = syncedWarning(dir, env);
   if (synced) out.push(synced);
-  const folder = backupFolder(env);
+  let folder: string | null;
+  try {
+    folder = backupFolder(env);
+  } catch {
+    return out; // the settings are damaged, and the MCP or books check says what to do
+  }
   if (!folder) out.push("No backup folder is chosen, so solobooks writes no daily backups; pick one with solobooks backup set --folder <dir>.");
   else if (!existsSync(folder)) out.push(`The backup folder ${folder} isn't there, so today's backup can't be written; plug in its drive or pick another with solobooks backup set --folder <dir>.`);
   return out;

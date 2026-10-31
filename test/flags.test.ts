@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { install } from "../src/cli.ts";
+import { install, run } from "../src/cli.ts";
 import { configFile } from "../src/config.ts";
 import { dbPath, tempDir } from "./support/books.ts";
 
@@ -52,16 +52,46 @@ for (const [word, argv] of [
   ["backup", ["set", "--foldr", "x"]],
 ] as const) {
   test(`ISC-142: ${word} refuses a flag it doesn't know (${argv.join(" ")})`, async () => {
-    const { home, env } = scratch();
+    const { env } = scratch();
     await install("setup", [], env);
     const r = await install(word, [...argv], env);
     expect(r.code).toBe(2);
     expect(JSON.parse(r.stdout).reason).toContain("has no --");
-    expect(existsSync(join(home, "x"))).toBe(false);
+    expect(existsSync("x")).toBe(false); // a relative x would land in the current folder
   });
 }
 
-test("ISC-142: mcp reads --books=<dir> and refuses a flag it doesn't know", async () => {
+for (const argv of [["My", "Books"], ["-books", "x"], ["-h"], ["--books", "a", "stray"]]) {
+  test(`ISC-142: setup refuses what it doesn't read (${argv.join(" ")})`, async () => {
+    const { home, env } = scratch();
+    const r = await install("setup", argv, env);
+    expect(r.code).toBe(2);
+    expect(JSON.parse(r.stdout).reason).toContain("doesn't take");
+    expect(existsSync(join(home, "solobooks"))).toBe(false);
+  });
+}
+
+test("ISC-142: mcp reads --books=<dir>", async () => {
+  const { home, env } = scratch();
+  await install("setup", ["--books", join(home, "books")], env);
+  await run(["client", "add", "--name", "Acme", "--source", "s", "--books", join(home, "books")], env);
+  const { stdioMcpArgs } = await import("./support/mcp-client.ts");
+  const mcp = await stdioMcpArgs([`--books=${join(home, "books")}`], { HOME: home });
+  try {
+    expect((await mcp.call("client_list", {})).content[0].text).toContain("Acme");
+  } finally {
+    await mcp.close();
+  }
+});
+
+test("ISC-142: --books=~/x means the same folder everywhere", async () => {
+  const { home, env } = scratch();
+  await install("setup", ["--books=~/b1"], env);
+  expect(existsSync(dbPath(join(home, "b1")))).toBe(true);
+  expect((await run(["client", "list", "--books=~/b1"], env)).code).toBe(0);
+});
+
+test("ISC-142: mcp refuses a flag it doesn't know", async () => {
   const typo = Bun.spawn(["bun", "src/cli.ts", "mcp", "--book=x"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
   expect(await typo.exited).toBe(2);
   expect(await new Response(typo.stdout).text()).toBe(""); // stdout belongs to the protocol

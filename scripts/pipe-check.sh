@@ -15,7 +15,7 @@ check() {
   local want piped
   want=$(wc -c < "$WORK/help.file")
   piped=$("$@" help | wc -c)
-  if [ "$want" -lt 65536 ]; then
+  if [ "$want" -le 65536 ]; then
     echo "FAIL: $name: help is $want bytes, too small to prove anything about a 64 KB pipe" >&2
     exit 1
   fi
@@ -25,9 +25,10 @@ check() {
   fi
   "$@" help | bun -e 'JSON.parse(await Bun.stdin.text())'
   local err="$WORK/err"
-  "$@" help 2> "$err" | head -1 > /dev/null
-  if [ "${PIPESTATUS[0]}" -gt 1 ] && [ "${PIPESTATUS[0]}" -ne 141 ]; then
-    echo "FAIL: $name: help | head -1 exited ${PIPESTATUS[0]}" >&2
+  local status=0
+  { "$@" help 2> "$err" || status=$?; } | head -1 > /dev/null
+  if [ "$status" -ne 0 ] && [ "$status" -ne 141 ]; then
+    echo "FAIL: $name: help | head -1 exited $status" >&2
     exit 1
   fi
   if [ -s "$err" ]; then

@@ -33,7 +33,7 @@ Preconditions:
 - The page follows the browser's light or dark setting. A dark screenshot is expected when the test profile is dark.
 - `Recent changes` times show in the machine's local time, while the pinned clock is UTC. On a US Eastern machine `12:00` UTC reads `8:00 AM`.
 - The `full` seed's figures come from the shared test scenario. If `test/support/scenario.ts` changes, these figures change with it, and the page must still match `report unpaid`.
-- `solobooks serve` refuses to start when the books file is already gone, exiting 2 with `There are no books in <folder> yet, so there is nothing to approve.` The unreadable alert appears only when the file goes missing after `serve` started.
+- `solobooks serve` refuses to start when the books file is already gone, exiting 2 with `There are no books in <folder>, so there is nothing to approve.` The unreadable alert appears only when the file goes missing after `serve` started.
 - A click while the books file is moved away creates nothing and shows the can't-read message on the card. The same button works once the file is back, with no reload.
 - If the server stops while a tab is loading, the alert reads `This page can't reach solobooks, so start it again with solobooks serve and reload this page.` and the panels read `Can't show invoices until solobooks is running again.` and the like. To see it, kill the `pid` in the run's `run.json` while a hold is on, because `down` also closes the tab.
 - `--hold-data-ms` has to stay under about 15000, because `up` gives the page 20 seconds to answer and fails past that.
