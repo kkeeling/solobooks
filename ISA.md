@@ -301,7 +301,7 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 | isc | type | check | threshold | tool | anchors_to |
 |-----|------|-------|-----------|------|------------|
 | ISC-1 | bun-test | full command suite with outbound sockets trapped | 0 non-loopback connects | bun test test/manifest.test.ts -t "no network" | derived: manifest |
-| ISC-2 | bash | schema and config scanned for credential fields | 0 matches | `rg -i "password\|token\|api_key\|secret" src/db src/config.ts ; test $? -eq 1` | derived: manifest |
+| ISC-2 | bash | schema and config scanned for credential fields | 0 matches | `rg -i "password\|token\|api_key\|secret" src/db src/config.ts \| rg -v ":--" ; test $? -eq 1` | derived: manifest |
 | ISC-3 | bash | dependency list scanned for model SDKs | 0 matches | `jq -r '.dependencies // {} \| keys[]' package.json \| rg -i "anthropic\|openai\|ai-sdk\|gemini" ; test $? -eq 1` | derived: no-ai-inside |
 | ISC-4 | bun-property | debits equal credits after random write sequences | 1000 runs | bun test test/ledger.property.test.ts -t "balances" | literal |
 | ISC-5 | bun-property | amount round-trip exact | 1000 runs | bun test test/money.property.test.ts -t "cents" | literal |
@@ -512,6 +512,7 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
 - 2026-10-31: The maintainer: "You should be driving to ideal state, only stop when you get there, verify all claims and release new versions whenever you deem appropriate." So merging and releasing no longer wait for a per-release ask; the npm passkey step still needs him, because only he can answer it.
 - 2026-10-31: refined: the blank-books bug found on the page was a class. Reproduced in a scratch home: with the books file gone, `report unpaid` answered $0 owed with exit 0, and `client add` wrote to new blank books. Fixed where books are opened: only `setup` creates books now, and `doctor`'s fix no longer leads to blank ones. A dry run on missing books used to answer from empty books in memory, and now refuses too. F16 added.
+- 2026-10-31: refined: an independent review of the blank-books fix found following solobooks' own advice could still reach blank books: setup's synced-folder warning, a bare setup under SOLOBOOKS_DIR, and a zero-byte file passing doctor. All adopted: only `--books` or a first setup may start books, and setup says when it did and where earlier books still are. Also adopted: a repair keeps settings until the folder works, stray arguments refused, a failed write exits non-zero, serve refuses what would leave approve_url wrong. Deferred: nothing.
 - D-auto-2026-10-30T02:18:51.993Z: Auto-resumed from complete to learn at 2026-10-30T02:18:51.993Z — iteration 2
 
 ## Learning
@@ -571,6 +572,7 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 - ISC-139, 146: real Brave via Interceptor (context interceptor-test) 2026-10-31 — Approve with the file away: can't-read message, no new file; same button after mv back: approved. Server killed mid-load: panels read "until solobooks is running again"
 - ISC-145: `bash scripts/pipe-check.sh` PASS on source and compiled binary 2026-10-31 — 76890 bytes through a pipe, valid JSON, `| head -1` quiet
 - ISC-101 probe: `scripts/setup-no-addon.sh` was red since 2a3e010, because it counted the core guide's pointer file as the add-on; narrowed and PASS 2026-10-31
+- ISC-2 probe: matched a SQL comment about token usage since 014_charges.sql; now skips comments, and no column or setting holds a credential 2026-10-31
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
