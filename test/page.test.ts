@@ -48,7 +48,7 @@ async function populated(): Promise<string> {
 /** New books, as the first command against an empty folder leaves them. */
 function fresh(): string {
   const dir = tempDir();
-  openBooks(dbPath(dir)).close();
+  openBooks(dbPath(dir), { create: true }).close();
   return dir;
 }
 
@@ -138,7 +138,7 @@ test("ISC-102.2 error: unreadable books give a plain-words error in the approval
   if (process.getuid?.() !== 0) {
     // Real books this user can't read.
     rmSync(dbPath(dir));
-    openBooks(dbPath(dir)).close();
+    openBooks(dbPath(dir), { create: true }).close();
     chmodSync(dbPath(dir), 0o000);
     await check();
     chmodSync(dbPath(dir), 0o600);

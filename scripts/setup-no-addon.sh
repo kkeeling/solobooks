@@ -21,10 +21,11 @@ env -i HOME="$H" PATH=/usr/bin:/bin "${BIN[@]}" setup > "$H/setup.json"
 grep -q '"mcp": "added"' "$H/setup.json" || fail "setup connected no agent; see $H/setup.json"
 [ -f "$H/.claude/skills/solobooks/SKILL.md" ] || fail "setup didn't copy the solobooks skill"
 
-# Nothing from the add-on: none of its files, under any name it ships with.
-found="$(cd "$H" && find . \( -name 'bill-agent-time' -o -name 'count-time.ts' -o -name 'billing-rule.md' -o -name 'agent-time*' -o -name '*agent-time*' \) -print)"
+# Nothing from the add-on: none of its files, under any name it ships with. The core guide's own
+# references/agent-time.md, which tells an agent the add-on exists and how to ask for it, isn't the add-on.
+found="$(cd "$H" && find . \( -name 'bill-agent-time' -o -name 'count-time.ts' -o -name 'billing-rule.md' -o -name '*agent-time*' \) ! -path '*/skills/solobooks/references/agent-time.md' -print)"
 [ -z "$found" ] || fail "setup installed add-on files: $found"
 # And no mention of it in any file setup wrote or printed, such as a plugin entry in an agent config.
-mentions="$(grep -rIl -e 'agent-time' "$H" 2> /dev/null || true)"
+mentions="$(grep -rIl --exclude-dir=solobooks -e 'agent-time' "$H" 2> /dev/null || true)"
 [ -z "$mentions" ] || fail "setup mentions the add-on in: $mentions"
 echo "PASS: setup connected $(grep -c '"mcp": "added"' "$H/setup.json") agents and installed no add-on: no add-on files, skill, plugin entry or mention in the home"

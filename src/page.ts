@@ -115,6 +115,8 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       return refused(400, "The request body is not valid JSON.", "body");
     }
     if (typeof body !== "object" || body === null) return refused(400, "The request body must be a JSON object.", "body");
+    // Before the one-time code is spent, so the same click works once the file is back.
+    if (!existsSync(file)) return refused(503, unreadable(new Error("the file is not there")), "books");
 
     if (url.pathname === "/approve" || url.pathname === "/reject") {
       const id = body.pending_id;
@@ -389,7 +391,7 @@ for (const item of data.pending) {
   const out = card.querySelector(".outcome");
   const done = (r, verb) => {
     if (r.ok) { card.querySelectorAll("button, input").forEach((b) => (b.disabled = true)); say(out, true, verb); setTimeout(() => settle(card), 2500); }
-    else say(out, false, (r.refusal && r.refusal.reason) + " Reload the page to try again.");
+    else say(out, false, r.refusal && /reload/i.test(r.refusal.reason) ? r.refusal.reason : (r.refusal && r.refusal.reason) + " Reload the page to try again.");
   };
   card.querySelector("[data-approve]").onclick = async () => {
     const exclude = [...card.querySelectorAll("input[data-batch]")].filter((c) => !c.checked).map((c) => Number(c.value));
@@ -421,7 +423,7 @@ if (reg && data.register) reg.onclick = async () => {
 async function loadPanels() {
   let r;
   try { r = await (await fetch("/data", { cache: "no-store" })).json(); }
-  catch (e) { r = { ok: false, refusal: { reason: "This page can't reach solobooks, so start it again with solobooks serve and reload this page." } }; }
+  catch (e) { r = { ok: false, gone: true, refusal: { reason: "This page can't reach solobooks, so start it again with solobooks serve and reload this page." } }; }
   for (const el of document.querySelectorAll(".panel[aria-busy]")) {
     const name = el.id.slice("panel-".length);
     el.removeAttribute("aria-busy");
@@ -433,7 +435,7 @@ async function loadPanels() {
     }
     const p = document.createElement("p");
     p.className = "state error";
-    p.textContent = "Can't show " + el.dataset.label + " while the books can't be read.";
+    p.textContent = "Can't show " + el.dataset.label + (r.gone ? " until solobooks is running again." : " while the books can't be read.");
     el.replaceChildren(p);
   }
   if (r.ok) {

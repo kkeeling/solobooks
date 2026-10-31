@@ -33,9 +33,10 @@ Preconditions:
 
 - Run setup and doctor through `control.ts`, never bare. A bare `solobooks setup` rewrites the person's real agent configs and settings, and it reads `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `SOLOBOOKS_DIR` and `XDG_CONFIG_HOME` from your shell. Run from this checkout, it would also point those configs at this source.
 - `control.ts` sets `SOLOBOOKS_DIR`, which outranks settings, so its runs don't prove the server finds the books from settings alone. The `doctor-negative` script does.
-- A damaged settings file is a known dead end: doctor and setup each name setup as the fix, and setup refuses (`billing-2kg`). Don't report that as a new failure.
+- A damaged settings file can't say where the books are, so a bare setup refuses, naming `solobooks setup --books <folder>`. That command saves the damaged copy as `config.json.damaged` and writes the file again. `doctor` names the same fix.
 - A damaged agent config is a different case. Setup exits 0 with `"mcp": "failed"` and a warning, and doctor exits 1 with `Fix <config>, then run solobooks setup.`
-- `setup --books=<dir>` ignores the folder and uses the default (`billing-c4g`). Put a space before the folder.
+- Only setup starts new books. Every other command and tool refuses with `There are no books in <folder>`, and a bare setup refuses when the recorded books are gone. `setup --books <folder>` starts new ones there.
+- Setup, doctor, `move`, `backup set` and `mcp` read `--flag=value` like `--flag value`, and refuse a flag they don't know.
 - With the plugin installed, setup shows Claude Code with `"mcp": "plugin"` and one skill folder, and doctor reports `the solobooks plugin's server answered with all 70 tools`. That is correct, not a failed registration.
 - In a home with no agent folder or `.claude.json`, doctor exits 1 with `No agent app was found`, while setup exits 0 with a warning. That's correct, so don't weaken a run to get past it.
 - Doctor warns `No backup folder is chosen` on every fresh run. That warning doesn't fail it.

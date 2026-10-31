@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { knownAgents, mcpCommand, readEntry } from "./agents.ts";
 import { booksDir, booksFile, type Env } from "./config.ts";
-import { backupFolder, syncedWarning } from "./durability.ts";
+import { backupFolder, flag, onlyFlags, syncedWarning } from "./durability.ts";
 import { OPS } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { MIGRATIONS } from "./db/migrations.ts";
@@ -19,16 +19,17 @@ type Check = { check: string; ok: boolean; detail: string; fix?: string };
 const SETUP = "Run solobooks setup.";
 
 function checkBooks(argv: string[], env: Env): Check {
-  const i = argv.indexOf("--books");
   let dir: string;
   try {
-    dir = booksDir(i === -1 ? undefined : argv[i + 1], env);
+    dir = booksDir(flag(argv, "books"), env);
   } catch (e) {
     if (!(e instanceof Refusal)) throw e;
-    return { check: "books", ok: false, detail: e.reason, fix: SETUP };
+    return { check: "books", ok: false, detail: e.reason, fix: e.field === "config" ? "Run solobooks setup --books <folder>, naming the folder that holds your books." : SETUP };
   }
   const file = booksFile(dir);
-  if (!existsSync(file)) return { check: "books", ok: false, detail: `There are no books in ${dir} yet.`, fix: SETUP };
+  if (!existsSync(file)) {
+    return { check: "books", ok: false, detail: `There are no books in ${dir}.`, fix: `If they moved or their drive is unplugged, put them back. To start new books there, run solobooks setup --books ${dir}.` };
+  }
   try {
     const db = new Database(file, { readonly: true });
     try {
@@ -124,6 +125,7 @@ function checkSkill(folder: string): Check {
 }
 
 export async function doctor(argv: string[], env: Env) {
+  onlyFlags(argv, "books");
   const checks: Check[] = [checkBooks(argv, env)];
   const agents = knownAgents(env);
   const detected = agents.filter((a) => a.detected);
@@ -191,10 +193,9 @@ export async function doctor(argv: string[], env: Env) {
 
 /** What doctor warns about without failing: live books in a synced folder, and books with no backup folder. */
 function durabilityWarnings(argv: string[], env: Env): string[] {
-  const i = argv.indexOf("--books");
   let dir: string;
   try {
-    dir = booksDir(i === -1 ? undefined : argv[i + 1], env);
+    dir = booksDir(flag(argv, "books"), env);
   } catch {
     return []; // the books check already says so
   }

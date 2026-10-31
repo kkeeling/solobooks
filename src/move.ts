@@ -5,7 +5,7 @@ import { absolute, booksDir, booksFile, DB_FILE, type Env, saveConfig } from "./
 import { openBooks } from "./core/db.ts";
 import { sha256 } from "./core/files.ts";
 import { Refusal } from "./core/refusal.ts";
-import { flag, needHome, openOptions, syncedWarning } from "./durability.ts";
+import { flag, needHome, onlyFlags, openOptions, syncedWarning } from "./durability.ts";
 
 // `solobooks move`: carries the books to a new folder on this machine, or packs them for the agent to carry to another.
 
@@ -32,6 +32,7 @@ function counts(db: Database): Record<string, number> {
  */
 export function move(argv: string[], env: Env) {
   const home = needHome(env);
+  onlyFlags(argv, "books", "to");
   const from = absolute(booksDir(flag(argv, "books"), env), home);
   const given = flag(argv, "to");
   if (!given || !given.trim()) throw new Refusal("Say which empty folder the books move to with --to <dir>.", "to");

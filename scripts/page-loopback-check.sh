@@ -19,6 +19,9 @@ cleanup() {
 trap cleanup EXIT
 
 bun build --compile "$ROOT/src/cli.ts" --outfile "$WORK/solobooks" > /dev/null
+# A scratch home, because setup writes agent configs and serve --port records the port in the settings.
+export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/home/.config"
+"$WORK/solobooks" setup --books "$WORK/books" > /dev/null
 "$WORK/solobooks" client add --name Acme --source test:loopback-check --books "$WORK/books" > /dev/null
 
 "$WORK/solobooks" serve --books "$WORK/books" --port "$PORT" > "$WORK/serve.out" 2>&1 &

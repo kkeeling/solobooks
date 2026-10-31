@@ -27,6 +27,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 3. **Never decide what is taxable.** solobooks adds sales tax only where the person set a rate on a client and named the line kinds it covers. Ask them; don't guess.
 4. **Issued money is locked.** Drafts can change freely. After issue, the only changes are void (a reversal) or a credit note.
 5. **solobooks makes the documents; you deliver them.** `invoice pdf` and `invoice email` give you the file and the text. Send through the person's own mail (prefer leaving a draft for them to send), then record it with `invoice sent`.
+- **"There are no books in <folder>" means stop, not start over.** The books may have moved, or their drive may be unplugged. Tell the person and ask where they are. Never run `solobooks setup --books` to get past this unless the person says they want new, empty books there.
 
 ## Start here
 

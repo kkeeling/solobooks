@@ -66,12 +66,28 @@ export function withWarnings(result: Record<string, unknown>, warnings: string[]
   return warnings.length === 0 ? result : { ...result, warnings };
 }
 
+/** One flag's value, written as `--name value` or `--name=value`. */
 export function flag(argv: string[], name: string): string | undefined {
+  const joined = argv.find((a) => a.startsWith(`--${name}=`));
+  if (joined !== undefined) {
+    const v = joined.slice(name.length + 3);
+    if (v === "") throw new Refusal("That flag needs a value after it.", name);
+    return v;
+  }
   const i = argv.indexOf(`--${name}`);
   if (i === -1) return undefined;
   const v = argv[i + 1];
   if (v === undefined || v.startsWith("--")) throw new Refusal("That flag needs a value after it.", name);
   return v;
+}
+
+/** Refuses any flag this command doesn't read, so a typo can't quietly put the books somewhere else. */
+export function onlyFlags(argv: string[], ...names: string[]): void {
+  for (const a of argv) {
+    if (!a.startsWith("--")) continue;
+    const name = a.slice(2).split("=")[0]!;
+    if (!names.includes(name)) throw new Refusal(`This command has no --${name} flag; it takes ${names.map((n) => `--${n}`).join(" and ")}.`, name);
+  }
 }
 
 export function needHome(env: Env): string {
@@ -83,6 +99,7 @@ export function needHome(env: Env): string {
 /** `solobooks backup set --folder <dir>`: records the backup folder, then writes today's backup there at once. */
 export function backupSet(argv: string[], env: Env) {
   const home = needHome(env);
+  onlyFlags(argv, "folder", "books");
   const given = flag(argv, "folder");
   if (!given || !given.trim()) throw new Refusal("Say which folder backups go to with --folder <dir>.", "folder");
   const folder = absolute(given, home);

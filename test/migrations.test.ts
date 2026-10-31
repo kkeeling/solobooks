@@ -169,7 +169,7 @@ test("migrations: new books, in memory or in a new file, are exactly books migra
   slow.close();
 
   const path = dbPath(tempDir());
-  for (const db of [openBooks(":memory:"), openBooks(path)]) {
+  for (const db of [openBooks(":memory:"), openBooks(path, { create: true })]) {
     expect({ version: db.query("PRAGMA user_version").get(), schema: schema(db), rows: dumpDb(db) }).toEqual(want);
     expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     db.exec("INSERT INTO clients (name, source) VALUES ('Acme', 'test')");

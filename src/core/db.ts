@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, linkSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { migrate, MIGRATIONS } from "../db/migrations.ts";
 import { backupAs } from "./backup.ts";
@@ -40,6 +40,8 @@ function placeFresh(path: string): void {
 }
 
 export interface OpenOptions {
+  /** Start new books when none are there. Only `solobooks setup` asks for this; everything else refuses. */
+  create?: boolean;
   /** The folder the person picked for backups. Without one, a backup before an upgrade goes in the books folder's backups/. */
   backups?: string | null;
   /** The clock, which dates a backup's file name. */
@@ -68,12 +70,23 @@ function backUpBeforeUpgrade(db: Database, path: string, o: OpenOptions): void {
   }
 }
 
+/** Refuses when the books aren't there, so a moved file or an unplugged drive can never read as new, empty books. */
+function refuseMissing(path: string): void {
+  if (existsSync(path) && statSync(path).size > 0) return;
+  const dir = dirname(path);
+  throw new Refusal(
+    `There are no books in ${dir}, so nothing was done; if they moved or their drive is unplugged, put them back, and to start new books there run solobooks setup --books ${dir}.`,
+    "books",
+  );
+}
+
 /**
  * Opens a books file (or ":memory:"), applying any pending migrations, after backing up books from an older solobooks.
  * The default rollback journal is kept on purpose: a rolled-back dry run then leaves the file byte-identical,
  * with no -wal or -shm files beside it.
  */
 export function openBooks(path: string, o: OpenOptions = {}): Books {
+  if (path !== ":memory:" && !o.create) refuseMissing(path);
   let db: Database;
   if (path === ":memory:") {
     db = Database.deserialize(freshImage(), { strict: true });
@@ -95,13 +108,12 @@ export function openBooks(path: string, o: OpenOptions = {}): Books {
 }
 
 /**
- * Opens the books for one command. A dry run never changes the folder: against books that don't exist yet it runs on
- * empty books in memory, and against books an older solobooks saved it upgrades a copy in memory, so the file stays
- * byte-identical and no backup is written.
+ * Opens the books for one command. A dry run never changes the folder: against books an older solobooks saved it
+ * upgrades a copy in memory, so the file stays byte-identical and no backup is written.
  */
 export function openForRun(path: string, dryRun: boolean, o: OpenOptions = {}): Books {
   if (!dryRun) return openBooks(path, o);
-  if (!existsSync(path)) return openBooks(":memory:");
+  refuseMissing(path);
   const file = new Database(path, { readonly: true, strict: true });
   let old: Uint8Array | null;
   try {

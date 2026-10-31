@@ -2,17 +2,17 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: learn
-progress: 137/137
+phase: climbing
+progress: 146/146
 started: 2026-10-23T01:31:17Z
-updated: 2026-10-29T00:00:00Z
+updated: 2026-10-31T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
 principal_stated_goal_locked: 2026-10-21
 context_sufficient: true
 interview_invoked: true
-iteration: 2
+iteration: 3
 resumed_at: 2026-10-30T02:18:51.993Z
 resumed_from_phase: complete
 ---
@@ -283,6 +283,19 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
 - [x] ISC-137: The issued invoice PDF shows each charge as its own line, reading its line text and amount, as the client sees it.
 
 
+### F16 · Refusing to guess
+Why: when solobooks can't find the books or can't act on what it was told, it says so and changes nothing, so nobody bills from, writes to or trusts the wrong books.
+
+- [x] ISC-138: Anti: with the books file missing or empty, every CLI command and MCP tool refuses, creates nothing and reports no figures; only `solobooks setup` creates books.
+- [x] ISC-139: A page click with the books file missing changes nothing on disk, shows the can't-read message, and works once the file is back, with no reload.
+- [x] ISC-140: `solobooks setup` with a recorded folder whose books are gone refuses instead of making blank ones, and naming the folder with `--books` starts new books there.
+- [x] ISC-141: With a damaged settings file, the command solobooks names as the fix repairs it, keeps the damaged copy, and doesn't guess the books folder.
+- [x] ISC-142: `setup`, `doctor`, `move`, `backup set` and `mcp` read `--flag=value` the same as `--flag value`, and refuse a flag they don't know.
+- [x] ISC-143: After `serve --port N`, a pending action's `approve_url` opens that page, from the CLI and from MCP.
+- [x] ISC-144: A second `serve` on a port already in use refuses in plain words.
+- [x] ISC-145: Piped CLI output is complete: `help | wc -c` equals the size written to a file, and `help | head -1` exits without an error.
+- [x] ISC-146: With the server gone, the page's panels say solobooks isn't running and don't blame the books.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -424,6 +437,15 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
 | ISC-136 | screenshot | approval page for a draft carrying a charge | line text and amount visible before approving | Interceptor on the local approval page | derived: gate |
 | ISC-137 | screenshot | issued PDF with a charge | the charge's own line, text and amount, in the rendered page | rendered PDF viewed as an image | derived: client-docs |
 | ISC-134 | bun-test | earlier-release books with pass-through costs | one charge each, invoice links kept | bun test test/migrations.test.ts -t "pass-through to charges" | derived: one-mechanism |
+| ISC-138 | bun-test | every read and write op on a missing and a zero-byte file, CLI and MCP | refused, nothing created | bun test test/missing-books.test.ts | derived: books-always-match |
+| ISC-139 | screenshot | Approve clicked in real Brave with the file moved away, then again once it's back | message shown, no new file, then approved | Interceptor on the local approval page | derived: books-always-match |
+| ISC-140 | bun-test | setup with the recorded file gone, then with --books | refused, then created | bun test test/missing-books.test.ts -t "setup" | derived: books-always-match |
+| ISC-141 | bun-test | damaged settings through setup and doctor | named fix repairs it; bare setup refuses | bun test test/settings.test.ts | derived: install |
+| ISC-142 | bun-test | each command's flags with = and with a typo | same result; typo refused | bun test test/flags.test.ts | derived: install |
+| ISC-143 | bun-test | serve --port in a scratch home, then a gated action from CLI and MCP | approve_url on that port and answering | bun test test/serve-port.test.ts | derived: gate |
+| ISC-144 | bun-test | two serves on one port | second refuses with a reason | bun test test/serve-port.test.ts -t "in use" | derived: gate |
+| ISC-145 | bash | source and compiled binary piped | sizes equal, head exits 0 | `bash scripts/pipe-check.sh` | derived: agent-native |
+| ISC-146 | screenshot | server stopped while a tab loads | panels name the server, not the books | Interceptor capture | derived: human-page |
 
 ## Decisions
 
@@ -488,6 +510,8 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
 - 2026-10-29: An independent review of the F15 build found no double-billing and no path to change an issued invoice, and three defects, all fixed with tests that fail when the fix is undone. A wrong charge on a voided invoice couldn't be removed, so it came back on every draft: deleting it now marks it deleted, and the voided invoice keeps its line. An edit couldn't clear a charge's expense or reference: `unlink_expense` and `clear_reference` do that. Moving a charge's date past its draft's period left it on that draft: the draft now drops it. Invoice lines still don't show their charge id, which is deferred to Remaining Work: adding it changes the line shape that a parked approval compares against.
 - 2026-10-29: npm now refuses publishes from accounts without two-factor (403), so the maintainer turned it on with a passkey for v0.1.5. `bun publish` can't answer a passkey check. What worked: `script -q /dev/null bunx npm publish --access public --auth-type=web < /dev/null` in each `dist/npm/<package>` folder. The first package prints an npmjs.com/auth link; once the maintainer approves it on a trusted device, the other five go through with no link. Each package shows "being processed" for up to about 10 minutes before `latest` moves. Check the registry rather than the publish output.
 - 2026-10-23: Docs scrub before going public. The planning docs were never committed (git ignores docs/). All 88 commits, the 13 fixture books and the remote's refs (main only; no issues, PRs or releases) were scanned for client names, employer, home paths, assistant-system names and credential patterns, with no hits. What stays by design is the maintainer's name in LICENSE and the plugin manifests, and the kkeeling/solobooks URLs.
+- 2026-10-31: The maintainer: "You should be driving to ideal state, only stop when you get there, verify all claims and release new versions whenever you deem appropriate." So merging and releasing no longer wait for a per-release ask; the npm passkey step still needs him, because only he can answer it.
+- 2026-10-31: refined: the blank-books bug found on the page was a class. Reproduced in a scratch home: with the books file gone, `report unpaid` answered $0 owed with exit 0, and `client add` wrote to new blank books. Fixed where books are opened: only `setup` creates books now, and `doctor`'s fix no longer leads to blank ones. A dry run on missing books used to answer from empty books in memory, and now refuses too. F16 added.
 - D-auto-2026-10-30T02:18:51.993Z: Auto-resumed from complete to learn at 2026-10-30T02:18:51.993Z — iteration 2
 
 ## Learning
@@ -511,6 +535,10 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
   refuted by: a real `claude -p` past-invoice import was refused "MCPTool requires permission" for `profile_set` setting only the next invoice number, so the import and the planted-instruction eval both stalled
   learned: the flag is per tool, not per call, so a tool mixing gated and ungated fields makes every call need the person
   criterion now: the payment-instructions change is its own gated tool, and a test holds that the flag sits only on tools whose every call can be gated
+- 2026-10-31 | conjectured: 137/137 meant every probe in the Test Strategy still passed
+  refuted by: `scripts/setup-no-addon.sh` had failed since 2a3e010, and no scratch-home test covered commands on missing books, because the test helpers themselves relied on books appearing by themselves
+  learned: a shell probe outside `bun test` and CI can go red unseen; a closed claim is only as current as its last run
+  criterion now: every release reruns all script probes, not only `bun test`
 - 2026-10-29 | conjectured: ISC-128 (edit and delete until issued) and ISC-129 (void returns charges to waiting) together cover a charge's whole life
   refuted by: an independent review found a wrong charge on a voided invoice could be neither deleted nor zeroed, so it came back on every draft, and an edit moving a charge's date past its draft's period left it billed there
   learned: claims about each state on its own miss the paths between states (voided then deleted, drafted then re-dated); a reviewer reading the code finds those faster than the claims do
@@ -539,6 +567,10 @@ Why: money spent on a client's behalf, such as token usage for their app, gets b
 - ISC-137: issued invoice 1001 rendered to PNG and viewed 2026-10-29 — "OpenAI API usage, Sep 2026  $48.12" is its own line, total $1,548.12
 - ISC-29, 45, 119..134: probes as written 2026-10-29 — `bun test` 208 pass 0 fail; ISC-120 property test 1000 runs; ISC-134 migrates issued, voided and draft pass-through lines from v13 books and the restored lock refuses both old- and new-invoice changes; the over-charge and reference checks, the date-past-period drop, the deleted-charge filter, `unlink_expense` and the draft-only line delete each turned a test red when undone; `bash scripts/export-check.sh` hledger check passed; eval selftest 14 of 14; independent review findings fixed (Decisions 2026-10-29)
 - ISC-115, 118: real Brave via Interceptor (context interceptor-test) 2026-10-24: at 1470px the grid is two 520px columns; in a 375px frame one 341px column with scrollWidth equal to the viewport; populated books in light and dark, plus loading, empty and error states re-shot under the new design
+- ISC-138, 140..144: `bun test` 232 pass 0 fail 2026-10-31 — new tests in test/missing-books, settings, flags, serve-port; original repro script before/after in a scratch home
+- ISC-139, 146: real Brave via Interceptor (context interceptor-test) 2026-10-31 — Approve with the file away: can't-read message, no new file; same button after mv back: approved. Server killed mid-load: panels read "until solobooks is running again"
+- ISC-145: `bash scripts/pipe-check.sh` PASS on source and compiled binary 2026-10-31 — 76890 bytes through a pipe, valid JSON, `| head -1` quiet
+- ISC-101 probe: `scripts/setup-no-addon.sh` was red since 2a3e010, because it counted the core guide's pointer file as the add-on; narrowed and PASS 2026-10-31
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
