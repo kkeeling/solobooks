@@ -2,8 +2,8 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: climbing
-progress: 185/186
+phase: complete
+progress: 186/186
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -348,7 +348,7 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - [x] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
 - [x] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
 - [x] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
-- [ ] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
+- [x] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
 - [x] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
 - [x] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
 
@@ -693,10 +693,13 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - ISC-175..183, 185, 186: `bun test` 406 pass 0 fail 2026-11-01, each new test seen failing with its fix undone; live on scratch books: credit applied, email and PDF read with $123.12 due, void refused naming the command with today's date, taken back through MCP, second take-back refused, void approved in real Brave via Interceptor; retainer start date billed August and September as carried over; start date over a past invoice refused; page screenshot viewed
 - v0.1.7 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.7`, hash matches SHA256SUMS, setup and doctor pass
 - All script probes on ac2e800 2026-11-01, including `scripts/release-probes.sh`, export-check and plugin-install-check, PASS; real-agent evals on the same commit: install with Claude Code and Codex, onboarding, past invoices, planted instructions, charges, all PASS
+- ISC-184: real release 2026-11-01, run 41347916659: the probes step ran on GitHub's runner before publish and passed; a failing probe stopping the script is proven by test/release.test.ts with stand-in probes, not by a failed real release
+- v0.1.8 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.8`, hash matches SHA256SUMS, setup and doctor pass
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
 - [x] Keep the planning docs (`docs/brief.md`, `docs/proposal.md`, `docs/research/`) out of the public repo or scrub them first. They name the maintainer's clients and personal tax situation — they're a release step, not a product claim.
+- [ ] Publish 0.1.6 to 0.1.8 to npm: the registry is at 0.1.5, because this Mac isn't signed in and publishing needs the maintainer's passkey.
 - [ ] First real test: the maintainer's own month of client work becomes a correct invoice through the agent-time add-on — dogfood, not part of the product's definition of done.
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
