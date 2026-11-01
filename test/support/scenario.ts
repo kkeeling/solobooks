@@ -102,7 +102,7 @@ export const SCENARIO: { op: string; input: Record<string, unknown> }[] = [
   { op: "payment_refund", input: { payment_id: 4, date: "2026-10-22", reason: "Part of the overpayment", amount_cents: 1000, fee_returned_cents: 30 } },
   { op: "invoice_draft", input: { client_id: 1, period_start: "2026-11-01", period_end: "2026-11-30" } },
   { op: "invoice_issue", input: { id: 6 } },
-  { op: "client_credit_apply", input: { client_id: 1, invoice_id: 6, date: "2026-11-30", amount_cents: 1000 } },
+  { op: "client_credit_apply", input: { client_id: 1, invoice_id: 6, date: "2026-10-22", amount_cents: 1000 } },
   {
     op: "sales_tax_payment_add",
     input: { date: "2026-10-21", amount_cents: 500, paid_from_account_id: acct(1), tax_label: "IL sales tax", period_start: "2026-10-01", period_end: "2026-10-31", confirmation: "IL-778" },

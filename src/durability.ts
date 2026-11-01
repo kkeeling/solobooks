@@ -63,7 +63,7 @@ export function beforeWrite(db: Books, dir: string, env: Env, dryRun: boolean): 
 
 /** A write's result with the warnings added, when there are any. */
 export function withWarnings(result: Record<string, unknown>, warnings: string[]): Record<string, unknown> {
-  return warnings.length === 0 ? result : { ...result, warnings };
+  return warnings.length === 0 ? result : { ...result, warnings: [...((result.warnings as string[] | undefined) ?? []), ...warnings] };
 }
 
 /** One flag's value, written as `--name value` or `--name=value`. */
@@ -71,13 +71,14 @@ export function flag(argv: string[], name: string): string | undefined {
   const joined = argv.find((a) => a.startsWith(`--${name}=`));
   if (joined !== undefined) {
     const v = joined.slice(name.length + 3);
-    if (v === "") throw new Refusal("That flag needs a value after it.", name);
+    if (!v.trim()) throw new Refusal("That flag needs a value after it.", name);
     return v;
   }
   const i = argv.indexOf(`--${name}`);
   if (i === -1) return undefined;
   const v = argv[i + 1];
-  if (v === undefined || v.startsWith("--")) throw new Refusal("That flag needs a value after it.", name);
+  // An empty value is what an unset shell variable leaves, and it must not mean the current folder.
+  if (v === undefined || v.startsWith("--") || !v.trim()) throw new Refusal("That flag needs a value after it.", name);
   return v;
 }
 
@@ -107,6 +108,7 @@ export function backupSet(argv: string[], env: Env) {
   onlyFlags(argv, "folder", "books");
   const given = flag(argv, "folder");
   if (!given || !given.trim()) throw new Refusal("Say which folder backups go to with --folder <dir>.", "folder");
+  const books = flag(argv, "books"); // read now: a bad value has to stop this before anything is created
   const folder = absolute(given, home);
   try {
     mkdirSync(folder, { recursive: true });
@@ -119,7 +121,7 @@ export function backupSet(argv: string[], env: Env) {
   // Prove the folder works now, with today's backup, if there are books to back up.
   let dir: string | null = null;
   try {
-    dir = booksDir(flag(argv, "books"), env);
+    dir = booksDir(books, env);
   } catch (e) {
     if (!(e instanceof Refusal)) throw e;
   }

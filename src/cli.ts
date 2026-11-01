@@ -3,7 +3,7 @@
 // start before this polyfill and crash.
 import "reflect-metadata";
 import { resolve } from "node:path";
-import { booksDir, booksFile, now, pagePort, pageUrl, readConfig, saveConfig, type Env } from "./config.ts";
+import { booksDir, booksFile, now, pagePort, pageUrl, portNumber, readConfig, saveConfig, type Env } from "./config.ts";
 import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
@@ -150,7 +150,7 @@ export async function serve(argv: string[], env: Env = process.env) {
   if (flags.port !== undefined && env.SOLOBOOKS_PORT && env.SOLOBOOKS_PORT !== flags.port) {
     throw new Refusal(`SOLOBOOKS_PORT says ${env.SOLOBOOKS_PORT} and --port says ${flags.port}, and approval links would follow the variable, so use one or the other.`, "port");
   }
-  const port = flags.port !== undefined ? pagePort({ SOLOBOOKS_PORT: flags.port }) : pagePort(env);
+  const port = flags.port !== undefined ? portNumber(flags.port, "--port") : pagePort(env);
   // A test seam: holds the page's data back this many milliseconds, so its loading state can be seen and captured.
   const delay = env.SOLOBOOKS_PAGE_DELAY_MS ? Number(env.SOLOBOOKS_PAGE_DELAY_MS) : 0;
   if (!Number.isInteger(delay) || delay < 0 || delay > 600_000) {

@@ -24,7 +24,7 @@ function cells(line: string): string[] {
 async function books() {
   const dir = await acmeBooks();
   const inv = await issueOctober(dir);
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, fee_cents: 1234, deposit_account_id: acct(1) }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-22", amount_cents: inv.total_cents, fee_cents: 1234, deposit_account_id: acct(1) }));
   // Text from outside: a memo with a comma, a quote, a line break and a spreadsheet formula.
   await ok(dir, json(["expense", "add"], { date: "2026-12-31", amount_cents: 101, vendor: '=HYPERLINK("x")', memo: 'Line one,\nline "two"', account_id: acct(2), paid_from_account_id: acct(1) }));
   await ok(dir, json(["expense", "add"], { date: "2027-01-02", amount_cents: 500, vendor: "Next year", account_id: acct(2), paid_from_account_id: acct(1) }));

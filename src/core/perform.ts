@@ -4,7 +4,7 @@ import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { documentOps } from "./documents.ts";
 import { expenseOps } from "./expenses.ts";
-import { DEFAULT_PAGE, gateOps, park, refuseIfHeld, requiredLevel } from "./gate.ts";
+import { alreadyWaiting, asItStands, DEFAULT_PAGE, gateOps, park, refuseIfHeld, requiredLevel, waitingNow } from "./gate.ts";
 import { saveFiles, sha256 } from "./files.ts";
 import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
@@ -124,10 +124,10 @@ function execute(
   // The gate: a gated action the person hasn't left to the agent is parked as a pending action instead of run.
   const action = typeof op.gate === "function" ? op.gate(input, db) : (op.gate ?? null);
   const level = action === null ? "agent_decides" : requiredLevel(db, action, input);
-  if (action !== null && level !== "agent_decides") {
-    return runWrite(db, write, (ctx) => park(db, op, input, ctx, action, level, key));
-  }
   return runWrite(db, write, (ctx) => {
+    const card = alreadyWaiting(db, op.name, input);
+    if (card) return waitingNow(db, card, ctx.page);
+    if (action !== null && level !== "agent_decides") return park(db, op, input, ctx, action, level, key);
     refuseIfHeld(db, op.name, input);
     const result = op.run(db, input, ctx);
     if (result instanceof Promise) throw new Error(`${op.name} is a write, so it must finish inside its transaction`);
@@ -148,7 +148,8 @@ export interface Write {
 
 /**
  * The one way anything changes the books: the change, the balance check and exactly one history row commit together,
- * or nothing does. A repeated idempotency key returns the first result; a dry run takes the same path and rolls back.
+ * or nothing does. A repeated idempotency key returns the first result, or for a parked action the person has decided
+ * since, that decision; a dry run takes the same path and rolls back.
  */
 export function runWrite(db: Books, w: Write, change: (ctx: Ctx) => Record<string, unknown>): Record<string, unknown> {
   const payload = canonical({ op: w.name, input: w.input, source: w.source });
@@ -162,7 +163,7 @@ export function runWrite(db: Books, w: Write, change: (ctx: Ctx) => Record<strin
       if (prior.payload_hash !== hash) {
         throw new Refusal("This idempotency_key was already used for a different write, so use a new key.", "idempotency_key");
       }
-      const result = JSON.parse(prior.result);
+      const result = asItStands(db, JSON.parse(prior.result), w.page);
       return w.dryRun ? { dry_run: true, result } : result;
     }
   }

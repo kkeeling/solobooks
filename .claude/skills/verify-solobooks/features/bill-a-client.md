@@ -43,4 +43,7 @@ Preconditions:
 - A draft can also carry manual lines through `--json '{"lines":[{"description":"Setup","amount_cents":5000}]}'`, which gets past the `Nothing unbilled` refusal.
 - A draft has a PDF too: `invoice pdf --id 1` before approval saves `invoices/draft-1.pdf`. Only the numbered file proves the issue.
 - `invoice pdf` returns a path relative to the books folder. The scratch folder is gone after `down`, so read the copy under `books-final/`.
+- Asking to issue or void a second time returns the card already waiting, with the same `pending_id`. Once a void is done, another says `Invoice 1001 is already void.`
+- A voided invoice's PDF replaces the old one at the same path. It says `VOID INVOICE`, `Status: void, nothing is owed on it` and `Total voided $273.12`, with a VOID watermark and no amount due.
+- `invoice email` and `invoice reminder` refuse a client with no email address, naming `solobooks client edit --id <id> --email <address>`. A reminder on an invoice that isn't overdue refuses first with `Invoice 1002 isn't overdue until after November 21, 2026.`
 - The clock is pinned, so dates in the output are the run's, not today's. Pass `--now` on `up` when a date matters.

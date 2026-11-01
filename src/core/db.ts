@@ -70,6 +70,35 @@ function backUpBeforeUpgrade(db: Database, path: string, o: OpenOptions): void {
   }
 }
 
+/** Whether a database holds something other than books: tables, without the two every solobooks has had from its first version. */
+export function isOtherDatabase(db: Database): boolean {
+  const names = new Set((db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name));
+  return names.size > 0 && !(names.has("history") && names.has("accounts"));
+}
+
+/** Refuses a database from another program before anything is written to it, so it stays byte-identical. */
+function refuseOtherDatabase(db: Database, path: string): void {
+  if (!isOtherDatabase(db)) return;
+  throw new Refusal(
+    `The file ${path} is a database from something other than solobooks, so solobooks left it as it was; move it out of the way, or name the folder that holds your books with solobooks setup --books <folder>.`,
+    "books",
+  );
+}
+
+/** Whether books have ever been written to. One that can't be read counts as holding something, to be safe. */
+export function hasHistory(path: string): boolean {
+  try {
+    const db = new Database(path, { readonly: true });
+    try {
+      return db.query("SELECT 1 FROM history LIMIT 1").get() !== null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return true;
+  }
+}
+
 /** Whether books are really at this path: an empty file, as a failed restore leaves, isn't books. */
 export function hasBooks(path: string): boolean {
   return existsSync(path) && statSync(path).size > 0;
@@ -105,7 +134,10 @@ export function openBooks(path: string, o: OpenOptions = {}): Books {
   try {
     db.exec("PRAGMA foreign_keys = ON");
     db.exec("PRAGMA busy_timeout = 5000");
-    if (path !== ":memory:") backUpBeforeUpgrade(db, path, o);
+    if (path !== ":memory:") {
+      refuseOtherDatabase(db, path);
+      backUpBeforeUpgrade(db, path, o);
+    }
     migrate(db);
   } catch (e) {
     db.close(); // a file that isn't books, or can't be read, isn't left open
@@ -124,6 +156,7 @@ export function openForRun(path: string, dryRun: boolean, o: OpenOptions = {}): 
   const file = new Database(path, { readonly: true, strict: true });
   let old: Uint8Array | null;
   try {
+    refuseOtherDatabase(file, path);
     old = version(file) < MIGRATIONS.length ? file.serialize() : null; // SQLite's own consistent read of the file
   } finally {
     file.close();

@@ -17,7 +17,7 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const title = doc.kind === "credit" ? "Credit note" : "Invoice";
   const when = new Date(createdAt);
-  pdf.setTitle(doc.draft ? `Draft ${title.toLowerCase()}` : `${title} ${doc.number}`);
+  pdf.setTitle(doc.draft ? `Draft ${title.toLowerCase()}` : doc.void ? `Void ${title.toLowerCase()} ${doc.number}` : `${title} ${doc.number}`);
   pdf.setAuthor(clean(doc.seller.legal_name ?? "", regular));
   pdf.setProducer("solobooks");
   pdf.setCreator("solobooks");
@@ -32,6 +32,7 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
     pages.push(page);
     // Drawn first so it sits behind the text.
     if (doc.draft) page.drawText("DRAFT", { x: 150, y: 260, size: 120, font: bold, color: rgb(0.9, 0.9, 0.9), rotate: degrees(35) });
+    if (doc.void) page.drawText("VOID", { x: 190, y: 260, size: 120, font: bold, color: rgb(0.9, 0.9, 0.9), rotate: degrees(35) });
     y = H - M;
   };
   const text = (s: string, x: number, size = 10, font = regular, color = INK) => page.drawText(clean(s, font), { x, y, size, font, color });
@@ -63,15 +64,17 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
 
   // Title and facts, top right.
   y = H - M;
-  right(doc.draft ? `DRAFT ${title.toUpperCase()}` : title.toUpperCase(), W - M, 20, bold);
+  right(doc.draft ? `DRAFT ${title.toUpperCase()}` : doc.void ? `VOID ${title.toUpperCase()}` : title.toUpperCase(), W - M, 20, bold);
   y -= 24;
   const label = doc.kind === "credit" ? "Credit note number" : "Invoice number";
   const facts: string[] = [doc.draft ? `${label}: assigned when issued` : `${label}: ${doc.number}`];
   if (doc.credits_number) facts.push(`Credits invoice: ${doc.credits_number}`);
   facts.push(`${doc.kind === "credit" ? "Date" : "Invoice date"}: ${doc.invoice_date ? longDate(doc.invoice_date) : "set when issued"}`);
   facts.push(`Service period: ${longDate(doc.period_start)} – ${longDate(doc.period_end)}`);
-  if (doc.terms) facts.push(`Terms: ${doc.terms}`);
-  if (doc.kind === "invoice") facts.push(`Due date: ${doc.due_date ? longDate(doc.due_date) : "set when issued"}`);
+  // A void document asks for nothing, so it carries no terms, due date or way to pay.
+  if (doc.void) facts.push("Status: void, nothing is owed on it");
+  if (doc.terms && !doc.void) facts.push(`Terms: ${doc.terms}`);
+  if (doc.kind === "invoice" && !doc.void) facts.push(`Due date: ${doc.due_date ? longDate(doc.due_date) : "set when issued"}`);
   for (const f of facts) {
     right(f, W - M);
     y -= 13;
@@ -126,7 +129,7 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
     const base = doc.tax.taxable_cents === doc.subtotal_cents ? "" : ` of ${dollars(doc.tax.taxable_cents)}`;
     row(`${doc.tax.label} (${percent(doc.tax.rate_ppm)}${base})`, doc.tax.amount_cents);
   }
-  row(doc.kind === "credit" ? "Total credit" : "Total due", doc.total_cents, bold, 12);
+  row(doc.void ? "Total voided" : doc.kind === "credit" ? "Total credit" : "Total due", doc.total_cents, bold, 12);
 
   // Payment instructions and note.
   const block = (heading: string, body: string | null) => {
@@ -141,7 +144,7 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
       y -= 13;
     }
   };
-  if (doc.kind === "invoice") block("How to pay", doc.payment_instructions);
+  if (doc.kind === "invoice" && !doc.void) block("How to pay", doc.payment_instructions);
   block(doc.kind === "credit" ? "Reason" : "Note", doc.note);
 
   if (pages.length > 1) {
