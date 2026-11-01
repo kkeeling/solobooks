@@ -84,7 +84,6 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     try {
       if (!hasBooks(file)) throw noBooks();
       db = openBooks(file, openOptions(o.env));
-      db.query("SELECT 1 FROM pending_actions LIMIT 1").get();
     } catch (e) {
       db?.close();
       return refused(503, unreadable(e), "books");

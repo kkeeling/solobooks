@@ -205,6 +205,21 @@ for (const path of ["/approve", "/reject"]) {
   });
 }
 
+test("ISC-161: a books file cut short gets the can't-read message and spends no code", async () => {
+  const { books, page, click } = await clickable();
+  try {
+    const whole = readFileSync(dbPath(books));
+    writeFileSync(dbPath(books), whole.subarray(0, 4096));
+    const r = await click();
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any).refusal.reason).toStartWith(`solobooks can't read the books file at ${dbPath(books)} (`);
+    writeFileSync(dbPath(books), whole);
+    expect((await click()).status).toBe(200);
+  } finally {
+    page.stop();
+  }
+});
+
 test("ISC-161: registering a passkey with a books file that isn't books spends no code either", async () => {
   const { books, page, data } = await clickable();
   try {
