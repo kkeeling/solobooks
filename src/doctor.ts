@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
-import { existsSync, readFileSync } from "node:fs";
-import { hasBooks } from "./core/db.ts";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { hasBooks, isOtherDatabase } from "./core/db.ts";
 import { join } from "node:path";
 import { knownAgents, mcpCommand, readEntry } from "./agents.ts";
 import { absolute, booksDir, booksFile, type Env, homeDir, readConfig } from "./config.ts";
@@ -20,8 +20,8 @@ type Check = { check: string; ok: boolean; detail: string; fix?: string };
 const SETUP = "Run solobooks setup.";
 
 /** The fix for settings solobooks refuses: damaged ones setup can write again once told the folder; unreadable ones it can't. */
-const settingsFix = (e: Refusal) =>
-  e.field === "settings" ? "Check that you can open the settings file, then run solobooks doctor again." : "Run solobooks setup --books <folder>, naming the folder that holds your books.";
+const settingsFix = (field: unknown) =>
+  field === "settings" ? "Check that you can open the settings file, then run solobooks doctor again." : "Run solobooks setup --books <folder>, naming the folder that holds your books.";
 
 /** Damaged settings stop every command, even with the folder named by --books or SOLOBOOKS_DIR, which skip reading them for the folder. */
 function checkSettings(env: Env): Check | null {
@@ -30,7 +30,7 @@ function checkSettings(env: Env): Check | null {
     return null;
   } catch (e) {
     if (!(e instanceof Refusal)) throw e;
-    return { check: "settings", ok: false, detail: e.reason, fix: settingsFix(e) };
+    return { check: "settings", ok: false, detail: e.reason, fix: settingsFix(e.field) };
   }
 }
 
@@ -40,7 +40,7 @@ function checkBooks(argv: string[], env: Env): Check {
     dir = booksDir(flag(argv, "books"), env);
   } catch (e) {
     if (!(e instanceof Refusal)) throw e;
-    return { check: "books", ok: false, detail: e.reason, fix: e.field === "config" || e.field === "settings" ? settingsFix(e) : SETUP };
+    return { check: "books", ok: false, detail: e.reason, fix: e.field === "config" || e.field === "settings" ? settingsFix(e.field) : SETUP };
   }
   const file = booksFile(dir);
   if (!hasBooks(file)) {
@@ -55,6 +55,9 @@ function checkBooks(argv: string[], env: Env): Check {
       if (user_version > MIGRATIONS.length) {
         return { check: "books", ok: false, detail: `The books in ${dir} were written by a newer solobooks.`, fix: "Install the latest solobooks." };
       }
+      if (isOtherDatabase(db)) {
+        return { check: "books", ok: false, detail: `The file ${file} is a database from something other than solobooks.`, fix: "Move that file out of the way, or run solobooks setup --books <folder>, naming the folder that holds your books." };
+      }
       return { check: "books", ok: true, detail: file };
     } finally {
       db.close();
@@ -68,7 +71,7 @@ function checkBooks(argv: string[], env: Env): Check {
  * Starts the MCP server the way an agent would and asks for its tools. Returns the tool names or what went wrong. A
  * server that answers but can't reach the books or settings says why in `refused`, for doctor to weigh.
  */
-export async function handshake(command: string[], env: Env, timeoutMs = 20_000): Promise<{ tools: string[]; refused?: string } | { error: string }> {
+export async function handshake(command: string[], env: Env, timeoutMs = 20_000): Promise<{ tools: string[]; refused?: string; field?: string } | { error: string }> {
   // A registered command may be a bare name found through PATH, such as npx.
   if (!command[0] || !(existsSync(command[0]) || Bun.which(command[0], { PATH: env.PATH ?? "" }))) return { error: `${command[0] ?? "(no command)"} doesn't exist` };
   let proc: ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>;
@@ -116,7 +119,7 @@ export async function handshake(command: string[], env: Env, timeoutMs = 20_000)
     const found = about === "books" || about === "config" || about === "settings";
     if (read.error || (read.result?.isError && !found)) throw new Error(`it couldn't read the books: ${why}`);
     const tools = (list.result.tools as { name: string }[]).map((t) => t.name);
-    return read.result?.isError ? { tools, refused: why as string } : { tools };
+    return read.result?.isError ? { tools, refused: why as string, field: about as string } : { tools };
   };
   let timer: Timer | undefined;
   try {
@@ -144,6 +147,24 @@ function checkSkill(folder: string): Check {
     : { check: "skill", ok: true, detail: folder };
 }
 
+/** The folder a server started with these arguments and this environment would use, or null when it can't tell. */
+function serverFolder(args: string[], env: Env): string | null {
+  try {
+    return booksDir(flag(args, "books"), env);
+  } catch {
+    return null;
+  }
+}
+
+/** A folder's real path, so two names for one folder compare equal. */
+function real(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+
 export async function doctor(argv: string[], env: Env) {
   onlyFlags(argv, "books");
   flag(argv, "books"); // an empty value is refused outright, not reported as a failed check
@@ -159,31 +180,45 @@ export async function doctor(argv: string[], env: Env) {
     checks.push({ check: "agents", ok: false, detail: "No agent app was found.", fix: "Install Claude Code or Codex, then run solobooks setup." });
   }
   const answers = new Map<string, Awaited<ReturnType<typeof handshake>>>();
-  const ask = async (command: string[]) => {
-    const key = JSON.stringify(command);
-    if (!answers.has(key)) answers.set(key, await handshake(command, env));
+  const ask = async (command: string[], serverEnv: Env) => {
+    const key = JSON.stringify([command, serverEnv]);
+    if (!answers.has(key)) answers.set(key, await handshake(command, serverEnv));
     return answers.get(key)!;
   };
   const want = OPS.map((o) => o.name).sort().join(",");
-  // A server that can't find the books fails only when doctor's own books check passed, as with doctor --books: the
-  // agent's server doesn't get that flag. When the books check failed too, that check's one fix covers both.
-  const lost = (r: Awaited<ReturnType<typeof handshake>>) => books.ok && "refused" in r && r.refused !== undefined;
-  const answered = (r: Awaited<ReturnType<typeof handshake>>) => {
-    if ("error" in r) return r.error;
-    if (r.tools.slice().sort().join(",") !== want) return `it answered with ${r.tools.length} tools, not the ${OPS.length} this solobooks has`;
-    return lost(r) ? `it can't reach the books on its own: ${r.refused}` : null;
+  const here = (dir: string) => absolute(dir, homeDir(env) ?? "");
+  const point = () => `Run solobooks setup --books "${here(booksDir(flag(argv, "books"), env))}", so the server finds these books from the settings.`;
+  /**
+   * What an agent's server does, started as that agent starts it: with the entry's own env and not this shell's
+   * SOLOBOOKS_DIR, which an app started from the Dock doesn't have. A server that can't find the books, or uses other
+   * ones, fails only when doctor's own books check passed, as with doctor --books: the agent's server doesn't get that
+   * flag. When the books check failed too, that check's one fix covers both.
+   */
+  const probe = async (command: string[], own?: unknown): Promise<{ problem: string | null; fix?: string }> => {
+    const { SOLOBOOKS_DIR: _shell, ...inherited } = env;
+    const entryEnv = own && typeof own === "object" ? Object.fromEntries(Object.entries(own).map(([k, v]) => [k, String(v)])) : {};
+    const serverEnv: Env = { ...inherited, ...entryEnv };
+    const r = await ask(command, serverEnv);
+    if ("error" in r) return { problem: r.error };
+    if (r.tools.slice().sort().join(",") !== want) return { problem: `it answered with ${r.tools.length} tools, not the ${OPS.length} this solobooks has` };
+    if (!books.ok) return { problem: null };
+    if (r.refused !== undefined) {
+      return { problem: `it can't reach the books on its own: ${r.refused}`, fix: r.field === "settings" ? settingsFix(r.field) : point() };
+    }
+    const theirs = serverFolder(command.slice(1), serverEnv);
+    const ours = here(booksDir(flag(argv, "books"), env));
+    if (theirs && real(here(theirs)) !== real(ours)) return { problem: `it uses the books in "${here(theirs)}", not the ones in "${ours}"`, fix: point() };
+    return { problem: null };
   };
-  const point = () => `Run solobooks setup --books "${absolute(booksDir(flag(argv, "books"), env), homeDir(env) ?? "")}", so the server finds these books from the settings.`;
 
   for (const a of detected) {
     const check = `${a.name} MCP`;
     if (a.plugin) {
-      const r = await ask([join(a.plugin, "plugin", "mcp.sh")]);
-      const problem = answered(r);
+      const { problem, fix } = await probe([join(a.plugin, "plugin", "mcp.sh")]);
       checks.push(
         problem === null
           ? { check, ok: true, detail: `the solobooks plugin's server answered with all ${OPS.length} tools` }
-          : { check, ok: false, detail: `The solobooks plugin's server doesn't work: ${problem}.`, fix: lost(r) ? point() : "Run claude plugin update solobooks@solobooks, and install the solobooks app if it's missing." },
+          : { check, ok: false, detail: `The solobooks plugin's server doesn't work: ${problem}.`, fix: fix ?? "Run claude plugin update solobooks@solobooks, and install the solobooks app if it's missing." },
       );
       continue;
     }
@@ -200,19 +235,17 @@ export async function doctor(argv: string[], env: Env) {
       continue;
     }
     const args = Array.isArray(e.args) ? e.args.map(String) : [];
-    const r = await ask([e.command, ...args]);
-    const problem = answered(r);
+    const { problem, fix } = await probe([e.command, ...args], e.env);
     checks.push(
       problem === null
         ? { check, ok: true, detail: `${a.config}: the server answered with all ${OPS.length} tools` }
-        : { check, ok: false, detail: `The solobooks server registered in ${a.config} doesn't work: ${problem}.`, fix: lost(r) ? point() : SETUP },
+        : { check, ok: false, detail: `The solobooks server registered in ${a.config} doesn't work: ${problem}.`, fix: fix ?? SETUP },
     );
   }
   if (detected.length === 0) {
     // Still prove this binary serves MCP, so the person knows the install itself works.
-    const r = await ask(mcpCommand());
-    const problem = answered(r);
-    checks.push(problem === null ? { check: "MCP server", ok: true, detail: `answered with all ${OPS.length} tools` } : { check: "MCP server", ok: false, detail: problem, fix: lost(r) ? point() : "Reinstall solobooks." });
+    const { problem, fix } = await probe(mcpCommand());
+    checks.push(problem === null ? { check: "MCP server", ok: true, detail: `answered with all ${OPS.length} tools` } : { check: "MCP server", ok: false, detail: problem, fix: fix ?? "Reinstall solobooks." });
   }
   for (const folder of skillDirs(env, agents)) checks.push(checkSkill(join(folder, SKILL_NAME)));
 

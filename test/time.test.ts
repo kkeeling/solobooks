@@ -92,10 +92,23 @@ test("billing-waj: a time entry moved past its draft's period drops off the draf
   const d = await draftOctober(dir);
   const has = async () => (await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice.lines.some((l: any) => l.description.includes("Moved later"));
   expect(await has()).toBe(true);
-  await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-10-25", ...S]); // still inside: it follows
+  const inside = await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-10-25", ...S]); // still inside: it follows
+  expect(inside.dropped_from_draft).toBeUndefined();
   expect(await has()).toBe(true);
-  await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-11-20", ...S]);
+  const past = await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-11-20", ...S]);
+  expect(past.dropped_from_draft).toMatchObject({ invoice_id: d.id });
+  expect(past.dropped_from_draft.reason).toContain("after the draft's period, which ends 2026-10-31");
   expect(await has()).toBe(false);
   const next = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2026-11-01", "--period-end", "2026-11-30", ...S])).invoice;
   expect(next.lines.some((l: any) => l.description.includes("Moved later"))).toBe(true);
+});
+
+test("billing-waj: a time entry moved to another client says it came off the draft", async () => {
+  const dir = await acmeBooks();
+  await ok(dir, ["client", "add", "--name", "Beta LLC", ...S]);
+  const entry = (await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-10-20", "--minutes", "30", "--note", "Wrong client", ...S])).time_entry;
+  const d = await draftOctober(dir);
+  const moved = await ok(dir, ["time", "edit", "--id", String(entry.id), "--client-id", "2", ...S]);
+  expect(moved.dropped_from_draft).toMatchObject({ invoice_id: d.id });
+  expect(moved.dropped_from_draft.reason).toContain("another client");
 });

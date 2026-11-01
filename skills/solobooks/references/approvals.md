@@ -23,7 +23,9 @@ You'll get something like:
 - **Don't claim it happened.** No "I've issued your invoice", no PDF or email for it, no `invoice sent`, until it's approved.
 - **Where they approve:** an agent app that supports MCP elicitation can show the approval right in the chat, inside the same tool call. No app has been seen doing it yet (Claude Code 2.1 asks only whether to run the tool, which is not the approval), so expect the page. If the person approved there, the result already says `"status": "approved"` with the outcome. Otherwise they approve on the local approval page: start it with `solobooks serve` (it keeps running; start it in the background if you can) and give them the `approve_url`. If port 7317 is taken, `solobooks serve --port <n>` uses another, and solobooks remembers it, so every later `approve_url` opens that page. Passkey level always uses the page.
 - **Checking back:** `pending get --id <pending_id>` shows `pending`, `approved` (with the result) or `rejected`. Look before you continue. Repeating a request with its `idempotency_key` answers the same way: once the person has decided, it says `"status": "approved"` with the `result`, or `"status": "rejected"`, and it doesn't ask again.
-- **Asking twice:** asking to issue a draft that is already waiting returns that same card, so there is never a second one to approve.
+- **Asking twice:** asking to issue a draft, or void an invoice, that is already waiting returns that same card, so there is never a second one to approve.
+- **Number moved:** if another invoice took the number a card shows, approving it answers that what it would do has changed and nothing issues. Tell the person to reject it, then ask again.
+- **Same amount twice:** a card, or at `agent_decides` a result's `warnings`, may name an earlier payment on that invoice and account for the same amount. Check with the person that it isn't the same money before going on.
 - **Rejected** means the person said no. Ask what they'd like changed; don't resubmit the same thing.
 - **While a draft waits,** it can't be edited. If something needs to change, the person rejects it, you edit the draft, and you ask again.
 

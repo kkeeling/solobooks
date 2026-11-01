@@ -63,7 +63,7 @@ export function beforeWrite(db: Books, dir: string, env: Env, dryRun: boolean): 
 
 /** A write's result with the warnings added, when there are any. */
 export function withWarnings(result: Record<string, unknown>, warnings: string[]): Record<string, unknown> {
-  return warnings.length === 0 ? result : { ...result, warnings };
+  return warnings.length === 0 ? result : { ...result, warnings: [...((result.warnings as string[] | undefined) ?? []), ...warnings] };
 }
 
 /** One flag's value, written as `--name value` or `--name=value`. */

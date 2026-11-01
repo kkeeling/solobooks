@@ -63,9 +63,12 @@ export function approvePending(db: Books, id: number, a: Approval, when: When): 
       // Records the action makes carry the source that asked for it; the history row shows who approved it.
       const op = findOp(p.op)!;
       const asked = { ...ctx, source: p.source };
-      // A draft edited, a client changed or a level moved since the person was asked would make this a different action.
+      // A draft edited, a client changed, a number taken or a level moved since the person was asked would make this a different action.
       const shown = exclude.length ? p.items.filter((it) => !exclude.includes(it.invoice_id as number)) : p.items;
-      if (!stillAsShown(shown, promptFor(db, op, run, asked, p.action).items)) {
+      const now = promptFor(db, op, run, asked, p.action).items;
+      // Pulling drafts moves the numbers after them, but what is left still starts where the batch was shown starting.
+      const moved = exclude.length > 0 && String(p.items[0]!.number) !== String(now[0]!.number);
+      if (moved || !stillAsShown(shown, now, exclude.length > 0)) {
         throw new Refusal("What this would do has changed since the person was asked, so reject it and ask again.", "pending_id");
       }
       const result = op.run(db, run, asked) as Record<string, unknown>;

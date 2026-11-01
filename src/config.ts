@@ -22,7 +22,7 @@ export function configFile(env: Env): string | null {
 /** What setup and the durability commands record: the books folder and the folder daily backups go to, plus the port `serve --port` chose. */
 export type Config = { books?: string; backups?: string; port?: number };
 
-/** The recorded settings, or none when setup hasn't run. */
+/** The recorded settings, or none when setup hasn't run. Only `books` and `backups` are checked here: a bad port is ignored where it's read, so it never stops a command. */
 export function readConfig(env: Env): Config {
   const file = configFile(env);
   if (!file || !existsSync(file)) return {};
@@ -41,8 +41,8 @@ export function readConfig(env: Env): Config {
   if (typeof c !== "object" || c === null || Array.isArray(c)) {
     throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
-  const { books, backups, port } = c as Record<string, unknown>;
-  const wrong = books !== undefined && typeof books !== "string" ? "books" : backups !== undefined && typeof backups !== "string" ? "backups" : port !== undefined && typeof port !== "number" ? "port" : null;
+  const { books, backups } = c as Record<string, unknown>;
+  const wrong = books !== undefined && typeof books !== "string" ? "books" : backups !== undefined && typeof backups !== "string" ? "backups" : null;
   if (wrong) {
     throw new Refusal(`The settings file ${file} has the wrong kind of value for ${wrong}, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
@@ -77,7 +77,7 @@ export function now(env: Env): string {
   return env.SOLOBOOKS_NOW ?? new Date().toISOString();
 }
 
-/** The port `serve --port` recorded, if any. Damaged settings don't stop the books working; the commands that need them say so. */
+/** The port `serve --port` recorded, if it is a real one. A bad port, or settings that can't be read, just mean the default here; the commands that need the settings refuse on their own. */
 function recordedPort(env: Env): number | undefined {
   try {
     const port = readConfig(env).port;

@@ -153,7 +153,7 @@ const invoiceReminder: Op = {
   name: "invoice_reminder",
   kind: "read",
   description:
-    "Write the overdue reminder for an issued invoice: from, to, subject and body, with the unpaid balance and how many days late it is. solobooks never sends it.",
+    "Write the overdue reminder for an issued invoice: from, to, subject and body, with the unpaid balance and how many days late it is. solobooks never sends it. Refuses, naming the fix, when the client or the business has no email address.",
   fields: {
     id: { type: "int", required: true, min: 1, description: "Invoice id." },
     as_of: { type: "date", description: "The day the reminder is for, YYYY-MM-DD. Default today." },
@@ -167,10 +167,11 @@ const invoiceReminder: Op = {
     const balance = openBalance(db, r);
     if (balance <= 0) throw new Refusal(`Invoice ${r.number} has nothing left to pay.`, "id");
     const doc = invoiceDocument(db, r);
+    const { from, to } = emailAddresses(db, r, doc);
     const late = `${days} day${days === 1 ? "" : "s"}`;
     return {
-      from: doc.seller.email,
-      to: r.client_email,
+      from,
+      to,
       subject: `Overdue: invoice ${doc.number}, ${dollars(balance)} unpaid, ${late} late`,
       body:
         `Hi ${doc.client.name},\n\nInvoice ${doc.number} was due ${longDate(r.due_date!)} and is now ${late} late. ` +

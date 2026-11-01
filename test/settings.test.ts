@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { install, run, serve } from "../src/cli.ts";
 import { configFile, pagePort, saveConfig } from "../src/config.ts";
@@ -108,7 +108,7 @@ for (const [name, extra] of [["--books", true], ["SOLOBOOKS_DIR", false]] as con
   });
 }
 
-for (const [text, says] of [['{"books":5}', "books"], ['{"books":"/x","backups":7}', "backups"], ['{"books":"/x","port":"7317"}', "port"], ["[]", "object"], ["null", "object"]] as const) {
+for (const [text, says] of [['{"books":5}', "books"], ['{"books":"/x","backups":7}', "backups"], ["[]", "object"], ["null", "object"]] as const) {
   test(`ISC-157: settings holding ${text} get the same refusal and repair as invalid JSON, never a raw error`, async () => {
     const { env, settings, books } = person();
     expect((await run(["client", "add", "--name", "Acme", "--source", "s"], env)).code).toBe(0);
@@ -188,4 +188,130 @@ test("billing-waj: doctor accepts a registered command found through PATH, and s
   entry(name, args);
   expect((await claude(dirname(command))).ok).toBe(true);
   expect(await claude("/nowhere")).toMatchObject({ ok: false });
+});
+
+const claudeCheck = (d: { checks: { check: string }[] }) => d.checks.find((c) => c.check === "Claude Code MCP") as { ok: boolean; detail: string; fix?: string };
+const doctored = (argv: string[], env: Record<string, string | undefined>) => doctor(argv, { ...env, PATH: process.env.PATH });
+
+test("ISC-155: a server refused for settings it can't open gets the settings fix, not setup --books", async () => {
+  if (process.getuid?.() === 0) return; // root can open anything
+  const { env, settings, books } = person();
+  chmodSync(settings, 0o000);
+  try {
+    const d = await doctored(["--books", books], env);
+    expect(d.checks[0]).toMatchObject({ check: "books", ok: true });
+    expect(claudeCheck(d)).toMatchObject({ ok: false, fix: "Check that you can open the settings file, then run solobooks doctor again." });
+  } finally {
+    chmodSync(settings, 0o600);
+  }
+});
+
+test("ISC-155: the handshake doesn't hand a server this shell's SOLOBOOKS_DIR, because an app started from the Dock doesn't have it", async () => {
+  const { env, books, home } = person();
+  saveConfig(env, { books: join(home, "nowhere") });
+  const d = await doctored([], { ...env, SOLOBOOKS_DIR: books });
+  expect(d.checks[0]).toMatchObject({ check: "books", ok: true });
+  expect(claudeCheck(d).ok).toBe(false);
+  expect(claudeCheck(d).detail).toContain("can't reach the books on its own");
+  expect(claudeCheck(d).fix).toContain(`solobooks setup --books "${books}"`);
+});
+
+test("ISC-155: the handshake uses the entry's own env when it has one", async () => {
+  const { env, books, home } = person();
+  saveConfig(env, { books: join(home, "nowhere") });
+  const file = join(home, ".claude.json");
+  const config = JSON.parse(readFileSync(file, "utf8"));
+  config.mcpServers.solobooks.env = { SOLOBOOKS_DIR: books };
+  writeFileSync(file, JSON.stringify(config));
+  const d = await doctored(["--books", books], env);
+  expect(claudeCheck(d)).toMatchObject({ ok: true });
+});
+
+test("ISC-157: a null or bad port in the settings is ignored and never stops a command", async () => {
+  for (const port of [null, "7317", 99999, 1.5, {}]) {
+    const { env, settings, books } = person();
+    writeFileSync(settings, JSON.stringify({ books, port }));
+    expect(pagePort(env)).toBe(7317);
+    const listed = await run(["client", "list"], env);
+    expect(listed.code).toBe(0);
+    expect(JSON.parse((await run(["client", "add", "--name", "Acme", "--source", "s"], env)).stdout).client.name).toBe("Acme");
+    expect(setup([], env).books).toBe(books);
+    expect((await doctored([], env)).ok).toBe(true);
+  }
+});
+
+for (const [what, make] of [
+  ["a file that isn't a database", (home: string) => {
+    const dir = join(home, "not-books");
+    mkdirSync(dir);
+    writeFileSync(dbPath(dir), "a shopping list, not a database");
+    return dir;
+  }],
+  ["a path it can't use", (home: string) => {
+    writeFileSync(join(home, "a-file"), "");
+    return join(home, "a-file", "books");
+  }],
+] as const) {
+  test(`ISC-159: setup --books on ${what} refuses with a reason and a field, and changes nothing`, async () => {
+    const { env, home, settings } = person();
+    const before = readFileSync(settings, "utf8");
+    const r = await install("setup", ["--books", make(home)], env);
+    expect(r.code).toBe(2);
+    const said = JSON.parse(r.stdout);
+    expect(said.field).toBe("books");
+    expect(said.reason).toContain("solobooks setup --books <folder>");
+    expect(said.error).toBeUndefined();
+    expect(readFileSync(settings, "utf8")).toBe(before);
+  });
+}
+
+test("ISC-159: following INSTALL's synced-folder step on a new install leaves warnings empty", () => {
+  const { env, home } = person();
+  const synced = setup(["--books", join(home, "Dropbox", "books")], env);
+  expect(synced.started_new_books).toBe(true);
+  expect(synced.warnings).toHaveLength(1); // that it's in Dropbox, and nothing about books left behind
+  expect(synced.warnings[0]).toContain("Dropbox");
+  const moved = setup(["--books", join(home, "plain")], env);
+  expect(moved.started_new_books).toBe(true);
+  expect(moved.warnings).toEqual([]);
+});
+
+test("ISC-159: setup still warns about books left behind when they hold something", async () => {
+  const { env, books, home } = person();
+  expect((await run(["client", "add", "--name", "Acme", "--source", "s"], env)).code).toBe(0);
+  expect(setup(["--books", join(home, "plain")], env).warnings.join(" ")).toContain(`your books are still in "${books}"`);
+});
+
+test("ISC-170: doctor fails the MCP check when the folder it checks isn't the one the agent's server would use, and its fix works", async () => {
+  const { env, books: a, home } = person();
+  const b = join(home, "other");
+  setup(["--books", b], env); // real books there too, so the server answers without complaint
+  const d = await doctored(["--books", a], env);
+  expect(d.ok).toBe(false);
+  expect(d.checks[0]).toMatchObject({ check: "books", ok: true });
+  const c = claudeCheck(d);
+  expect(c.ok).toBe(false);
+  expect(c.detail).toContain(`it uses the books in "${b}", not the ones in "${a}"`);
+  expect(c.fix).toContain(`solobooks setup --books "${a}"`);
+
+  setup(["--books", a], env);
+  expect((await doctored(["--books", a], env)).ok).toBe(true);
+  expect((await doctored([], env)).ok).toBe(true);
+});
+
+test("ISC-170: the same goes for SOLOBOOKS_DIR, and two names for one folder are one folder", async () => {
+  const { env, books: a, home } = person();
+  const b = join(home, "other");
+  setup(["--books", b], env);
+  expect(claudeCheck(await doctored([], { ...env, SOLOBOOKS_DIR: a })).ok).toBe(false);
+  expect(claudeCheck(await doctored([], { ...env, SOLOBOOKS_DIR: b })).ok).toBe(true);
+  const link = join(home, "link");
+  symlinkSync(b, link);
+  expect(claudeCheck(await doctored(["--books", link], env)).ok).toBe(true);
+});
+
+test("ISC-170: when doctor's own books check fails, only that check fails", async () => {
+  const { env, home } = person();
+  const d = await doctored(["--books", join(home, "missing")], env);
+  expect(d.checks.filter((c: { ok: boolean }) => !c.ok).map((c: { check: string }) => c.check)).toEqual(["books"]);
 });

@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
@@ -13,8 +14,9 @@ import { esc, panels, summary } from "./panels.ts";
 // panels (invoices, unpaid, the year's P&L, recent changes) that load from /data. It listens on loopback only and
 // loads nothing from anywhere else. Every approve or reject carries a one-time code the page itself handed out, so a
 // bare POST to a guessed address does nothing. There is no other way to change the books here; the agent does that.
-// A click must also carry the markers a browser puts on its own page's requests. That is a speed bump against tools
-// and habits, not a lock: a program on this account can read a code and forge the markers, and the docs say so.
+// A click must also carry this page's Origin, as a browser's does, and any Sec-Fetch-Site it sends must say same-origin.
+// That is a speed bump against tools and habits, not a lock: a program on this account can read a code and forge
+// both, and the docs say so.
 
 const GRANT_MS = 15 * 60_000;
 
@@ -38,12 +40,15 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     grants.set(code, g);
     return code;
   };
-  /** Takes a one-time code: it works once, for what it was issued for, before it expires. */
-  const take = (code: unknown): Grant | null => {
-    if (typeof code !== "string") return null;
-    const g = grants.get(code);
-    grants.delete(code);
+  /** A one-time code still good for what it was issued for. Looking doesn't spend it: `spent` does, once that has happened. */
+  const grant = (code: unknown): Grant | null => {
+    const g = typeof code === "string" ? grants.get(code) : undefined;
     return g && g.expires > Date.now() ? g : null;
+  };
+  /** Answers a click, spending its code only if the click did what it was for. A refused one can be tried again. */
+  const spent = (code: string, r: { ok: true; result: unknown } | { ok: false; refusal: unknown }) => {
+    if (r.ok) grants.delete(code);
+    return answer(r);
   };
   const prune = () => {
     for (const [k, g] of grants) if (g.expires <= Date.now()) grants.delete(k);
@@ -78,7 +83,7 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
   const refused = (status: number, reason: string, field: string) => json(status, { ok: false, refusal: { reason, field } });
   const expired = () => refused(403, "This approval link has expired or was already used, so reload the approval page and try again.", "code");
 
-  /** For a click: the books have to open and read as books before its one-time code is spent, so the same click works once they are back. */
+  /** For a click: books that won't open, or fail partway, get the can't-read message with the code unspent, so the same click works once they are fixed. */
   const withClick = async (f: (db: Books) => Response | Promise<Response>): Promise<Response> => {
     let db: Books | undefined;
     try {
@@ -90,6 +95,9 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     }
     try {
       return await f(db);
+    } catch (e) {
+      if (e instanceof SQLiteError) return refused(503, unreadable(e), "books");
+      throw e;
     } finally {
       db.close();
     }
@@ -125,9 +133,11 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     }
     if (req.method !== "POST" || !["/approve", "/reject", "/passkey/register"].includes(url.pathname)) return new Response("Not found.", { status: 404 });
 
-    // What a browser sends for a script on this very page: anything else didn't come from a click here.
+    // What a browser sends for a script on this very page. Sec-Fetch-Site isn't required, because a browser may leave it
+    // off on http://localhost, but one that says anything else didn't come from a click here.
     const from = req.headers.get("origin");
-    if (from === null || ![origin(), `http://127.0.0.1:${port}`].includes(from) || req.headers.get("sec-fetch-site") !== "same-origin") {
+    const site = req.headers.get("sec-fetch-site");
+    if (from === null || ![origin(), `http://127.0.0.1:${port}`].includes(from) || (site !== null && site !== "same-origin")) {
       return refused(403, `Approvals only work from the approval page in a browser, so open ${origin()}/ there and click the button.`, "origin");
     }
     if (!(req.headers.get("content-type") ?? "").startsWith("application/json")) return new Response("Send JSON.", { status: 415 });
@@ -142,11 +152,11 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     if (url.pathname === "/approve" || url.pathname === "/reject") {
       return withClick(async (db) => {
         const id = body.pending_id;
-        const g = take(body.code);
+        const g = grant(body.code);
         if (!g || g.kind !== "act" || g.pendingId !== id) return expired();
         const p = getPending(db, id);
         if (!p) return refused(404, `There is no pending action with id ${id}.`, "pending_id");
-        if (url.pathname === "/reject") return answer(rejectPending(db, id, "page", when()));
+        if (url.pathname === "/reject") return spent(body.code, rejectPending(db, id, "page", when()));
         let passkey;
         if (p.status === "pending" && levelToApprove(db, p) === "passkey") {
           if (!g.challenge || !body.assertion) return refused(400, "This action is set to passkey, so approve it with your passkey.", "passkey");
@@ -158,16 +168,16 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
           }
         }
         const exclude = Array.isArray(body.exclude) ? body.exclude : [];
-        return answer(approvePending(db, id, { via: "page", exclude, passkey }, when()));
+        return spent(body.code, approvePending(db, id, { via: "page", exclude, passkey }, when()));
       });
     }
 
     return withClick(async (db) => {
-      const g = take(body.code);
+      const g = grant(body.code);
       if (!g || g.kind !== "register") return expired();
       try {
         const k = await verifyRegistration(body.response, g.challenge, origin());
-        return answer(registerPasskey(db, k, when()));
+        return spent(body.code, registerPasskey(db, k, when()));
       } catch (e) {
         if (e instanceof Refusal) return refused(400, e.reason, e.field);
         throw e;

@@ -20,7 +20,7 @@ async function issued(dir: string, day: string, cents: number, terms: number, cl
 
 test("ISC-43 unpaid: the unpaid list shows every overdue invoice with its days late, past invoices marked historical", async () => {
   const dir = await acmeBooks();
-  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd", email: "ap@beta.example" }));
   const late = await issued(dir, "2026-09-01", 100000, 30); // due 2026-10-01: 21 days late on 2026-10-22
   const notDue = await issued(dir, "2026-10-15", 50000, 30); // due 2026-11-14
   const paidUp = await issued(dir, "2026-08-01", 70000, 15); // due 2026-08-16, then paid in full
@@ -144,7 +144,7 @@ test("ISC-110 cash basis: client credit applied to a later invoice is income on 
   const oct = await issued(dir, "2026-10-01", 100000, 30);
   await ok(dir, json(["payment", "add"], { invoice_id: oct.id, date: "2026-10-10", amount_cents: 130000, deposit_account_id: acct(1) })); // $300 held
   const dec = await issued(dir, "2026-12-01", 50000, 30);
-  await ok(dir, json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
+  await at(dir, "2027-01-04", json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
 
   // October counts what settled October's invoice; the held $300 counts nowhere until it settles December's, in January.
   expect(consulting(await pnlFor(dir, "2026-10-01", "2026-10-31"))).toBe(100000);

@@ -76,3 +76,19 @@ test("ISC-151: addresses frozen at issue still win over ones changed since", asy
   await ok(dir, ["client", "edit", "--id", "1", "--email", "changed@acme.example", ...S]);
   expect((await ok(dir, ["invoice", "email", "--id", String(inv.id)])).to).toBe("ap@acme.example");
 });
+
+test("ISC-151: invoice reminder uses the same address check as invoice email, and its fix works too", async () => {
+  const dir = await acmeBooks({ email: undefined });
+  asPerson(dir, (db) => db.query("UPDATE business_profile SET email = NULL").run());
+  const inv = await issueOctober(dir);
+  const remind = ["invoice", "reminder", "--id", String(inv.id), "--as-of", "2027-01-15"];
+  const client = await cli(dir, remind);
+  expect(client).toMatchObject({ code: 2, out: { field: "id" } });
+  expect(client.out.reason).toContain("solobooks client edit --id 1 --email");
+  await ok(dir, ["client", "edit", "--id", "1", "--email", "new@acme.example", ...S]);
+  const business = await cli(dir, remind);
+  expect(business).toMatchObject({ code: 2, out: { field: "id" } });
+  expect(business.out.reason).toContain("solobooks profile set --email");
+  await ok(dir, ["profile", "set", "--email", "billing@example.com", ...S]);
+  expect(await ok(dir, remind)).toMatchObject({ from: "billing@example.com", to: "new@acme.example" });
+});

@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { run } from "../src/cli.ts";
 import { approvePending, rejectPending } from "../src/core/approve.ts";
-import { getPending } from "../src/core/gate.ts";
+import { getPending, promptFields } from "../src/core/gate.ts";
 import { perform } from "../src/core/perform.ts";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
 import { approveOnPage, asPerson, setEveryLevel, WHEN } from "./support/person.ts";
-import { acct, tempDir } from "./support/books.ts";
+import { acct, dbPath, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 
 // Payments on issued invoices, through the CLI on books where the person lets the agent decide everything.
@@ -15,7 +16,7 @@ import { inProcessMcp } from "./support/mcp-client.ts";
 /** acmeBooks() plus a second client, Beta, with one issued $1,000.00 invoice and nothing else on it. */
 async function thousandDollarInvoice() {
   const dir = await acmeBooks();
-  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd\nAustin, TX 78701" }));
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd\nAustin, TX 78701", email: "ap@beta.example" }));
   const d = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "October work", amount_cents: 100000 }] }))).invoice;
   const inv = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).invoice;
   expect(inv).toMatchObject({ status: "issued", total_cents: 100000, open_cents: 100000 });
@@ -216,7 +217,7 @@ test("ISC-111 apply credit: a client's overpayment credit pays down their later 
   const nov = await issue(2, 50000);
   const acme = await issue(1, 20000);
   const draft = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-12-01", period_end: "2026-12-31", lines: [{ description: "Dec", amount_cents: 100 }] }))).invoice;
-  const apply = (body: Record<string, unknown>) => cli(dir, json(["client", "credit", "apply"], { client_id: 2, date: "2026-11-30", ...body }));
+  const apply = (body: Record<string, unknown>) => cli(dir, json(["client", "credit", "apply"], { client_id: 2, date: "2026-10-22", ...body }));
   const checking = balance(dir, "Checking");
   const income = await pnlLine(dir, "Consulting income");
   const entries = (await ok(dir, ["entry", "list"])).entries.length;
@@ -240,7 +241,7 @@ test("ISC-111 apply credit: a client's overpayment credit pays down their later 
   const ar = asPerson(dir, (db) => (db.query("SELECT id FROM accounts WHERE name = 'Accounts receivable'").get() as { id: number }).id);
   const held = asPerson(dir, (db) => (db.query("SELECT id FROM accounts WHERE name = 'Client credits'").get() as { id: number }).id);
   const posted = (await ok(dir, ["entry", "list"])).entries.find((e: any) => e.id === first.applied.entry_id);
-  expect(posted).toMatchObject({ date: "2026-11-30", memo: `Client credit applied to invoice ${nov.number} for Beta LLC` });
+  expect(posted).toMatchObject({ date: "2026-10-22", memo: `Client credit applied to invoice ${nov.number} for Beta LLC` });
   expect(posted.lines).toEqual([
     { account_id: held, debit_cents: 12000, credit_cents: 0 },
     { account_id: ar, debit_cents: 0, credit_cents: 12000 },
@@ -373,4 +374,136 @@ test("ISC-150: a future-dated payment parked before the rule can't be approved e
   const later = park();
   asPerson(dir, (db) => expect(approvePending(db, later, { via: "page" }, { ...WHEN, now: "2031-01-01T12:00:00.000Z" }).ok).toBe(true));
   expect(await open(dir, inv.id)).toBe(0);
+});
+
+/** A no-line payment the person approved, as the first thing on the invoice. Returns the approved result. */
+async function approvedNoLine(dir: string, invoice: number, amount = 25000, date = "2026-10-20") {
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
+  const asked = await ok(dir, json(["payment", "add"], { invoice_id: invoice, amount_cents: amount, deposit_account_id: acct(1), date }));
+  return asPerson(dir, (db) => approveOnPage(db, asked.pending_id)).result as Record<string, any>;
+}
+
+test("ISC-147: a no-line payment refunded in full is no twin, so a bounced check's real re-payment posts with its bank line", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [first] = await twoDeposits(dir);
+  const bounced = await approvedNoLine(dir, inv.id);
+  await ok(dir, json(["payment", "refund"], { payment_id: bounced.payment.id, date: "2026-10-21", reason: "Check bounced" }));
+  const again = (await ok(dir, json(["payment", "add"], { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-21", bank_line_id: first }))).payment;
+  expect(again).toMatchObject({ bank_line_id: first, invoice_open_cents: 75000 });
+});
+
+test("ISC-147: a no-line payment refunded only in part is still a twin", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [first] = await twoDeposits(dir);
+  const paid = await approvedNoLine(dir, inv.id);
+  await ok(dir, json(["payment", "refund"], { payment_id: paid.payment.id, date: "2026-10-21", reason: "Partly back", amount_cents: 1000 }));
+  const r = await cli(dir, json(["payment", "add"], { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-21", bank_line_id: first }));
+  expect(r).toMatchObject({ code: 2, out: { field: "bank_line_id" } });
+});
+
+test("ISC-147: the refusal also names the route for a real second instalment when the first has no line, and that route works", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [, second] = await twoDeposits(dir);
+  await approvedNoLine(dir, inv.id);
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-21" };
+  const r = await cli(dir, json(["payment", "add"], { ...body, bank_line_id: second }));
+  expect(r.out.reason).toContain("record this one with no bank line, get it approved, then run solobooks bank match");
+
+  const asked = await ok(dir, json(["payment", "add"], body));
+  const made = asPerson(dir, (db) => approveOnPage(db, asked.pending_id)).result as Record<string, any>;
+  expect((await ok(dir, ["bank", "match", "--line-id", String(second), "--entry-id", String(made.payment.entry.id), ...S])).line.match.entry_id).toBe(made.payment.entry.id);
+  expect(await open(dir, inv.id)).toBe(50000);
+});
+
+test("ISC-150: a payment may carry its own bank line's date, even tomorrow, and no later date; the refusal's fix works", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const path = join(tempDir(), "statement.csv");
+  writeFileSync(path, "Date,Description,Amount\n10/23/2026,ACH DEPOSIT,250.00\n");
+  const line = (await ok(dir, json(["bank", "import"], { account_id: acct(1), file_path: path, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" }))).lines[0].id;
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1) };
+
+  const other = await cli(dir, json(["payment", "add"], { ...body, date: "2026-10-24", bank_line_id: line }));
+  expect(other).toMatchObject({ code: 2, out: { field: "date" } });
+  expect(other.out.reason).toContain("name its bank line and use that line's date");
+  // Both ways the refusal names work.
+  expect((await ok(dir, json(["payment", "add"], { ...body, date: "2026-10-23", bank_line_id: line }))).payment).toMatchObject({ date: "2026-10-23", bank_line_id: line });
+  await pay(dir, { invoice_id: inv.id, amount_cents: 100, date: "2026-10-22" });
+  expect(await open(dir, inv.id)).toBe(74900);
+});
+
+test("ISC-150: client credit apply refuses a date after today, and today works", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  await pay(dir, { invoice_id: inv.id, amount_cents: 130000 }); // $300 over
+  const later = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "More work", amount_cents: 50000 }] }))).invoice;
+  await ok(dir, ["invoice", "issue", "--id", String(later.id), ...S]);
+  const apply = (date: string) => cli(dir, json(["client", "credit", "apply"], { client_id: 2, invoice_id: later.id, date }));
+  const r = await apply("2026-10-23");
+  expect(r).toMatchObject({ code: 2, out: { field: "date" } });
+  expect(r.out.reason).toContain("after today, 2026-10-22");
+  expect(await open(dir, later.id)).toBe(50000);
+  expect((await apply("2026-10-22")).code).toBe(0);
+  expect(await open(dir, later.id)).toBe(20000);
+});
+
+test("ISC-168: at agent_decides, a no-line payment repeating an earlier amount on this invoice and account carries a warning naming it", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-22" };
+  const first = await ok(dir, json(["payment", "add"], body));
+  expect(first.warnings).toBeUndefined();
+  const second = await ok(dir, json(["payment", "add"], body));
+  expect(second.earlier_payment).toMatchObject({ id: first.payment.id, amount_cents: 25000 });
+  expect(second.warnings.join(" ")).toContain(`Payment ${first.payment.id} on this invoice is also $250.00`);
+  expect(second.warnings.join(" ")).toContain(`refund this one, payment ${second.payment.id}`);
+});
+
+test("ISC-168: another amount, another account, or an earlier payment refunded in full brings no warning", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const savings = (await ok(dir, ["account", "add", "--name", "Savings", "--type", "asset", ...S])).account.id;
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-22" };
+  const first = await ok(dir, json(["payment", "add"], body));
+  expect((await ok(dir, json(["payment", "add"], { ...body, amount_cents: 25001 }))).warnings).toBeUndefined();
+  expect((await ok(dir, json(["payment", "add"], { ...body, deposit_account_id: savings }))).warnings).toBeUndefined();
+  await ok(dir, json(["payment", "refund"], { payment_id: first.payment.id, date: "2026-10-22", reason: "Bounced" }));
+  expect((await ok(dir, json(["payment", "add"], body))).warnings).toBeUndefined();
+});
+
+test("ISC-168: the warning stands beside the other warnings a write can carry", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const body = json(["payment", "add"], { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-22" });
+  await ok(dir, body);
+  const home = tempDir();
+  const synced = join(home, "Dropbox", "books");
+  mkdirSync(synced, { recursive: true });
+  copyFileSync(dbPath(dir), dbPath(synced));
+  const r = JSON.parse((await run(body, { HOME: home, SOLOBOOKS_DIR: synced, SOLOBOOKS_NOW: WHEN.now })).stdout);
+  expect(r.warnings.join(" ")).toContain("is also $250.00");
+  expect(r.warnings.join(" ")).toContain("Dropbox");
+});
+
+test("ISC-168: the card shows the earlier payment, and a card parked before it was shown still goes through", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const first = await approvedNoLine(dir, inv.id);
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-21" };
+  const asked = await ok(dir, json(["payment", "add"], body));
+  const card = asPerson(dir, (db) => getPending(db, asked.pending_id)!);
+  expect(card.items[0]!.earlier_payment).toMatchObject({ id: first.payment.id, date: "2026-10-20", amount_cents: 25000 });
+  const shown = promptFields(card)[0]!.find(([label]) => label === "Earlier payment")!;
+  expect(shown[1]).toContain(`payment ${first.payment.id} on this invoice is also $250.00`);
+
+  // The first card on an invoice has nothing to point at.
+  const fresh = await thousandDollarInvoice();
+  const lone = await ok(fresh.dir, json(["payment", "add"], { ...body, invoice_id: fresh.inv.id }));
+  expect(lone.earlier_payment).toBeUndefined();
+
+  asPerson(dir, (db) => {
+    // As an older solobooks parked it: no earlier_payment in what it stored.
+    const { prompt } = db.query("SELECT prompt FROM pending_actions WHERE id = ?").get(asked.pending_id) as { prompt: string };
+    const old = JSON.parse(prompt);
+    delete old.items[0].earlier_payment;
+    const { id } = db
+      .query("INSERT INTO pending_actions (created_at, action, op, input, level, prompt, source) SELECT created_at, action, op, input, level, ?, source FROM pending_actions WHERE id = ? RETURNING id")
+      .get(JSON.stringify(old), asked.pending_id) as { id: number };
+    expect(approvePending(db, id, { via: "page" }, WHEN).ok).toBe(true);
+  });
+  expect(await open(dir, inv.id)).toBe(50000);
 });

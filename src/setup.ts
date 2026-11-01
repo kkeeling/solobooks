@@ -2,7 +2,7 @@ import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { type Agent, knownAgents, mcpCommand, sharedSkillDir, writeEntry } from "./agents.ts";
 import { absolute, booksFile, type Config, configFile, type Env, homeDir, now, readConfig, syncedFolder, writeIfChanged } from "./config.ts";
-import { hasBooks, openBooks } from "./core/db.ts";
+import { hasBooks, hasHistory, openBooks } from "./core/db.ts";
 import { Refusal } from "./core/refusal.ts";
 import { flag, onlyFlags } from "./durability.ts";
 import { SKILL_FILES, SKILL_NAME } from "./skill.ts";
@@ -51,7 +51,8 @@ export function setup(argv: string[], env: Env) {
     );
   }
   const left = recorded.books ? absolute(recorded.books, home) : null;
-  if (fresh && left && left !== dir && hasBooks(booksFile(left))) {
+  // Books never written to hold nothing to carry over, as when a new install moves off a synced folder.
+  if (fresh && left && left !== dir && hasBooks(booksFile(left)) && hasHistory(booksFile(left))) {
     warnings.push(`solobooks now uses new, empty books in "${dir}", and your books are still in "${left}"; to carry them over, run solobooks setup --books "${left}", then solobooks move --to <empty folder>.`);
   }
   if (fresh && damaged) {
@@ -62,7 +63,12 @@ export function setup(argv: string[], env: Env) {
     const how = fresh ? "solobooks setup --books <dir>" : "solobooks move --to <empty folder>, which carries the books with it";
     warnings.push(`The books folder ${dir} is inside ${synced}, and syncing a live books file can corrupt it, so choose a folder outside it, such as ${join(home, "solobooks")}, with ${how}.`);
   }
-  openBooks(booksFile(dir), { backups: recorded.backups ?? null, now: now(env), create: true }).close();
+  try {
+    openBooks(booksFile(dir), { backups: recorded.backups ?? null, now: now(env), create: true }).close();
+  } catch (e) {
+    if (e instanceof Refusal) throw e;
+    throw new Refusal(`solobooks can't use "${dir}" for the books (${e instanceof Error ? e.message : e}), so setup changed nothing; check that folder, or choose another with solobooks setup --books <folder>.`, "books");
+  }
   const settings = configFile(env)!;
   // The damaged copy stays, and only now, once the folder has proved it works.
   if (damaged) {

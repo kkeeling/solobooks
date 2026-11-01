@@ -79,7 +79,7 @@ test("ISC-63 parks: a gated action returns pending with an id and changes no led
   const keyed = ["invoice", "void", "--id", String(d.id), "--reason", "x", "--idempotency-key", "void-1", ...S];
   const first = await ok(dir, keyed);
   expect(await ok(dir, keyed)).toEqual(first);
-  expect((await ok(dir, ["pending", "list"])).pending.filter((p: any) => p.idempotency_key === "void-1").length).toBe(1);
+  expect((await ok(dir, ["pending", "list"])).pending.filter((p: any) => p.op === "invoice_void" && p.input.id === d.id).length).toBe(1);
 }, 30_000);
 
 test("ISC-63 parks: rejection closes a pending action with no effect, and a draft changed after the request can't be approved", () => {
@@ -335,7 +335,7 @@ test("ISC-63 parks: a draft waiting for approval refuses every change to what wo
   }
 }, 60_000);
 
-test("ISC-74 passkey: approval refuses anything issue would freeze that changed after the person was asked, apart from the number", async () => {
+test("ISC-74 passkey: approval refuses anything issue would freeze that changed after the person was asked", async () => {
   for (const level of ["click", "passkey"]) {
     const db = coreBooks();
     const auth = await registerTestPasskey(db);
@@ -365,11 +365,6 @@ test("ISC-74 passkey: approval refuses anything issue would freeze that changed 
       expect(status(db, a)).toBe("draft");
       rejectPending(db, pid, "page", WHEN);
     }
-    // Only the number may move: another invoice issued first takes the number this one was shown.
-    const [a, b] = [draft(db), draft(db, 2)];
-    const [pa, pb] = [must(db, "invoice_issue", { id: a }).pending_id, must(db, "invoice_issue", { id: b }).pending_id];
-    expect(await tryApprove(pb)).toMatchObject({ ok: true });
-    expect(await tryApprove(pa)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7002" } } } });
     db.close();
   }
 });
@@ -660,3 +655,118 @@ test("ISC-152: the card asked for again states the level it must clear now, so a
   await asPerson(dir, (db) => approveWithPasskey(db, auth, up.pending_id));
   expect(await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).toMatchObject({ pending_id: first.pending_id, level: "passkey" });
 }, 30_000);
+
+test("ISC-148: a keyed retry of a request still waiting reports the level as it stands now, not the level at parking", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const keyed = ["invoice", "issue", "--id", String(d.id), "--idempotency-key", "issue-3", ...S];
+  const first = await ok(dir, keyed);
+  expect(first).toMatchObject({ status: "pending", level: "click" });
+  const auth = await asPerson(dir, (db) => registerTestPasskey(db));
+  const up = await ok(dir, ["gate", "set", "--invoice-issue", "passkey", ...S]);
+  await asPerson(dir, (db) => approveWithPasskey(db, auth, up.pending_id));
+  const replay = await ok(dir, keyed);
+  expect(replay).toMatchObject({ status: "pending", pending_id: first.pending_id, level: "passkey" });
+  expect(replay.message).toContain("with their passkey");
+}, 30_000);
+
+/** Core books with two drafts, for different clients, each waiting on its own card at click. */
+function twoWaiting() {
+  const db = coreBooks();
+  const [a, b] = [draft(db), draft(db, 2)];
+  setLevels(db, ALL("click"));
+  const [pa, pb] = [must(db, "invoice_issue", { id: a }).pending_id as number, must(db, "invoice_issue", { id: b }).pending_id as number];
+  return { db, a, b, pa, pb };
+}
+const CHANGED = "What this would do has changed since the person was asked, so reject it and ask again.";
+
+test("ISC-165: approving a card whose number was taken since says it changed, and nothing issues; asked again, it goes through at the new number", () => {
+  const { db, b, pa, pb } = twoWaiting();
+  expect(must(db, "pending_get", { id: pa }).pending.title).toContain("Issue invoice 7001");
+  expect(must(db, "pending_get", { id: pb }).pending.title).toContain("Issue invoice 7001");
+  expect(approvePending(db, pa, { via: "page" }, WHEN)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7001" } } } });
+
+  const before = dumpDb(db);
+  expect(approvePending(db, pb, { via: "page" }, WHEN)).toEqual({ ok: false, refusal: { reason: CHANGED, field: "pending_id" } });
+  expect(dumpDb(db)).toEqual(before);
+  expect(status(db, b)).toBe("draft");
+
+  expect(rejectPending(db, pb, "page", WHEN).ok).toBe(true);
+  const again = must(db, "invoice_issue", { id: b });
+  expect(again.title).toContain("Issue invoice 7002");
+  expect(approvePending(db, again.pending_id, { via: "page" }, WHEN)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7002" } } } });
+  db.close();
+});
+
+test("ISC-165: the date stays out of it: a card approved another day still works, dated that day", () => {
+  const { db, pa } = twoWaiting();
+  const later = { ...WHEN, now: "2026-10-25T12:00:00.000Z" };
+  expect(approvePending(db, pa, { via: "page" }, later)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7001", invoice_date: "2026-10-25" } } } });
+  db.close();
+});
+
+test("ISC-165: a card parked before this release goes through when its number still holds, and is refused when it doesn't", () => {
+  const { db, pa, pb } = twoWaiting();
+  // An older solobooks stored the number just as this one does, whatever day it parked the card; these keys are its card's.
+  const { prompt } = db.query("SELECT prompt FROM pending_actions WHERE id = ?").get(pa) as { prompt: string };
+  const shown = JSON.parse(prompt);
+  expect(Object.keys(shown.items[0]).sort()).toEqual(
+    ["client", "client_address", "client_email", "credits_invoice", "due_date", "invoice_date", "invoice_id", "kind", "lines", "note", "number", "payment_instructions", "period_end", "period_start", "seller", "subtotal_cents", "tax", "terms_days", "total_cents"].sort(),
+  );
+  for (const it of shown.items) {
+    it.invoice_date = "2026-09-01";
+    it.due_date = "2026-10-01";
+  }
+  // A pending row can't be edited, so the older card is a row of its own, and the first card's hold is lifted.
+  rejectPending(db, pa, "page", WHEN);
+  const { id: older } = db
+    .query("INSERT INTO pending_actions (created_at, action, op, input, level, prompt, source) SELECT '2026-09-01T12:00:00.000Z', action, op, input, level, ?, source FROM pending_actions WHERE id = ? RETURNING id")
+    .get(JSON.stringify(shown), pa) as { id: number };
+  expect(approvePending(db, older, { via: "page" }, WHEN)).toMatchObject({ ok: true, result: { result: { invoice: { number: "7001" } } } });
+  expect(approvePending(db, pb, { via: "page" }, WHEN)).toEqual({ ok: false, refusal: { reason: CHANGED, field: "pending_id" } });
+  db.close();
+});
+
+test("ISC-165: pulling a draft from a batch moves the numbers after it, which the person chose; another invoice taking the first number still refuses", () => {
+  const db = coreBooks();
+  const [a, b, c] = [draft(db), draft(db, 2), draft(db, 3)];
+  setLevels(db, ALL("click"));
+  const batch = must(db, "invoice_issue", { ids: [a, b] }).pending_id as number;
+  const lone = must(db, "invoice_issue", { id: c }).pending_id as number;
+  expect(approvePending(db, batch, { via: "page", exclude: [a] }, WHEN)).toMatchObject({ ok: true, result: { result: { invoices: [{ number: "7001" }] } } });
+  expect(status(db, a)).toBe("draft");
+  // The lone card was shown 7001 too, and that number has gone.
+  expect(approvePending(db, lone, { via: "page" }, WHEN)).toEqual({ ok: false, refusal: { reason: CHANGED, field: "pending_id" } });
+  rejectPending(db, lone, "page", WHEN);
+
+  const d = draft(db, 3);
+  const second = must(db, "invoice_issue", { ids: [a, d] }).pending_id as number;
+  const other = must(db, "invoice_issue", { id: c }).pending_id as number;
+  expect(approvePending(db, other, { via: "page" }, WHEN).ok).toBe(true);
+  expect(approvePending(db, second, { via: "page", exclude: [a] }, WHEN)).toEqual({ ok: false, refusal: { reason: CHANGED, field: "pending_id" } });
+  db.close();
+});
+
+test("ISC-167: asking to void an invoice whose void is waiting returns that card and parks no second one", () => {
+  const db = coreBooks();
+  const [a, b] = [draft(db), draft(db, 2)];
+  must(db, "invoice_issue", { ids: [a, b] });
+  setLevels(db, ALL("click"));
+  const voids = () => (must(db, "pending_list", {}).pending as any[]).filter((p) => p.op === "invoice_void");
+
+  const first = must(db, "invoice_void", { id: a, reason: "Billed in error" });
+  expect(first.status).toBe("pending");
+  const again = must(db, "invoice_void", { id: a, reason: "Said another way" });
+  expect(again).toMatchObject({ status: "pending", pending_id: first.pending_id, title: first.title });
+  expect(voids().map((p) => p.id)).toEqual([first.pending_id]);
+
+  // Another invoice gets its own card, and a rejected card doesn't stand in the way of a new one.
+  const other = must(db, "invoice_void", { id: b, reason: "Also wrong" });
+  expect(other.pending_id).not.toBe(first.pending_id);
+  rejectPending(db, first.pending_id, "page", WHEN);
+  const asked = must(db, "invoice_void", { id: a, reason: "Billed in error" });
+  expect(asked.pending_id).not.toBe(first.pending_id);
+  expect(approvePending(db, asked.pending_id, { via: "page" }, WHEN).ok).toBe(true);
+  expect(status(db, a)).toBe("void");
+  db.close();
+});

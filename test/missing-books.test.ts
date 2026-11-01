@@ -1,5 +1,6 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/cli.ts";
 import { OPS } from "../src/core/perform.ts";
@@ -258,3 +259,52 @@ test("ISC-162: with a zero-byte books file, the page, its panels and a click all
     page.stop();
   }
 });
+
+/** Books with one page of the pending table's overwritten: they open, then fail at the first read of that table. */
+function damagedPage(file: string): Buffer {
+  const db = new Database(file, { readonly: true });
+  const { rootpage } = db.query("SELECT rootpage FROM sqlite_master WHERE name = 'pending_actions'").get() as { rootpage: number };
+  const { page_size } = db.query("PRAGMA page_size").get() as { page_size: number };
+  db.close();
+  const bytes = readFileSync(file);
+  return Buffer.from(bytes).fill(0xff, (rootpage - 1) * page_size, rootpage * page_size);
+}
+
+for (const path of ["/approve", "/reject"]) {
+  test(`ISC-169: ${path} with a damaged page in the file shows the can't-read message with its reason, and the same button works once it's repaired`, async () => {
+    const { books, page, click } = await clickable();
+    try {
+      const whole = readFileSync(dbPath(books));
+      writeFileSync(dbPath(books), damagedPage(dbPath(books)));
+      const r = await click(path);
+      expect(r.status).toBe(503);
+      const { refusal } = (await r.json()) as any;
+      expect(refusal.field).toBe("books");
+      expect(refusal.reason).toStartWith(`solobooks can't read the books file at ${dbPath(books)} (`);
+      expect(refusal.reason).not.toContain("Something went wrong");
+      writeFileSync(dbPath(books), whole);
+      expect((await click(path)).status).toBe(200);
+    } finally {
+      page.stop();
+    }
+  });
+
+  test(`ISC-169: ${path} with a read-only books file shows the can't-read message with its reason, and the same button works once it's writable`, async () => {
+    if (process.getuid?.() === 0) return; // root can write anything
+    const { books, page, click } = await clickable();
+    try {
+      chmodSync(dbPath(books), 0o444);
+      const r = await click(path);
+      expect(r.status).toBe(503);
+      const { refusal } = (await r.json()) as any;
+      expect(refusal.field).toBe("books");
+      expect(refusal.reason).toContain("readonly");
+      expect(refusal.reason).not.toContain("Something went wrong");
+      chmodSync(dbPath(books), 0o644);
+      expect((await click(path)).status).toBe(200);
+    } finally {
+      chmodSync(dbPath(books), 0o644);
+      page.stop();
+    }
+  });
+}

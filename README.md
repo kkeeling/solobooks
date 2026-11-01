@@ -21,7 +21,7 @@ You approve on the local page that `solobooks serve` opens, with a click or with
 
 What each level holds against:
 
-- **Click** stops your agent's tools and honest mistakes. The page takes a click only with the markers a browser sends from the page itself. That is a speed bump, not a lock: an agent with a shell on your account can reach anything your account can, so it could fake those markers or write to the books file.
+- **Click** stops your agent's tools and honest mistakes. The page takes a click only with the markers a browser puts on a request from the page itself. That is a speed bump, not a lock: an agent with a shell on your account can reach anything your account can, so it could fake those markers or write to the books file.
 - **Passkey** is the strongest the page offers, because the approval needs your Touch ID or security key, which a shell can't press for you. The same shell agent could still change the books file directly, so if you don't trust an agent with your account, don't give it a shell on it.
 
 Then your agent makes the PDF and the email text, leaves the email as a draft in your mail, and records it as sent once you send it. When the client pays, you tell your agent, or hand it the bank statement, and the payment lands against the invoice.

@@ -4,7 +4,7 @@ import { clientOps } from "./clients.ts";
 import type { Books } from "./db.ts";
 import { documentOps } from "./documents.ts";
 import { expenseOps } from "./expenses.ts";
-import { asItStands, DEFAULT_PAGE, gateOps, type Level, levelToApprove, park, refuseIfHeld, requiredLevel, waiting, waitingIssue } from "./gate.ts";
+import { alreadyWaiting, asItStands, DEFAULT_PAGE, gateOps, park, refuseIfHeld, requiredLevel, waitingNow } from "./gate.ts";
 import { saveFiles, sha256 } from "./files.ts";
 import { invoiceOps } from "./invoices.ts";
 import { assertBalanced, ledgerOps } from "./ledger.ts";
@@ -125,8 +125,8 @@ function execute(
   const action = typeof op.gate === "function" ? op.gate(input, db) : (op.gate ?? null);
   const level = action === null ? "agent_decides" : requiredLevel(db, action, input);
   return runWrite(db, write, (ctx) => {
-    const card = op.name === "invoice_issue" ? waitingIssue(db, input) : null;
-    if (card) return waiting({ ...card, level: levelToApprove(db, card) as Exclude<Level, "agent_decides"> }, ctx.page);
+    const card = alreadyWaiting(db, op.name, input);
+    if (card) return waitingNow(db, card, ctx.page);
     if (action !== null && level !== "agent_decides") return park(db, op, input, ctx, action, level, key);
     refuseIfHeld(db, op.name, input);
     const result = op.run(db, input, ctx);
@@ -163,7 +163,7 @@ export function runWrite(db: Books, w: Write, change: (ctx: Ctx) => Record<strin
       if (prior.payload_hash !== hash) {
         throw new Refusal("This idempotency_key was already used for a different write, so use a new key.", "idempotency_key");
       }
-      const result = asItStands(db, JSON.parse(prior.result));
+      const result = asItStands(db, JSON.parse(prior.result), w.page);
       return w.dryRun ? { dry_run: true, result } : result;
     }
   }

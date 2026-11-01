@@ -93,4 +93,13 @@ sb setup --books "$GOOD" > /dev/null
 sb doctor > "$H/doctor-found.json" || fail "doctor failed with the settings right: $(cat "$H/doctor-found.json")"
 echo "PASS: doctor fails the MCP check when a registered server can't reach the books, and passes once it finds them from the settings alone"
 
+# ISC-170: real books in both folders, so the server answers happily, but from the wrong one.
+sb setup --books "$H/other" > /dev/null
+set +e; sb doctor --books "$GOOD" > "$H/doctor-other.json"; code=$?; set -e
+[ "$code" -ne 0 ] || fail "doctor --books exited 0 with servers using other books"
+mcp_failures "$H/doctor-other.json" "it uses the books in"
+sb setup --books "$GOOD" > /dev/null
+sb doctor --books "$GOOD" > "$H/doctor-same.json" || fail "doctor --books failed with the settings naming that folder: $(cat "$H/doctor-same.json")"
+echo "PASS: doctor fails the MCP check when a registered server would use other books than the ones it checked"
+
 echo "PASS: doctor passes after setup and exits non-zero, naming the fix, when an agent's MCP entry is missing or broken"
