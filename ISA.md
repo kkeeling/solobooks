@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 174/186
+progress: 185/186
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -339,18 +339,18 @@ Why: the page is where the person decides, so a click that can't work says why i
 ### F20 · Loose ends from the follow-up list
 Why: each of these is a dead end someone hits in ordinary use, a voidable invoice that can't be voided, a retainer's early months lost, a charge that can't be traced from its line, or a probe that goes red unseen.
 
-- [ ] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
-- [ ] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
-- [ ] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit unapply` as the way out.
-- [ ] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported when it is taken back with today's date, which the void refusal, the tool and the guide all say to use, and books from every older version migrate with their rows unchanged.
-- [ ] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
-- [ ] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
-- [ ] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
-- [ ] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
-- [ ] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
+- [x] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
+- [x] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
+- [x] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit unapply` as the way out.
+- [x] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported when it is taken back with today's date, which the void refusal, the tool and the guide all say to use, and books from every older version migrate with their rows unchanged.
+- [x] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
+- [x] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
+- [x] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
+- [x] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
+- [x] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
 - [ ] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
-- [ ] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
-- [ ] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
+- [x] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
+- [x] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
 
 ## Test Strategy
 
@@ -690,6 +690,9 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - ISC-147, 149..152, 167, 168, 171: live CLI and page on scratch books 2026-11-01: double-count refusal, then its own `bank match` fix leaves one payment with the line; void PDF read: VOID INVOICE, nothing owed, watermark; future date refused; no-address email refused; second issue and second void return the same card; card shows Earlier payment and terms name the asked day
 - Real-agent evals on 26664cc 2026-11-01: install with Claude Code and with Codex, onboarding, past invoices, planted instructions (0 pending actions created), charges, all PASS
 - ISC-154, 170, 174: live on a scratch home 2026-11-01: damaged settings under control.ts fail doctor with the fix; `setup --books` on another app's SQLite refused with the same bytes
+- ISC-175..183, 185, 186: `bun test` 406 pass 0 fail 2026-11-01, each new test seen failing with its fix undone; live on scratch books: credit applied, email and PDF read with $123.12 due, void refused naming the command with today's date, taken back through MCP, second take-back refused, void approved in real Brave via Interceptor; retainer start date billed August and September as carried over; start date over a past invoice refused; page screenshot viewed
+- v0.1.7 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.7`, hash matches SHA256SUMS, setup and doctor pass
+- All script probes on ac2e800 2026-11-01, including `scripts/release-probes.sh`, export-check and plugin-install-check, PASS; real-agent evals on the same commit: install with Claude Code and Codex, onboarding, past invoices, planted instructions, charges, all PASS
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
