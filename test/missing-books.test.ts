@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/cli.ts";
 import { OPS } from "../src/core/perform.ts";
@@ -7,6 +7,7 @@ import { startPage } from "../src/page.ts";
 import { setup } from "../src/setup.ts";
 import { dbPath, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
+import { browserMarkers } from "./support/person.ts";
 
 const NOW = "2026-10-22T12:00:00.000Z";
 
@@ -115,7 +116,7 @@ for (const state of ["missing", "empty"] as const) {
     try {
       const html = await (await fetch(page.url)).text();
       const code = html.match(/"pending":\[\{"id":\d+,"code":"([^"]+)"/)![1]!;
-      const click = () => fetch(new URL("/approve", page.url), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pending_id: asked.pending_id, code }) });
+      const click = () => fetch(new URL("/approve", page.url), { method: "POST", headers: { "content-type": "application/json", ...browserMarkers(page.url) }, body: JSON.stringify({ pending_id: asked.pending_id, code }) });
       renameSync(dbPath(books), join(books, "away"));
       if (state === "empty") writeFileSync(dbPath(books), "");
       const r = await click();
@@ -166,4 +167,79 @@ test("ISC-140: a first setup still starts books in the default folder", () => {
   mkdirSync(join(home, ".claude"));
   const r = setup([], { HOME: home, XDG_CONFIG_HOME: join(home, ".config") });
   expect(existsSync(dbPath(r.books))).toBe(true);
+});
+
+/** A person with one card waiting and the page open: `click(path)` is the button, with the page's code for it. */
+async function clickable() {
+  const { env, books } = await person();
+  const asked = JSON.parse((await run(["gate", "set", "--invoice-issue", "agent_decides", "--source", "s"], env)).stdout);
+  const page = startPage({ books, port: 0, env });
+  const html = await (await fetch(page.url)).text();
+  const data = JSON.parse(html.match(/<script type="application\/json" id="data">(.*?)<\/script>/s)![1]!);
+  const code = data.pending[0].code as string;
+  const click = (path = "/approve") =>
+    fetch(new URL(path, page.url), { method: "POST", headers: { "content-type": "application/json", ...browserMarkers(page.url) }, body: JSON.stringify({ pending_id: asked.pending_id, code }) });
+  return { env, books, page, data, click, id: asked.pending_id as number };
+}
+
+for (const path of ["/approve", "/reject"]) {
+  test(`ISC-161: ${path} with a books file that isn't books shows the can't-read message, spends no code, and the same button works once it's back`, async () => {
+    const { books, page, click } = await clickable();
+    try {
+      renameSync(dbPath(books), join(books, "away"));
+      writeFileSync(dbPath(books), "this is not a books file, it is a shopping list");
+      const r = await click(path);
+      expect(r.status).toBe(503);
+      const { refusal } = (await r.json()) as any;
+      expect(refusal.field).toBe("books");
+      expect(refusal.reason).toStartWith(`solobooks can't read the books file at ${dbPath(books)} (`);
+      expect(refusal.reason).toEndWith("then reload this page.");
+      expect(refusal.reason).toContain("file is not a database");
+      expect(readFileSync(dbPath(books), "utf8")).toStartWith("this is not a books file"); // nothing wrote over it
+      rmSync(dbPath(books));
+      renameSync(join(books, "away"), dbPath(books));
+      expect((await click(path)).status).toBe(200);
+    } finally {
+      page.stop();
+    }
+  });
+}
+
+test("ISC-161: registering a passkey with a books file that isn't books spends no code either", async () => {
+  const { books, page, data } = await clickable();
+  try {
+    const post = () => fetch(new URL("/passkey/register", page.url), { method: "POST", headers: { "content-type": "application/json", ...browserMarkers(page.url) }, body: JSON.stringify({ code: data.register.code, response: {} }) });
+    renameSync(dbPath(books), join(books, "away"));
+    writeFileSync(dbPath(books), "not books");
+    expect((await post()).status).toBe(503);
+    rmSync(dbPath(books));
+    renameSync(join(books, "away"), dbPath(books));
+    const r = await post();
+    expect(r.status).not.toBe(403); // the code still works; this made-up response is what is refused
+    expect(((await r.json()) as any).refusal.field).not.toBe("code");
+  } finally {
+    page.stop();
+  }
+});
+
+test("ISC-162: with a zero-byte books file, the page, its panels and a click all say the file is empty, not that it isn't there", async () => {
+  const { books, page, click } = await clickable();
+  try {
+    renameSync(dbPath(books), join(books, "away"));
+    writeFileSync(dbPath(books), "");
+    const html = await (await fetch(page.url)).text();
+    expect(html).toContain("(the file is empty)");
+    expect(html).not.toContain("the file is not there");
+    const data = (await (await fetch(new URL("/data", page.url))).json()) as any;
+    expect(data.refusal.reason).toContain("(the file is empty)");
+    const r = (await (await click()).json()) as any;
+    expect(r.refusal.reason).toContain("(the file is empty)");
+
+    rmSync(dbPath(books)); // really gone: it says that instead
+    expect(await (await fetch(page.url)).text()).toContain("(the file is not there)");
+    renameSync(join(books, "away"), dbPath(books));
+    expect((await click()).status).toBe(200);
+  } finally {
+    page.stop();
+  }
 });

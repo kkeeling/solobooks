@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { approvePending, rejectPending } from "../src/core/approve.ts";
+import { getPending } from "../src/core/gate.ts";
+import { perform } from "../src/core/perform.ts";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
-import { asPerson } from "./support/person.ts";
-import { acct } from "./support/books.ts";
+import { approveOnPage, asPerson, setEveryLevel, WHEN } from "./support/person.ts";
+import { acct, tempDir } from "./support/books.ts";
+import { inProcessMcp } from "./support/mcp-client.ts";
 
 // Payments on issued invoices, through the CLI on books where the person lets the agent decide everything.
 // Accounts from acmeBooks: 1 Checking, 2 Printing.
@@ -16,7 +22,7 @@ async function thousandDollarInvoice() {
   return { dir, inv };
 }
 
-const pay = async (dir: string, body: Record<string, unknown>) => (await ok(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-25", ...body }))).payment;
+const pay = async (dir: string, body: Record<string, unknown>) => (await ok(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-22", ...body }))).payment;
 const open = async (dir: string, id: number) => (await ok(dir, ["invoice", "get", "--id", String(id)])).invoice.open_cents;
 
 /** An account's balance, debits less credits, by name. */
@@ -58,11 +64,11 @@ test("ISC-39 gross plus fee: a $1,000 invoice paid with a $30 fee records $1,000
     [{ invoice_id: inv.id, amount_cents: 100, deposit_account_id: ar }, "deposit_account_id"],
     [{ invoice_id: 999, amount_cents: 100 }, "invoice_id"],
   ] as const) {
-    const r = await cli(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-25", ...body }));
+    const r = await cli(dir, json(["payment", "add"], { deposit_account_id: acct(1), date: "2026-10-22", ...body }));
     expect(r).toMatchObject({ code: 2, out: { field } });
   }
   const draft = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-11-01", period_end: "2026-11-30", lines: [{ description: "Nov", amount_cents: 500 }] }))).invoice;
-  expect(await cli(dir, json(["payment", "add"], { invoice_id: draft.id, amount_cents: 500, deposit_account_id: acct(1), date: "2026-10-25" }))).toMatchObject({ code: 2, out: { field: "invoice_id" } });
+  expect(await cli(dir, json(["payment", "add"], { invoice_id: draft.id, amount_cents: 500, deposit_account_id: acct(1), date: "2026-10-22" }))).toMatchObject({ code: 2, out: { field: "invoice_id" } });
 });
 
 test("ISC-40 partial: a partial payment leaves the exact remaining balance due", async () => {
@@ -92,7 +98,7 @@ test("ISC-41 overpay: a payment beyond what is owed becomes a client credit row 
   expect(p.client_credit).toMatchObject({ amount_cents: 20000, client_balance_cents: 20000 });
 
   const credits = await ok(dir, ["client", "credits"]);
-  expect(credits.credits).toEqual([{ id: p.client_credit.id, client_id: 2, date: "2026-10-25", amount_cents: 20000, payment_id: p.id, refund_id: null, application_id: null, applied_to_invoice_id: null, source: "agent:test" }]);
+  expect(credits.credits).toEqual([{ id: p.client_credit.id, client_id: 2, date: "2026-10-22", amount_cents: 20000, payment_id: p.id, refund_id: null, application_id: null, applied_to_invoice_id: null, source: "agent:test" }]);
   expect(credits.balances).toEqual([{ client_id: 2, client: "Beta LLC", balance_cents: 20000 }]);
   // Held for the client, owed back to them: a liability, not income.
   expect(balance(dir, "Client credits")).toBe(-20000);
@@ -269,4 +275,102 @@ test("ISC-111 apply credit: a client's overpayment credit pays down their later 
   expect(await cli(dir, json(["payment", "refund"], { payment_id: over.id, date: "2026-12-01", reason: "x", amount_cents: 100001 }))).toMatchObject({ code: 2, out: { field: "amount_cents" } });
   // An invoice paid down with credit can't be voided out from under it.
   expect(await cli(dir, json(["invoice", "void"], { id: nov.id, reason: "x" }))).toMatchObject({ code: 2, out: { field: "id" } });
+});
+
+/** Two $250.00 deposits on a statement, imported before any payment, so neither is matched by itself. Returns their line ids. */
+async function twoDeposits(dir: string): Promise<[number, number]> {
+  const path = join(tempDir(), "statement.csv");
+  writeFileSync(path, "Date,Description,Amount\n10/20/2026,ACH DEPOSIT ONE,250.00\n10/21/2026,ACH DEPOSIT TWO,250.00\n");
+  const r = await ok(dir, json(["bank", "import"], { account_id: acct(1), file_path: path, date_column: "Date", date_format: "MM/DD/YYYY", description_column: "Description", amount_column: "Amount" }));
+  return r.lines.map((l: any) => l.id);
+}
+
+test("ISC-147: one deposit can't back two payments: a line the same as an approved no-line payment is refused, naming bank match", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [first, second] = await twoDeposits(dir);
+  const checking = balance(dir, "Checking");
+
+  // The person approves $250 with no bank line, which leaves the real deposit unmatched.
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
+  const body = { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-20" };
+  const asked = await ok(dir, json(["payment", "add"], body));
+  expect(asked.status).toBe("pending");
+  const approved = asPerson(dir, (db) => approveOnPage(db, asked.pending_id));
+  const entry = approved.result.payment.entry.id;
+
+  // The same deposit named on a new payment doesn't get a second life, and the books show it once.
+  const twice = await cli(dir, json(["payment", "add"], { ...body, bank_line_id: first }));
+  expect(twice).toMatchObject({ code: 2, out: { field: "bank_line_id" } });
+  expect(twice.out.reason).toContain(`solobooks bank match --line-id ${first} --entry-id ${entry}`);
+  expect(await open(dir, inv.id)).toBe(75000);
+  expect(balance(dir, "Checking") - checking).toBe(25000);
+  expect((await ok(dir, ["payment", "list", "--invoice-id", String(inv.id)])).payments).toHaveLength(1);
+
+  // The way forward it names works, and then a second, real instalment goes through on its own line.
+  expect((await ok(dir, ["bank", "match", "--line-id", String(first), "--entry-id", String(entry), ...S])).line.match.entry_id).toBe(entry);
+  const next = (await ok(dir, json(["payment", "add"], { ...body, date: "2026-10-21", bank_line_id: second }))).payment;
+  expect(next).toMatchObject({ bank_line_id: second, invoice_open_cents: 50000 });
+  expect(balance(dir, "Checking") - checking).toBe(50000);
+});
+
+test("ISC-147: only the same deposit on the same invoice and account blocks a line", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [first] = await twoDeposits(dir);
+  await pay(dir, { invoice_id: inv.id, amount_cents: 25100 }); // a different amount
+  await pay(dir, { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: (await ok(dir, ["account", "add", "--name", "Stripe balance", "--type", "asset", ...S])).account.id }); // a different account
+  expect((await pay(dir, { invoice_id: inv.id, amount_cents: 25000, bank_line_id: first })).bank_line_id).toBe(first);
+});
+
+test("ISC-147: a gross with a fee counts by what reached the bank", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const [first] = await twoDeposits(dir);
+  await pay(dir, { invoice_id: inv.id, amount_cents: 26000, fee_cents: 1000 }); // $250.00 reached the account
+  expect(await cli(dir, json(["payment", "add"], { invoice_id: inv.id, amount_cents: 25000, deposit_account_id: acct(1), date: "2026-10-22", bank_line_id: first }))).toMatchObject({ code: 2, out: { field: "bank_line_id" } });
+});
+
+test("ISC-150: a payment dated after today is refused from the CLI and MCP; today and before the invoice stay allowed", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  const body = { invoice_id: inv.id, amount_cents: 100000, deposit_account_id: acct(1) };
+  const late = await cli(dir, json(["payment", "add"], { ...body, date: "2026-10-23" }));
+  expect(late).toMatchObject({ code: 2, out: { field: "date" } });
+  expect(late.out.reason).toContain("after today, 2026-10-22");
+  const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" });
+  try {
+    const r = await mcp.call("payment_add", { ...body, date: "2031-01-01", source: "agent:x" });
+    expect(r.isError).toBe(true);
+    expect(r.structuredContent).toMatchObject({ field: "date" });
+  } finally {
+    await mcp.close();
+  }
+  expect(await open(dir, inv.id)).toBe(100000);
+  await pay(dir, { invoice_id: inv.id, amount_cents: 100, date: "2026-10-22" });
+  await pay(dir, { invoice_id: inv.id, amount_cents: 100, date: "2026-09-01" }); // clients do pay ahead of an invoice
+  expect(await open(dir, inv.id)).toBe(99800);
+});
+
+test("ISC-150: a future-dated payment parked before the rule can't be approved early; its card stays to reject, or to approve once the day comes", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
+  const body = { invoice_id: inv.id, amount_cents: 100000, deposit_account_id: acct(1), date: "2031-01-01" };
+  // A later clock is how to get a card like one an older solobooks parked: nothing else can make one now.
+  const park = () => asPerson(dir, (db) => {
+    const r = perform(db, "payment_add", body, { source: "agent:old", now: "2031-02-01T12:00:00.000Z" });
+    if (!r.ok) throw new Error(JSON.stringify(r.refusal));
+    return r.result.pending_id as number;
+  });
+  const id = park();
+  asPerson(dir, (db) => {
+    expect(approvePending(db, id, { via: "page" }, WHEN)).toMatchObject({ ok: false, refusal: { field: "date" } });
+    expect(getPending(db, id)!.status).toBe("pending");
+  });
+  expect(await open(dir, inv.id)).toBe(100000);
+  asPerson(dir, (db) => {
+    expect(rejectPending(db, id, "page", WHEN).ok).toBe(true);
+    expect(getPending(db, id)!.status).toBe("rejected");
+  });
+  expect(await open(dir, inv.id)).toBe(100000);
+
+  const later = park();
+  asPerson(dir, (db) => expect(approvePending(db, later, { via: "page" }, { ...WHEN, now: "2031-01-01T12:00:00.000Z" }).ok).toBe(true));
+  expect(await open(dir, inv.id)).toBe(0);
 });

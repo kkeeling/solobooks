@@ -355,6 +355,26 @@ export function park(db: Books, op: Op, input: Record<string, any>, ctx: Ctx, ac
   return waiting(requirePending(db, id), ctx.page);
 }
 
+/**
+ * The card already waiting for the drafts in an issue request, so asking again parks no second one that could only
+ * fail. A batch that only partly overlaps what is waiting can't be answered by one card, so it is refused.
+ */
+export function waitingIssue(db: Books, input: Record<string, any>): PendingAction | null {
+  if ((input.id === undefined) === (input.ids === undefined)) return null; // the operation itself refuses this
+  const asked: number[] = input.ids ?? [input.id];
+  const open = db.query("SELECT id FROM pending_actions WHERE status = 'pending' AND op = 'invoice_issue' ORDER BY id").all() as { id: number }[];
+  for (const { id } of open) {
+    const p = requirePending(db, id);
+    const held: number[] = p.input.ids ?? [p.input.id];
+    const both = asked.filter((x) => held.includes(x));
+    if (both.length === asked.length) return p;
+    if (both.length > 0) {
+      throw new Refusal(`Draft invoice ${both[0]} is already waiting for approval in pending action ${p.id}, so leave it out of this batch, or have the person decide that one first.`, "ids");
+    }
+  }
+  return null;
+}
+
 /** What the agent gets back for an action waiting at the gate, including what to tell the person. */
 export function waiting(p: PendingAction, page: string) {
   const how =
@@ -369,6 +389,23 @@ export function waiting(p: PendingAction, page: string) {
     approve_url: `${page}#pending-${p.id}`,
     message: `Nothing has happened yet: this waits until ${how}. The agent can't approve it.`,
   };
+}
+
+/** What the agent gets back for an action the person already decided: their decision and, when approved, the result. */
+export function decided(p: PendingAction) {
+  const how = p.decided_via === "page" ? "on the approval page" : "in their agent app";
+  const shared = { pending_id: p.id, title: p.title, decided_at: p.decided_at, decided_via: p.decided_via };
+  if (p.status === "approved") {
+    return { status: "approved", ...shared, ...(p.excluded.length > 0 && { excluded: p.excluded }), result: p.result, message: `The person approved this ${how}, so it has happened.` };
+  }
+  return { status: "rejected", ...shared, message: `The person rejected this ${how}, so nothing changed.` };
+}
+
+/** A repeated request's first answer, as it stands now: a parked action may have been decided since. */
+export function asItStands(db: Books, first: Record<string, any>): Record<string, unknown> {
+  if (first.status !== "pending" || typeof first.pending_id !== "number") return first;
+  const p = getPending(db, first.pending_id);
+  return p && p.status !== "pending" ? decided(p) : first;
 }
 
 // ---------------------------------------------------------------- operations

@@ -85,3 +85,31 @@ test("ISC-31 standard fields: long invoices run onto more pages, and characters 
   expect(lines).toContain("2026-10-21 Review 59 ? notes (15 min at $150.00/hr) $37.50");
   expect(lines.filter((l) => l.startsWith("Total due"))).toEqual([`Total due $${(3359.5 + 60 * 37.5).toLocaleString("en-US", { minimumFractionDigits: 2 })}`]);
 });
+
+test("ISC-149: a void invoice's PDF says VOID on its face and shows no amount due", async () => {
+  const dir = await acmeBooks();
+  const d = await draftOctober(dir);
+  await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
+  expect((await pdf(dir, d.id)).lines.join("\n")).toContain("Total due $3,359.50");
+  await ok(dir, ["invoice", "void", "--id", String(d.id), "--reason", "Billed in error", ...S]);
+
+  const { file, lines } = await pdf(dir, d.id);
+  const text = lines.join("\n");
+  expect(file).toBe("invoices/7001.pdf"); // the same file as the clean one, so the clean one can't linger
+  expect(lines).toContain("VOID");
+  expect(text).toContain("VOID INVOICE");
+  expect(text).toContain("Status: void, nothing is owed on it");
+  expect(text).toContain("Total voided $3,359.50");
+  for (const gone of ["Total due", "Due date", "Terms:", "How to pay", "ACH to First Bank"]) expect(text).not.toContain(gone);
+});
+
+test("ISC-149: a void credit note's PDF says VOID too", async () => {
+  const dir = await acmeBooks();
+  const d = await draftOctober(dir);
+  await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
+  const cn = (await ok(dir, ["invoice", "credit", "--json", JSON.stringify({ invoice_id: d.id, reason: "Discount", line_kind: "manual", amount_cents: 1000 }), ...S])).credit_note;
+  await ok(dir, ["invoice", "void", "--id", String(cn.id), "--reason", "Wrong client", ...S]);
+  const text = (await pdf(dir, cn.id)).lines.join("\n");
+  expect(text).toContain("VOID CREDIT NOTE");
+  expect(text).not.toContain("Total credit");
+});

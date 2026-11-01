@@ -50,4 +50,47 @@ set +e; sb doctor > "$H/doctor-cat.json"; code=$?; set -e
 [ "$code" -ne 0 ] || fail "doctor exited 0 with a registered command that isn't an MCP server"
 only_failure "$H/doctor-cat.json" "Claude Code MCP" "doesn't work"
 
+# ISC-155: everything above ran with no SOLOBOOKS_DIR and no --books, so each passing doctor proved a registered server
+# finds the books from the settings alone. Now the settings point at the wrong folder while doctor looks at the good
+# books with --books. The servers can't reach them, and doctor has to say so.
+sb setup > /dev/null # repairs Claude Code
+SETTINGS="$H/.config/solobooks/config.json"
+GOOD="$H/solobooks"
+record() { "$BUN" -e 'const [f, books] = process.argv.slice(1); const c = JSON.parse(await Bun.file(f).text()); c.books = books; await Bun.write(f, JSON.stringify(c, null, 2));' "$SETTINGS" "$1"; }
+# The report in $1 passes the books check, and fails each agent's MCP check, saying $2, with setup --books as its fix.
+mcp_failures() {
+  "$BUN" -e '
+    const [file, says] = process.argv.slice(1);
+    const r = JSON.parse(await Bun.file(file).text());
+    const bad = r.checks.filter((c) => !c.ok);
+    const mcp = bad.filter((c) => c.check.endsWith(" MCP"));
+    const ok = r.ok === false && r.checks.find((c) => c.check === "books").ok === true && mcp.length === 2
+      && mcp.every((c) => c.detail.includes(says) && c.fix.includes("solobooks setup --books"));
+    if (!ok) { console.error("FAIL: expected both MCP checks to fail (" + says + "), got " + JSON.stringify(bad)); process.exit(1); }
+  ' "$1" "$2"
+}
+record "$H/nowhere"
+set +e; sb doctor --books "$GOOD" > "$H/doctor-lost.json"; code=$?; set -e
+[ "$code" -ne 0 ] || fail "doctor --books exited 0 with servers that can't reach the books"
+mcp_failures "$H/doctor-lost.json" "There are no books"
+
+# When doctor's own books check fails too, the person gets one fix: only books fails.
+set +e; sb doctor > "$H/doctor-books.json"; code=$?; set -e
+[ "$code" -ne 0 ] || fail "doctor exited 0 with the recorded folder empty"
+"$BUN" -e '
+  const r = JSON.parse(await Bun.file(process.argv[1]).text());
+  const bad = r.checks.filter((c) => !c.ok);
+  if (bad.length !== 1 || bad[0].check !== "books") { console.error("FAIL: expected only books to fail, got " + JSON.stringify(bad)); process.exit(1); }
+' "$H/doctor-books.json"
+
+# Damaged settings with --books: the settings check and both servers fail, and the fix each names really works.
+printf '{ not json' > "$SETTINGS"
+set +e; sb doctor --books "$GOOD" > "$H/doctor-damaged.json"; code=$?; set -e
+[ "$code" -ne 0 ] || fail "doctor --books exited 0 with damaged settings"
+mcp_failures "$H/doctor-damaged.json" "isn't valid JSON"
+sb setup --books "$GOOD" > /dev/null
+# Settings right again, with no flag and no variable: the servers reach the books on their own.
+sb doctor > "$H/doctor-found.json" || fail "doctor failed with the settings right: $(cat "$H/doctor-found.json")"
+echo "PASS: doctor fails the MCP check when a registered server can't reach the books, and passes once it finds them from the settings alone"
+
 echo "PASS: doctor passes after setup and exits non-zero, naming the fix, when an agent's MCP entry is missing or broken"

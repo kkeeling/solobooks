@@ -85,3 +85,17 @@ test("ISC-27 locked: editing a time entry on an issued invoice is refused with a
   await ok(dir, ["invoice", "void", "--id", String(inv.id), "--reason", "redo", ...S]);
   expect((await ok(dir, ["time", "edit", "--id", "1", "--minutes", "30", ...S])).time_entry.minutes).toBe(30);
 });
+
+test("billing-waj: a time entry moved past its draft's period drops off the draft, as a charge does, and bills later", async () => {
+  const dir = await acmeBooks();
+  const entry = (await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-10-20", "--minutes", "30", "--note", "Moved later", ...S])).time_entry;
+  const d = await draftOctober(dir);
+  const has = async () => (await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice.lines.some((l: any) => l.description.includes("Moved later"));
+  expect(await has()).toBe(true);
+  await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-10-25", ...S]); // still inside: it follows
+  expect(await has()).toBe(true);
+  await ok(dir, ["time", "edit", "--id", String(entry.id), "--date", "2026-11-20", ...S]);
+  expect(await has()).toBe(false);
+  const next = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2026-11-01", "--period-end", "2026-11-30", ...S])).invoice;
+  expect(next.lines.some((l: any) => l.description.includes("Moved later"))).toBe(true);
+});

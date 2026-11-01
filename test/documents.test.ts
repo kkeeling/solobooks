@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { acmeBooks, cli, draftOctober, issueOctober, ok, S } from "./support/billing.ts";
+import { asPerson } from "./support/person.ts";
 
 test("ISC-35 invoice email: the invoice email text carries the invoice number, amount and due date", async () => {
   const dir = await acmeBooks();
@@ -44,4 +45,34 @@ test("ISC-36 reminder: the overdue reminder text carries the unpaid balance and 
   // Today is the default day.
   const today = await cli(dir, ["invoice", "reminder", "--id", id]);
   expect(today.out.field).toBe("as_of");
+});
+
+test("ISC-151: invoice email refuses, naming the fix, when the client has no email address, and the fix works on the issued invoice", async () => {
+  const dir = await acmeBooks({ email: undefined });
+  const inv = await issueOctober(dir);
+  const r = await cli(dir, ["invoice", "email", "--id", String(inv.id)]);
+  expect(r).toMatchObject({ code: 2, out: { field: "id" } });
+  expect(r.out.reason).toContain("Acme Corp has no email address");
+  expect(r.out.reason).toContain("solobooks client edit --id 1 --email");
+  await ok(dir, ["client", "edit", "--id", "1", "--email", "new@acme.example", ...S]);
+  expect((await ok(dir, ["invoice", "email", "--id", String(inv.id)])).to).toBe("new@acme.example");
+});
+
+test("ISC-151: invoice email refuses, naming the fix, when the business has no email address, and the fix works on the issued invoice", async () => {
+  const dir = await acmeBooks();
+  asPerson(dir, (db) => db.query("UPDATE business_profile SET email = NULL").run());
+  const inv = await issueOctober(dir);
+  const r = await cli(dir, ["invoice", "email", "--id", String(inv.id)]);
+  expect(r).toMatchObject({ code: 2, out: { field: "id" } });
+  expect(r.out.reason).toContain("Your business has no email address");
+  expect(r.out.reason).toContain("solobooks profile set --email");
+  await ok(dir, ["profile", "set", "--email", "billing@example.com", ...S]);
+  expect((await ok(dir, ["invoice", "email", "--id", String(inv.id)])).from).toBe("billing@example.com");
+});
+
+test("ISC-151: addresses frozen at issue still win over ones changed since", async () => {
+  const dir = await acmeBooks();
+  const inv = await issueOctober(dir);
+  await ok(dir, ["client", "edit", "--id", "1", "--email", "changed@acme.example", ...S]);
+  expect((await ok(dir, ["invoice", "email", "--id", String(inv.id)])).to).toBe("ap@acme.example");
 });

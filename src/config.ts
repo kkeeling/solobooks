@@ -41,6 +41,11 @@ export function readConfig(env: Env): Config {
   if (typeof c !== "object" || c === null || Array.isArray(c)) {
     throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
+  const { books, backups, port } = c as Record<string, unknown>;
+  const wrong = books !== undefined && typeof books !== "string" ? "books" : backups !== undefined && typeof backups !== "string" ? "backups" : port !== undefined && typeof port !== "number" ? "port" : null;
+  if (wrong) {
+    throw new Refusal(`The settings file ${file} has the wrong kind of value for ${wrong}, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
+  }
   return c as Config;
 }
 
@@ -82,13 +87,17 @@ function recordedPort(env: Env): number | undefined {
   }
 }
 
-/** The approval page's port: SOLOBOOKS_PORT, then the one `serve --port` recorded, or 7317. */
-export function pagePort(env: Env): number {
-  const raw = env.SOLOBOOKS_PORT ?? recordedPort(env)?.toString();
-  if (raw === undefined || raw === "") return DEFAULT_PORT;
+/** A port as written, or a refusal blaming `name`, wherever it came from. */
+export function portNumber(raw: string, name: string): number {
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Refusal("SOLOBOOKS_PORT must be a whole number from 1 to 65535.", "port");
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Refusal(`${name} must be a whole number from 1 to 65535.`, "port");
   return n;
+}
+
+/** The approval page's port: SOLOBOOKS_PORT, then the one `serve --port` recorded, or 7317. An empty variable counts as unset. */
+export function pagePort(env: Env): number {
+  if (env.SOLOBOOKS_PORT) return portNumber(env.SOLOBOOKS_PORT, "SOLOBOOKS_PORT");
+  return recordedPort(env) ?? DEFAULT_PORT;
 }
 
 /** The approval page's address, which pending actions point the person to. */

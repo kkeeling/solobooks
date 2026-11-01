@@ -583,3 +583,80 @@ test("ISC-70 mark paid: a payment with no matching bank line is gated by default
   const free = (await cli(dir, json(["payment", "add"], { invoice_id: d.id, date: "2026-10-22", amount_cents: 700, deposit_account_id: acct(1) }))).out;
   expect(free.payment).toMatchObject({ amount_cents: 700, invoice_open_cents: 0, bank_line_id: null });
 });
+
+test("ISC-148: retrying a gated request after the person approved it reports approved with the result, from the CLI and MCP", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const keyed = ["invoice", "issue", "--id", String(d.id), "--idempotency-key", "issue-1", ...S];
+  const first = await ok(dir, keyed);
+  expect(first.status).toBe("pending");
+  expect(await ok(dir, keyed)).toEqual(first); // still waiting: the same answer
+
+  asPerson(dir, (db) => approveOnPage(db, first.pending_id));
+  const replay = await ok(dir, keyed);
+  expect(replay).toMatchObject({ status: "approved", pending_id: first.pending_id, decided_via: "page", result: { invoice: { id: d.id, status: "issued", number: "7001" } } });
+  expect(JSON.stringify(replay)).not.toContain("Nothing has happened yet");
+  expect((await ok(dir, [...keyed, "--dry-run"])).result.status).toBe("approved");
+
+  const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: WHEN.now });
+  try {
+    const r = await mcp.call("invoice_issue", { id: d.id, idempotency_key: "issue-1", source: "agent:test" });
+    expect(r.structuredContent).toMatchObject({ status: "approved", result: { invoice: { number: "7001" } } });
+  } finally {
+    await mcp.close();
+  }
+  expect((await ok(dir, ["invoice", "list"])).invoices.filter((i: any) => i.status === "issued")).toHaveLength(1); // the retry issued nothing more
+}, 30_000);
+
+test("ISC-148: retrying a gated request after the person rejected it reports rejected, and nothing happened", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const keyed = ["invoice", "issue", "--id", String(d.id), "--idempotency-key", "issue-2", ...S];
+  const first = await ok(dir, keyed);
+  asPerson(dir, (db) => expect(rejectPending(db, first.pending_id, "page", WHEN).ok).toBe(true));
+  const replay = await ok(dir, keyed);
+  expect(replay).toMatchObject({ status: "rejected", pending_id: first.pending_id });
+  expect(replay.result).toBeUndefined();
+  expect(JSON.stringify(replay)).not.toContain("Nothing has happened yet");
+  expect((await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice.status).toBe("draft");
+}, 30_000);
+
+test("ISC-152: asking to issue a draft that is already waiting returns the waiting card and parks no second one", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const ask = ["invoice", "issue", "--id", String(d.id), ...S];
+  const first = await ok(dir, ask);
+  expect(await ok(dir, ask)).toMatchObject({ status: "pending", pending_id: first.pending_id, title: first.title });
+  expect((await ok(dir, ["pending", "list"])).pending.map((p: any) => p.id)).toEqual([first.pending_id]);
+
+  asPerson(dir, (db) => approveOnPage(db, first.pending_id));
+  expect((await ok(dir, ["pending", "list"])).pending).toEqual([]); // nothing left that could only fail
+  expect((await cli(dir, ask)).code).toBe(2); // issued, and it says so
+}, 30_000);
+
+test("ISC-152: a batch holds its drafts: one of them returns the batch's card, and an overlapping batch is refused", async () => {
+  const dir = await clickAcme();
+  const a = await draftOctober(dir);
+  await ok(dir, ["time", "add", "--client-id", "1", "--date", "2026-12-02", "--minutes", "60", "--note", "December", ...S]);
+  const b = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2026-12-01", "--period-end", "2026-12-31", ...S])).invoice;
+  await ok(dir, ["time", "add", "--client-id", "1", "--date", "2027-01-02", "--minutes", "60", "--note", "January", ...S]);
+  const c = (await ok(dir, ["invoice", "draft", "--client-id", "1", "--period-start", "2027-01-01", "--period-end", "2027-01-31", ...S])).invoice;
+  const batch = await ok(dir, ["invoice", "issue", "--ids", `${a.id},${b.id}`, ...S]);
+  expect((await ok(dir, ["invoice", "issue", "--id", String(b.id), ...S])).pending_id).toBe(batch.pending_id);
+  expect((await ok(dir, ["invoice", "issue", "--ids", `${b.id},${a.id}`, ...S])).pending_id).toBe(batch.pending_id);
+  const overlap = await cli(dir, ["invoice", "issue", "--ids", `${a.id},${c.id}`, ...S]);
+  expect(overlap).toMatchObject({ code: 2, out: { field: "ids" } });
+  expect(overlap.out.reason).toContain(`pending action ${batch.pending_id}`);
+  expect((await ok(dir, ["pending", "list"])).pending).toHaveLength(1);
+  expect((await ok(dir, ["invoice", "issue", "--id", String(c.id), ...S])).pending_id).not.toBe(batch.pending_id); // a draft nobody holds still parks
+}, 30_000);
+
+test("ISC-152: the card asked for again states the level it must clear now, so a raised level is never asked in chat", async () => {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const first = await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
+  const auth = await asPerson(dir, (db) => registerTestPasskey(db));
+  const up = await ok(dir, ["gate", "set", "--invoice-issue", "passkey", ...S]);
+  await asPerson(dir, (db) => approveWithPasskey(db, auth, up.pending_id));
+  expect(await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).toMatchObject({ pending_id: first.pending_id, level: "passkey" });
+}, 30_000);

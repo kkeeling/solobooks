@@ -15,6 +15,7 @@ import { Refusal } from "./refusal.ts";
 export interface InvoiceDocument {
   kind: "invoice" | "credit";
   draft: boolean;
+  void: boolean;
   number: string | null;
   credits_number: string | null;
   seller: { legal_name: string | null; address: string | null; ein: string | null; email: string | null };
@@ -41,6 +42,7 @@ export function invoiceDocument(db: Books, r: InvoiceRow): InvoiceDocument {
   return {
     kind: r.kind,
     draft,
+    void: r.status === "void",
     number: displayNumber(r),
     credits_number: original ? displayNumber(original) : null,
     seller: draft
@@ -87,7 +89,7 @@ const invoicePdf: Op = {
   kind: "read",
   savesFile: true,
   description:
-    "Make the PDF of an invoice or credit note and save it in the books folder under invoices/. A draft's PDF is stamped DRAFT and has no number. Returns the file's path inside the books folder.",
+    "Make the PDF of an invoice or credit note and save it in the books folder under invoices/. A draft's PDF is stamped DRAFT and has no number; a void one is stamped VOID and shows nothing due. Returns the file's path inside the books folder.",
   fields: { id: { type: "int", required: true, min: 1, description: "Invoice or credit note id." } },
   async run(db, input, ctx) {
     const r = requireInvoice(db, input.id);
@@ -104,15 +106,28 @@ function signOff(r: InvoiceRow, doc: InvoiceDocument): string {
   return `${pay}\n\nThank you,\n${doc.seller.legal_name ?? ""}`;
 }
 
+/**
+ * Who an email goes from and to: the addresses frozen at issue, or, where there was none then, the ones added since,
+ * so the fix a refusal names works on an invoice already issued.
+ */
+function emailAddresses(db: Books, r: InvoiceRow, doc: InvoiceDocument): { from: string; to: string } {
+  const to = r.client_email ?? requireClient(db, r.client_id).email;
+  if (!to) throw new Refusal(`${doc.client.name} has no email address, so this email has nowhere to go; add one with solobooks client edit --id ${r.client_id} --email <address>.`, "id");
+  const from = doc.seller.email ?? getProfile(db).email;
+  if (!from) throw new Refusal("Your business has no email address, so this email has nobody to come from; add one with solobooks profile set --email <address>.", "id");
+  return { from, to };
+}
+
 const invoiceEmail: Op = {
   name: "invoice_email",
   kind: "read",
   description:
-    "Write the email that goes with an issued invoice or credit note: from, to, subject and body, with the number, amount and due date. solobooks never sends it; the agent does, then reports it with invoice sent.",
+    "Write the email that goes with an issued invoice or credit note: from, to, subject and body, with the number, amount and due date. solobooks never sends it; the agent does, then reports it with invoice sent. Refuses, naming the fix, when the client or the business has no email address.",
   fields: { id: { type: "int", required: true, min: 1, description: "Invoice or credit note id." } },
   run(db, input) {
     const r = requireIssued(db, input.id);
     const doc = invoiceDocument(db, r);
+    const { from, to } = emailAddresses(db, r, doc);
     const amount = dollars(doc.total_cents);
     const head =
       r.kind === "invoice"
@@ -125,8 +140,8 @@ const invoiceEmail: Op = {
             body: `Hi ${doc.client.name},\n\nAttached is credit note ${doc.number} for ${amount}, which reduces what you owe on invoice ${doc.credits_number}.`,
           };
     return {
-      from: doc.seller.email,
-      to: r.client_email,
+      from,
+      to,
       subject: head.subject,
       body: head.body + (r.kind === "invoice" ? signOff(r, doc) : `\n\nThank you,\n${doc.seller.legal_name ?? ""}`),
       attachment: fileName(r),

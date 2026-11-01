@@ -36,7 +36,7 @@ test("applies to: a tax rate covers only the kinds the person listed, and a rate
   expect(lines).toContain("IL sales tax (6.25% of $3,317.50) $207.34");
   expect(lines).toContain("Total due $3,566.84");
   // Tax is owed to the state, never income: paid in full, the P&L counts everything but the tax.
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: inv.total_cents, deposit_account_id: acct(1) }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-22", amount_cents: inv.total_cents, deposit_account_id: acct(1) }));
   const pnl = await ok(dir, ["report", "pnl"]);
   expect(pnl.income_total_cents).toBe(SERVICES + PASS_THROUGH);
 
@@ -66,7 +66,7 @@ test("applies to: a partial credit names the kind it reduces, so tax follows the
 
 /** Beta, a second client billed only by hand-written lines, with whatever tax settings are given. */
 async function beta(dir: string, tax: Record<string, unknown> = {}) {
-  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd\nAustin, TX 78701", ...tax }));
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd\nAustin, TX 78701", email: "ap@beta.example", ...tax }));
 }
 const betaDraft = async (dir: string, lines: { description: string; amount_cents: number }[]) =>
   (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines }))).invoice;
@@ -110,8 +110,8 @@ test("ISC-50 liability: tax collected is owed to the state, never income, from i
   expect(toIncome).toBe(100000);
 
   // Paid in two parts, the P&L counts only the work, and the tax shows as collected for the state.
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: 55000, deposit_account_id: acct(1) }));
-  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-28", amount_cents: 55000, deposit_account_id: acct(1) }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-22", amount_cents: 55000, deposit_account_id: acct(1) }));
+  await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-22", amount_cents: 55000, deposit_account_id: acct(1) }));
   const pnl = await ok(dir, ["report", "pnl"]);
   expect(pnl.income_total_cents).toBe(100000);
   expect([...pnl.income, ...pnl.expense].every((x: any) => x.account_id !== payable.id)).toBe(true);

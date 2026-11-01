@@ -70,7 +70,7 @@ test("ISC-47 exact match: lines matching one recorded payment or expense match o
   await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
   const d = (await ok(dir, json(["invoice", "draft"], { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "Work", amount_cents: 100000 }] }))).invoice;
   await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
-  const payment = (await ok(dir, json(["payment", "add"], { invoice_id: d.id, date: "2026-10-25", amount_cents: 100000, fee_cents: 3000, deposit_account_id: acct(1) }))).payment;
+  const payment = (await ok(dir, json(["payment", "add"], { invoice_id: d.id, date: "2026-10-22", amount_cents: 100000, fee_cents: 3000, deposit_account_id: acct(1) }))).payment;
   const expense = async (date: string, cents: number, vendor: string) =>
     (await ok(dir, json(["expense", "add"], { date, amount_cents: cents, vendor, account_id: acct(2), paid_from_account_id: acct(1) }))).expense;
   const [cafeA, cafeB] = [await expense("2026-10-12", 1500, "Cafe"), await expense("2026-10-12", 1500, "Cafe")]; // two look-alikes
@@ -79,7 +79,7 @@ test("ISC-47 exact match: lines matching one recorded payment or expense match o
 
   const path = statement(`Date,Description,Amount
 10/05/2026,PRINT SHOP,-42.00
-10/25/2026,STRIPE PAYOUT,970.00
+10/22/2026,STRIPE PAYOUT,970.00
 10/12/2026,CAFE,-15.00
 10/14/2026,INK SUPPLIES,-25.00
 10/14/2026,INK SUPPLIES REFILL,-25.00
@@ -198,7 +198,7 @@ test("ISC-112 unmatch: a wrong match is undone with both rows kept, and undoing 
   const path = statement(`Date,Description,Amount
 10/07/2026,OFFICE DEPOT,-42.00
 10/14/2026,INK REFILL,-25.00
-10/25/2026,STRIPE PAYOUT,970.00
+10/22/2026,STRIPE PAYOUT,970.00
 `);
   const imported = await importFile(dir, path);
   const [depot, refill, payout] = imported.lines.map((l: any) => l.id);
@@ -206,7 +206,7 @@ test("ISC-112 unmatch: a wrong match is undone with both rows kept, and undoing 
   expect(imported.matched).toEqual([{ line_id: refill, entry_id: ink.entry_id }]);
   const [print] = (await ok(dir, ["expense", "list"])).expenses.filter((e: any) => e.vendor === "Print shop");
   await ok(dir, json(["bank", "match"], { line_id: depot, entry_id: print.entry_id }));
-  const payment = (await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-25", amount_cents: 100000, fee_cents: 3000, deposit_account_id: acct(1), bank_line_id: payout }))).payment;
+  const payment = (await ok(dir, json(["payment", "add"], { invoice_id: inv.id, date: "2026-10-22", amount_cents: 100000, fee_cents: 3000, deposit_account_id: acct(1), bank_line_id: payout }))).payment;
   expect(payment.bank_line_id).toBe(payout);
   expect(await lines(dir, "unmatched")).toEqual([]);
 
@@ -251,8 +251,8 @@ test("ISC-112 unmatch: a wrong match is undone with both rows kept, and undoing 
   const shown = (await ok(dir, ["pending", "get", "--id", String(asked.pending_id)])).pending;
   expect(shown).toMatchObject({ action: "payment_unmatched", op: "bank_unmatch" });
   expect(promptFields(shown)[0]).toEqual([
-    ["Bank line", "2026-10-25 STRIPE PAYOUT: $970.00 on Checking"],
-    ["Payment it backs", "$1,000.00 paid on 2026-10-25, deposit $970.00"],
+    ["Bank line", "2026-10-22 STRIPE PAYOUT: $970.00 on Checking"],
+    ["Payment it backs", "$1,000.00 paid on 2026-10-22, deposit $970.00"],
     ["Invoice", inv.number],
     ["Client", "Beta LLC"],
     ["After", "the line goes back on the unmatched list, and this payment has no bank line behind it"],
@@ -272,4 +272,10 @@ test("ISC-112 unmatch: a wrong match is undone with both rows kept, and undoing 
   const direct = await ok(dir, json(["bank", "unmatch"], { line_id: payout, reason: "Still wrong" }));
   expect(direct.status).toBeUndefined();
   expect(direct.line.undone_matches.map((m: any) => m.reason)).toEqual(["Wrong deposit", "Still wrong"]);
+});
+
+test("ISC-153: a statement amount written (-45.00) comes in as money out, the same as (45.00)", async () => {
+  const dir = await acmeBooks();
+  const r = await importFile(dir, statement('Date,Description,Amount\n10/01/2026,ONE,(45.00)\n10/02/2026,TWO,(-45.00)\n10/03/2026,THREE,-45.00\n10/04/2026,FOUR,"(-$45.00)"\n10/05/2026,FIVE,45.00\n'));
+  expect(r.lines.map((l: any) => l.amount_cents)).toEqual([-4500, -4500, -4500, -4500, 4500]);
 });

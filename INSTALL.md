@@ -24,7 +24,11 @@ setup writes to the agent apps' own config folders (and `~/.agents/skills`), so 
 
 This registers solobooks' MCP server with every agent app it finds here (Claude Code, Codex, Claude Desktop), copies the solobooks skill into the folders agents read (`~/.agents/skills`, and Claude Code's own skills folder), and creates the books folder, `~/solobooks` by default. It is safe to run again.
 
-Check: the output's `warnings` list is empty. If it warns that the books folder is inside iCloud, Dropbox, OneDrive or Google Drive, ask the person where else they'd like their books, and run `~/.local/bin/solobooks setup --books <that folder>`. If your own agent app isn't in the output's `agents` list as detected, register a stdio MCP server yourself with the command `~/.local/bin/solobooks` and the argument `mcp`.
+Check: the output's `warnings` list is empty. If it warns that the books folder is inside iCloud, Dropbox, OneDrive or Google Drive, ask the person where else they'd like their books. If the output has `"started_new_books": true`, these books are new, so run `~/.local/bin/solobooks setup --books <that folder>`. If it doesn't, they already have books there, so run `~/.local/bin/solobooks move --to <that folder>`, which carries them along; `setup --books` would start new, empty books and leave the real ones behind.
+
+If setup refuses, it prints a `reason` and a `field` and no `warnings` list, and it has changed nothing. Tell the person what the `reason` says and do what it names. When it says there are no books in a folder, ask where their books are before anything else, and only run `setup --books` on a folder with no books if they want new, empty books there. When it says the settings file is damaged, ask which folder holds their books and run `~/.local/bin/solobooks setup --books <that folder>`.
+
+If your own agent app isn't in the output's `agents` list as detected, register a stdio MCP server yourself with the command `~/.local/bin/solobooks` and the argument `mcp`.
 
 ## 3. Check it
 

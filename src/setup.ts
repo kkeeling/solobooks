@@ -69,9 +69,12 @@ export function setup(argv: string[], env: Env) {
     let copy = `${settings}.damaged`;
     for (let n = 2; existsSync(copy); n++) copy = `${settings}.damaged-${n}`;
     renameSync(settings, copy);
-    warnings.push(`The settings file was damaged, so it is saved as ${copy} and written again; if you had picked a backup folder, pick it again with solobooks backup set --folder <dir>.`);
+    warnings.push(`The settings file was damaged, so it is saved as ${copy} and written again; if you had picked a backup folder, pick it again with solobooks backup set --folder <dir>, and if you had chosen a port for the approval page, choose it again with solobooks serve --port <n>.`);
   }
   writeIfChanged(settings, JSON.stringify({ ...recorded, books: dir }, null, 2) + "\n");
+  if (named && env.SOLOBOOKS_DIR && absolute(env.SOLOBOOKS_DIR, home) !== dir) {
+    warnings.push(`SOLOBOOKS_DIR says ${env.SOLOBOOKS_DIR}, which wins over the settings, so later commands in this shell use that folder, not ${dir}; point it at ${dir} or unset it.`);
+  }
 
   const agents = knownAgents(env);
   const command = mcpCommand();

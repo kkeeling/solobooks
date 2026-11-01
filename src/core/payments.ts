@@ -1,5 +1,6 @@
 import { linkLine, requireUnmatchedLine } from "./bank.ts";
 import type { Books } from "./db.ts";
+import { dollars, today } from "./format.ts";
 import { displayNumber, invoiceAccount, openBalance, requireInvoice } from "./invoices.ts";
 import { getEntry, namedAccount, postEntry, requireOwnAccount } from "./ledger.ts";
 import type { Ctx, Op } from "./op.ts";
@@ -108,6 +109,11 @@ export function paymentView(db: Books, id: number) {
  * with anything beyond that held as a client credit. One function, so the approval gate can wrap it.
  */
 export function recordPayment(db: Books, input: Record<string, any>, ctx: Ctx) {
+  // A date after today would clear what is owed now and count as income only later. Checked here so approving a
+  // payment parked before this rule was added is refused too, and its card stays for the person to reject.
+  if (input.date > today(ctx.now)) {
+    throw new Refusal(`The payment is dated ${input.date}, which is after today, ${today(ctx.now)}, so record it once the money has arrived; if it is waiting for approval, reject it.`, "date");
+  }
   const inv = requireInvoice(db, input.invoice_id, "invoice_id");
   if (inv.kind !== "invoice") throw new Refusal(`Credit note ${displayNumber(inv)} is owed to the client, so it can't be paid.`, "invoice_id");
   if (inv.status === "draft") throw new Refusal(`Draft invoice ${inv.id} hasn't been issued, so it can't be paid yet.`, "invoice_id");
@@ -142,14 +148,34 @@ export function recordPayment(db: Books, input: Record<string, any>, ctx: Ctx) {
   return { payment: paymentView(db, id), entry_id: entry };
 }
 
+/**
+ * One deposit can't back two payments. A payment with no bank line, for the same deposit on the same invoice and
+ * account, may be this very line, so it has to be matched first. Once it has its own line, a second payment is fine.
+ */
+function refuseSecondBacking(db: Books, input: Record<string, any>, lineId: number, deposit: number): void {
+  const twin = db
+    .query(
+      `SELECT p.id, p.entry_id FROM payments p
+       WHERE p.invoice_id = ? AND p.deposit_account_id = ? AND p.amount_cents - p.fee_cents = ?
+         AND NOT EXISTS (SELECT 1 FROM live_bank_matches m WHERE m.entry_id = p.entry_id AND m.account_id = p.deposit_account_id)
+       ORDER BY p.id`,
+    )
+    .get(input.invoice_id, input.deposit_account_id, deposit) as { id: number; entry_id: number } | null;
+  if (!twin) return;
+  throw new Refusal(
+    `Payment ${twin.id} on this invoice is the same ${dollars(deposit)} into this account with no bank line behind it, so recording bank line ${lineId} as a new payment could count one deposit twice; if the line is that deposit, run solobooks bank match --line-id ${lineId} --entry-id ${twin.entry_id}, and if this is a second payment, match the first to its own line, then try again.`,
+    "bank_line_id",
+  );
+}
+
 const paymentAdd: Op = {
   name: "payment_add",
   kind: "write",
   description:
-    "Record a client's payment on an issued invoice, gross plus fee: amount_cents is what the client paid, fee_cents what the processor kept, and the rest is the deposit into deposit_account_id. A partial payment leaves the rest still owed; anything beyond what was owed becomes a client credit. Give bank_line_id, the imported bank line the deposit is, to back it with the bank. Gated without one: unless the person lets the agent decide, a payment with no bank line behind it returns a pending action for them to approve.",
+    "Record a client's payment on an issued invoice, gross plus fee: amount_cents is what the client paid, fee_cents what the processor kept, and the rest is the deposit into deposit_account_id. A partial payment leaves the rest still owed; anything beyond what was owed becomes a client credit. Give bank_line_id, the imported bank line the deposit is, to back it with the bank; a line that could be the deposit of a payment already recorded with no line is refused, naming bank match. Gated without one: unless the person lets the agent decide, a payment with no bank line behind it returns a pending action for them to approve. A date after today is refused.",
   fields: {
     invoice_id: { type: "int", required: true, min: 1, description: "The issued invoice being paid." },
-    date: { type: "date", required: true, description: "Day of the payment, YYYY-MM-DD." },
+    date: { type: "date", required: true, description: "Day of the payment, YYYY-MM-DD: today or earlier." },
     amount_cents: { type: "int", required: true, min: 1, max: MAX_CENTS, unit: "cents", description: "Gross: what the client paid, before any processor fee." },
     fee_cents: { type: "int", min: 0, max: MAX_CENTS, unit: "cents", description: "What the payment processor kept, such as Stripe's fee. Default 0." },
     deposit_account_id: {
@@ -175,6 +201,7 @@ const paymentAdd: Op = {
     if (line.amount_cents !== deposit) {
       throw new Refusal(`Bank line ${line.id} is ${line.amount_cents} cents, but amount_cents less fee_cents is ${deposit} cents.`, "bank_line_id");
     }
+    refuseSecondBacking(db, input, line.id, deposit);
     const r = recordPayment(db, input, ctx);
     linkLine(db, line, r.entry_id, "payment", ctx, "bank_line_id");
     return { payment: paymentView(db, r.payment.id) };

@@ -111,7 +111,7 @@ const timeAdd: Op = {
 const timeEdit: Op = {
   name: "time_edit",
   kind: "write",
-  description: "Change a time entry that isn't on an issued invoice. Only the fields given change; a draft holding it follows the change.",
+  description: "Change a time entry that isn't on an issued invoice. Only the fields given change; a draft holding it follows the change, or drops it when the client changes or the date moves past the draft's period.",
   fields: {
     id: { type: "int", required: true, min: 1, description: "Time entry id." },
     client_id: { ...fields.client_id, required: false },
@@ -132,8 +132,8 @@ const timeEdit: Op = {
     const entry = getTimeEntry(db, old.id)!;
     const draft = billedOn(db, old.id);
     if (draft) {
-      const onClient = (db.query("SELECT client_id FROM invoices WHERE id = ?").get(draft.id) as { client_id: number }).client_id;
-      if (onClient !== entry.client_id) {
+      const on = db.query("SELECT client_id, period_end FROM invoices WHERE id = ?").get(draft.id) as { client_id: number; period_end: string };
+      if (on.client_id !== entry.client_id || entry.date > on.period_end) {
         db.query("DELETE FROM invoice_lines WHERE id = ?").run(draft.line_id);
       } else {
         const line = timeLine(db, entry);
