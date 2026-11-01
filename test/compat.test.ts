@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { install, run } from "../src/cli.ts";
+import { openBooks, openForRun } from "../src/core/db.ts";
 import { MIGRATIONS } from "../src/db/migrations.ts";
 import { buildFixture, DATA, FIXTURES, fixtureFile } from "../scripts/compat-fixtures.ts";
 import { dbPath, dumpDb, dumpFile, tempDir } from "./support/books.ts";
@@ -93,3 +94,71 @@ for (const v of VERSIONS) {
     expect(w.code).toBe(0);
   }, 30_000);
 }
+
+/** A database from some other program, sitting where the books go. */
+function otherDatabase(dir: string, tables = ["recipes"], version = 0) {
+  mkdirSync(dir, { recursive: true });
+  const db = new Database(dbPath(dir));
+  for (const t of tables) {
+    db.run(`CREATE TABLE ${t} (name TEXT)`);
+    db.run(`INSERT INTO ${t} VALUES ('soup')`);
+  }
+  db.run(`PRAGMA user_version = ${version}`);
+  db.close();
+  return readFileSync(dbPath(dir));
+}
+
+for (const [what, tables, version] of [["no solobooks tables", ["recipes"], 0], ["its own version number", ["recipes"], 3], ["one table named like ours", ["accounts", "recipes"], 0]] as const) {
+  test(`ISC-166: a SQLite file that isn't books (${what}) is refused where books are opened, and left byte-identical`, async () => {
+    const home = tempDir();
+    mkdirSync(join(home, ".claude"));
+    const dir = join(home, "other");
+    const bytes = otherDatabase(dir, [...tables], version);
+    const env = { HOME: home, SOLOBOOKS_DIR: dir, SOLOBOOKS_NOW: "2026-10-23T12:00:00.000Z" };
+
+    for (const args of [["client", "list"], ["client", "add", "--name", "Acme", "--source", "s"], ["client", "add", "--name", "Acme", "--source", "s", "--dry-run"]]) {
+      const r = await run(args, env);
+      expect(r.code).toBe(2);
+      expect(JSON.parse(r.stdout).field).toBe("books");
+      expect(JSON.parse(r.stdout).reason).toContain("something other than solobooks");
+      expect(readFileSync(dbPath(dir)).equals(bytes)).toBe(true);
+    }
+    expect(() => openBooks(dbPath(dir))).toThrow("something other than solobooks");
+    const set = await install("setup", ["--books", dir], { HOME: home });
+    expect(set.code).toBe(2);
+    expect(JSON.parse(set.stdout).field).toBe("books");
+
+    const doctor = JSON.parse((await install("doctor", ["--books", dir], { HOME: home, PATH: process.env.PATH })).stdout);
+    expect(doctor.checks.find((c: any) => c.check === "books")).toMatchObject({ ok: false });
+    expect(doctor.checks.find((c: any) => c.check === "books").detail).toContain("something other than solobooks");
+
+    expect(readFileSync(dbPath(dir)).equals(bytes)).toBe(true);
+    expect(readdirSync(dir)).toEqual(["solobooks.sqlite"]);
+  });
+}
+
+test("ISC-166: books from every older version still open and upgrade, including on a dry run that leaves them as they were", () => {
+  for (const v of VERSIONS) {
+    const dir = tempDir();
+    copyFileSync(fixtureFile(v), dbPath(dir));
+    const bytes = readFileSync(dbPath(dir));
+    openForRun(dbPath(dir), true).close();
+    expect(readFileSync(dbPath(dir)).equals(bytes)).toBe(true);
+    const db = openBooks(dbPath(dir));
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
+    db.close();
+  }
+});
+
+test("ISC-166: books setup just created open, and so does a database with nothing in it", async () => {
+  const home = tempDir();
+  const dir = join(home, "solobooks");
+  expect((await install("setup", ["--books", dir], { HOME: home })).code).toBe(0);
+  openBooks(dbPath(dir)).close();
+  const blank = tempDir();
+  new Database(dbPath(blank)).close();
+  writeFileSync(dbPath(blank), new Uint8Array(new Database(":memory:").serialize()));
+  const db = openBooks(dbPath(blank));
+  expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
+  db.close();
+});

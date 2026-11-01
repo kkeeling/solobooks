@@ -327,3 +327,78 @@ test("ISC-117 flat: no corner radius over 4px, no shadow, no gradient anywhere o
   }
   expect(html).not.toMatch(/box-shadow|text-shadow|gradient\(/);
 }, 30_000);
+
+// ---------------------------------------------------------------- the page's own script (F19)
+// A real browser's clicks are the maintainer's. These run the served script's own functions with a stand-in fetch.
+
+/** One function from the served page's script, built with these globals. */
+function fromScript(html: string, from: string, to: string, globals: Record<string, unknown>) {
+  const script = html.match(/<script>\n([\s\S]*?)<\/script>/)![1]!;
+  const start = script.indexOf(from);
+  const end = script.indexOf(to, start);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  const gone = script.match(/const GONE = .*/)![0];
+  const names = Object.keys(globals);
+  return new Function(...names, `${gone}\n${script.slice(start, end)}\nreturn ${from.match(/function (\w+)/)![1]};`)(...names.map((n) => globals[n]));
+}
+
+test("ISC-160: a click with the server gone says in plain words to run solobooks serve, with no raw browser error", async () => {
+  const html = await page(start(fresh()));
+  const fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+  const post = fromScript(html, "async function post(", "function say(", { fetch });
+  const r = await post("/approve", {});
+  expect(r.ok).toBe(false);
+  expect(r.refusal.reason).toBe("This page can't reach solobooks, so start it again with solobooks serve and reload this page.");
+  expect(JSON.stringify(r)).not.toMatch(/TypeError|Failed to fetch/);
+});
+
+test("ISC-160: an answer the page can't read says so in plain words too", async () => {
+  const html = await page(start(fresh()));
+  const fetch = async () => new Response("<html>not json</html>");
+  const r = await fromScript(html, "async function post(", "function say(", { fetch })("/approve", {});
+  expect(r.refusal.reason).toBe("solobooks answered in a way this page can't read, so reload the page and try again.");
+  expect(JSON.stringify(r)).not.toMatch(/SyntaxError|JSON/);
+});
+
+test("billing-waj: the page's alert clears once a later refresh of the panels succeeds", async () => {
+  const p = start(fresh());
+  const html = await page(p);
+  const good = (await data(p)).body;
+  const element = () => ({ hidden: true, firstElementChild: { textContent: "" }, classList: { add() {}, remove() {} }, querySelector: () => ({ textContent: "" }), dataset: {} });
+  const alert = element();
+  const document = { getElementById: (id: string) => (id === "alert" ? alert : element()), querySelector: () => element(), querySelectorAll: () => [] };
+  let next: () => Promise<unknown> = () => Promise.reject(new TypeError("Failed to fetch"));
+  const loadPanels = fromScript(html, "async function loadPanels(", "loadPanels();\n", { document, fetch: () => next() });
+  await loadPanels();
+  expect(alert.hidden).toBe(false);
+  expect(alert.firstElementChild.textContent).toContain("solobooks serve");
+  next = async () => new Response(JSON.stringify(good));
+  await loadPanels();
+  expect(alert.hidden).toBe(true);
+});
+
+test("billing-waj: a different program on [::1] at the port counts as the port being taken", async () => {
+  let other;
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+  const port = probe.port!;
+  probe.stop(true);
+  try {
+    other = Bun.serve({ hostname: "::1", port, fetch: () => new Response("someone else") });
+  } catch {
+    return; // no IPv6 loopback on this machine, so nothing to take the port
+  }
+  try {
+    await expect(serve(["serve", "--books", fresh(), "--port", String(port)], ENV)).rejects.toThrow(`Port ${port} is already in use`);
+    // It let go of 127.0.0.1 too, so nothing half-started is left answering.
+    expect(await fetch(`http://127.0.0.1:${port}/`).then(() => "answered", () => "nothing")).toBe("nothing");
+  } finally {
+    other.stop(true);
+  }
+});
+
+test("billing-waj: a page answer held past Bun's default idle timeout still arrives", async () => {
+  const { status, body } = await data(start(fresh(), 15_000));
+  expect(status).toBe(200);
+  expect(body.ok).toBe(true);
+}, 30_000);

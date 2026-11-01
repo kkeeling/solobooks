@@ -1,4 +1,6 @@
 import type { Server } from "bun";
+import { SQLiteError } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { booksFile, now, pageUrl, type Env } from "./config.ts";
 import { approvePending, registerPasskey, rejectPending } from "./core/approve.ts";
 import { hasBooks, openBooks, type Books } from "./core/db.ts";
@@ -12,6 +14,9 @@ import { esc, panels, summary } from "./panels.ts";
 // panels (invoices, unpaid, the year's P&L, recent changes) that load from /data. It listens on loopback only and
 // loads nothing from anywhere else. Every approve or reject carries a one-time code the page itself handed out, so a
 // bare POST to a guessed address does nothing. There is no other way to change the books here; the agent does that.
+// A click must also carry this page's Origin, as a browser's does, and any Sec-Fetch-Site it sends must say same-origin.
+// That is a speed bump against tools and habits, not a lock: a program on this account can read a code and forge
+// both, and the docs say so.
 
 const GRANT_MS = 15 * 60_000;
 
@@ -35,12 +40,15 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     grants.set(code, g);
     return code;
   };
-  /** Takes a one-time code: it works once, for what it was issued for, before it expires. */
-  const take = (code: unknown): Grant | null => {
-    if (typeof code !== "string") return null;
-    const g = grants.get(code);
-    grants.delete(code);
+  /** A one-time code still good for what it was issued for. Looking doesn't spend it: `spent` does, once that has happened. */
+  const grant = (code: unknown): Grant | null => {
+    const g = typeof code === "string" ? grants.get(code) : undefined;
     return g && g.expires > Date.now() ? g : null;
+  };
+  /** Answers a click, spending its code only if the click did what it was for. A refused one can be tried again. */
+  const spent = (code: string, r: { ok: true; result: unknown } | { ok: false; refusal: unknown }) => {
+    if (r.ok) grants.delete(code);
+    return answer(r);
   };
   const prune = () => {
     for (const [k, g] of grants) if (g.expires <= Date.now()) grants.delete(k);
@@ -58,9 +66,10 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
     }
   };
 
+  const noBooks = () => new Error(existsSync(file) ? "the file is empty" : "the file is not there");
   /** For what the page only reads: the books must already be there, so a missing file is an error, never new books. */
   const readBooks = <T>(f: (db: Books) => T | Promise<T>): Promise<T> => {
-    if (!hasBooks(file)) return Promise.reject(new Error("the file is not there"));
+    if (!hasBooks(file)) return Promise.reject(noBooks());
     return withBooks(f);
   };
   /** Says, in plain words, that the books can't be read and what to do about it. */
@@ -73,6 +82,26 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
   const json = (status: number, body: unknown) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
   const refused = (status: number, reason: string, field: string) => json(status, { ok: false, refusal: { reason, field } });
   const expired = () => refused(403, "This approval link has expired or was already used, so reload the approval page and try again.", "code");
+
+  /** For a click: books that won't open, or fail partway, get the can't-read message with the code unspent, so the same click works once they are fixed. */
+  const withClick = async (f: (db: Books) => Response | Promise<Response>): Promise<Response> => {
+    let db: Books | undefined;
+    try {
+      if (!hasBooks(file)) throw noBooks();
+      db = openBooks(file, openOptions(o.env));
+    } catch (e) {
+      db?.close();
+      return refused(503, unreadable(e), "books");
+    }
+    try {
+      return await f(db);
+    } catch (e) {
+      if (e instanceof SQLiteError) return refused(503, unreadable(e), "books");
+      throw e;
+    } finally {
+      db.close();
+    }
+  };
 
   async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -102,10 +131,15 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
         return refused(503, unreadable(e), "books");
       }
     }
-    if (req.method !== "POST") return new Response("Not found.", { status: 404 });
+    if (req.method !== "POST" || !["/approve", "/reject", "/passkey/register"].includes(url.pathname)) return new Response("Not found.", { status: 404 });
 
+    // What a browser sends for a script on this very page. Sec-Fetch-Site isn't required, because a browser may leave it
+    // off on http://localhost, but one that says anything else didn't come from a click here.
     const from = req.headers.get("origin");
-    if (from !== null && ![origin(), `http://127.0.0.1:${port}`].includes(from)) return new Response("Wrong origin.", { status: 403 });
+    const site = req.headers.get("sec-fetch-site");
+    if (from === null || ![origin(), `http://127.0.0.1:${port}`].includes(from) || (site !== null && site !== "same-origin")) {
+      return refused(403, `Approvals only work from the approval page in a browser, so open ${origin()}/ there and click the button.`, "origin");
+    }
     if (!(req.headers.get("content-type") ?? "").startsWith("application/json")) return new Response("Send JSON.", { status: 415 });
     let body: any;
     try {
@@ -114,17 +148,15 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       return refused(400, "The request body is not valid JSON.", "body");
     }
     if (typeof body !== "object" || body === null) return refused(400, "The request body must be a JSON object.", "body");
-    // Before the one-time code is spent, so the same click works once the file is back.
-    if (!hasBooks(file)) return refused(503, unreadable(new Error("the file is not there")), "books");
 
     if (url.pathname === "/approve" || url.pathname === "/reject") {
-      const id = body.pending_id;
-      const g = take(body.code);
-      if (!g || g.kind !== "act" || g.pendingId !== id) return expired();
-      return withBooks(async (db) => {
+      return withClick(async (db) => {
+        const id = body.pending_id;
+        const g = grant(body.code);
+        if (!g || g.kind !== "act" || g.pendingId !== id) return expired();
         const p = getPending(db, id);
         if (!p) return refused(404, `There is no pending action with id ${id}.`, "pending_id");
-        if (url.pathname === "/reject") return answer(rejectPending(db, id, "page", when()));
+        if (url.pathname === "/reject") return spent(body.code, rejectPending(db, id, "page", when()));
         let passkey;
         if (p.status === "pending" && levelToApprove(db, p) === "passkey") {
           if (!g.challenge || !body.assertion) return refused(400, "This action is set to passkey, so approve it with your passkey.", "passkey");
@@ -136,24 +168,21 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
           }
         }
         const exclude = Array.isArray(body.exclude) ? body.exclude : [];
-        return answer(approvePending(db, id, { via: "page", exclude, passkey }, when()));
+        return spent(body.code, approvePending(db, id, { via: "page", exclude, passkey }, when()));
       });
     }
 
-    if (url.pathname === "/passkey/register") {
-      const g = take(body.code);
+    return withClick(async (db) => {
+      const g = grant(body.code);
       if (!g || g.kind !== "register") return expired();
-      return withBooks(async (db) => {
-        try {
-          const k = await verifyRegistration(body.response, g.challenge, origin());
-          return answer(registerPasskey(db, k, when()));
-        } catch (e) {
-          if (e instanceof Refusal) return refused(400, e.reason, e.field);
-          throw e;
-        }
-      });
-    }
-    return new Response("Not found.", { status: 404 });
+      try {
+        const k = await verifyRegistration(body.response, g.challenge, origin());
+        return spent(body.code, registerPasskey(db, k, when()));
+      } catch (e) {
+        if (e instanceof Refusal) return refused(400, e.reason, e.field);
+        throw e;
+      }
+    });
   }
 
   const answer = (r: { ok: true; result: unknown } | { ok: false; refusal: unknown }) =>
@@ -183,12 +212,19 @@ export function startPage(o: { books: string; port: number; env: Env; dataDelayM
       console.error("solobooks serve:", e);
       return refused(500, "Something went wrong on the approval page, so reload it and try again.", "page");
     });
-  const servers: Server<undefined>[] = [Bun.serve({ hostname: "127.0.0.1", port: o.port, fetch, maxRequestBodySize: 65_536 })];
+  // No idle timeout: Bun's default of 10 seconds would drop an answer that takes longer. It only ever talks to this machine.
+  const listen = (hostname: string, at: number) => Bun.serve({ hostname, port: at, fetch, maxRequestBodySize: 65_536, idleTimeout: 0 });
+  const servers: Server<undefined>[] = [listen("127.0.0.1", o.port)];
   port = servers[0]!.port!;
   try {
     // Browsers may try ::1 first for localhost; answer there too when it's free. Still loopback only.
-    servers.push(Bun.serve({ hostname: "::1", port, fetch, maxRequestBodySize: 65_536 }));
-  } catch {
+    servers.push(listen("::1", port));
+  } catch (e) {
+    // A different program there would get the browser's visit instead of this page, so the port counts as taken.
+    if ((e as { code?: string }).code === "EADDRINUSE") {
+      servers[0]!.stop(true);
+      throw e;
+    }
     // no IPv6 loopback here; 127.0.0.1 alone is enough
   }
   return { url: `${origin()}/`, port, stop: () => servers.forEach((s) => s.stop(true)) };
@@ -356,13 +392,15 @@ ${passkey}
 <script type="application/json" id="data">${payload}</script>
 <script>
 const data = JSON.parse(document.getElementById("data").textContent);
+const GONE = "This page can't reach solobooks, so start it again with solobooks serve and reload this page.";
 const enc = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
 const dec = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 async function post(path, body) {
-  try {
-    const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    return await r.json();
-  } catch (e) { return { ok: false, refusal: { reason: String(e) } }; }
+  let r;
+  try { r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
+  catch (e) { return { ok: false, refusal: { reason: GONE } }; }
+  try { return await r.json(); }
+  catch (e) { return { ok: false, refusal: { reason: "solobooks answered in a way this page can't read, so reload the page and try again." } }; }
 }
 function say(el, ok, text) { el.className = "outcome " + (ok ? "ok" : "bad"); el.textContent = text; }
 async function assertion(o) {
@@ -422,7 +460,7 @@ if (reg && data.register) reg.onclick = async () => {
 async function loadPanels() {
   let r;
   try { r = await (await fetch("/data", { cache: "no-store" })).json(); }
-  catch (e) { r = { ok: false, gone: true, refusal: { reason: "This page can't reach solobooks, so start it again with solobooks serve and reload this page." } }; }
+  catch (e) { r = { ok: false, gone: true, refusal: { reason: GONE } }; }
   for (const el of document.querySelectorAll(".panel[aria-busy]")) {
     const name = el.id.slice("panel-".length);
     el.removeAttribute("aria-busy");
@@ -438,6 +476,7 @@ async function loadPanels() {
     el.replaceChildren(p);
   }
   if (r.ok) {
+    document.getElementById("alert").hidden = true;
     const s = r.summary;
     const usd = (c) => (c < 0 ? "\u2212" : "") + "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fig = (id, text, cls) => { const el = document.getElementById("fig-" + id); el.querySelector(".value").textContent = text; el.classList.remove("late", "wait"); if (cls) el.classList.add(cls); };

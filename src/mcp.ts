@@ -16,7 +16,7 @@ import { beforeWrite, flag, onlyFlags, openOptions, withWarnings } from "./durab
 import { approvePending } from "./core/approve.ts";
 import { type Books, openForRun } from "./core/db.ts";
 import { dollars } from "./core/format.ts";
-import { field, getPending, type PendingAction, promptFields, waiting } from "./core/gate.ts";
+import { decided, field, getPending, type PendingAction, promptFields, waiting } from "./core/gate.ts";
 import type { Op } from "./core/op.ts";
 import { OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
@@ -139,6 +139,7 @@ export function createServer(env: Env, books?: string): McpServer {
   function answered(db: Books, id: number, ctx: ServerContext): Reply {
     const p = getPending(db, id);
     if (!p) return reply({ reason: `There is no pending action with id ${id}.`, field: "pending_id" }, true);
+    if (p.status !== "pending") return reply(decided(p)); // decided elsewhere while the prompt was up
     const view = inputResponse(ctx.mcpReq.inputResponses, "approval");
     if (p.status === "pending" && view.kind === "elicit" && view.action === "accept") {
       const ids: number[] = Array.isArray(p.input.ids) ? p.input.ids : [];

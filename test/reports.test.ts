@@ -20,7 +20,7 @@ async function issued(dir: string, day: string, cents: number, terms: number, cl
 
 test("ISC-43 unpaid: the unpaid list shows every overdue invoice with its days late, past invoices marked historical", async () => {
   const dir = await acmeBooks();
-  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd", email: "ap@beta.example" }));
   const late = await issued(dir, "2026-09-01", 100000, 30); // due 2026-10-01: 21 days late on 2026-10-22
   const notDue = await issued(dir, "2026-10-15", 50000, 30); // due 2026-11-14
   const paidUp = await issued(dir, "2026-08-01", 70000, 15); // due 2026-08-16, then paid in full
@@ -74,7 +74,7 @@ test("ISC-110 cash basis: an invoice issued in December and paid in January is J
   expect((await ok(dir, ["report", "pnl"])).income_total_cents).toBe(0);
 
   // Paid on January 5: it is January's income, the work only, and none of it lands in 2026.
-  await ok(dir, json(["payment", "add"], { invoice_id: dec.id, date: "2027-01-05", amount_cents: 220000, deposit_account_id: acct(1) }));
+  await at(dir, "2027-01-05", json(["payment", "add"], { invoice_id: dec.id, date: "2027-01-05", amount_cents: 220000, deposit_account_id: acct(1) }));
   const y2026 = await pnlFor(dir, "2026-01-01", "2026-12-31");
   const jan = await pnlFor(dir, "2027-01-01", "2027-01-31");
   expect(consulting(y2026)).toBe(0);
@@ -95,15 +95,15 @@ test("ISC-110 cash basis: an invoice issued in December and paid in January is J
 
   // Paid across the year end, each part counts in the month it arrived, split from its tax; the parts add up exactly.
   const split = await issued(dir, "2026-12-20", 100001, 30); // $1,000.01 plus $100.00 tax
-  await ok(dir, json(["payment", "add"], { invoice_id: split.id, date: "2026-12-28", amount_cents: 33333, deposit_account_id: acct(1) }));
-  await ok(dir, json(["payment", "add"], { invoice_id: split.id, date: "2027-01-02", amount_cents: split.total_cents - 33333, deposit_account_id: acct(1) }));
+  await at(dir, "2026-12-28", json(["payment", "add"], { invoice_id: split.id, date: "2026-12-28", amount_cents: 33333, deposit_account_id: acct(1) }));
+  await at(dir, "2027-01-02", json(["payment", "add"], { invoice_id: split.id, date: "2027-01-02", amount_cents: split.total_cents - 33333, deposit_account_id: acct(1) }));
   const dec2 = consulting(await pnlFor(dir, "2026-12-01", "2026-12-31"));
   const jan2 = consulting(await pnlFor(dir, "2027-01-01", "2027-01-31")) - 200000;
   expect(dec2).toBe(30303); // 33333 x 100001 / 110001, rounded
   expect(dec2 + jan2).toBe(100001);
 
   // A refund takes back what its payment counted, on the refund's day; a credit note moves no money, so counts nothing.
-  const p = (await ok(dir, json(["payment", "add"], { invoice_id: (await issued(dir, "2026-11-02", 50000, 30)).id, date: "2026-11-10", amount_cents: 55000, deposit_account_id: acct(1) }))).payment;
+  const p = (await at(dir, "2026-11-10", json(["payment", "add"], { invoice_id: (await issued(dir, "2026-11-02", 50000, 30)).id, date: "2026-11-10", amount_cents: 55000, deposit_account_id: acct(1) }))).payment;
   await ok(dir, json(["payment", "refund"], { payment_id: p.id, date: "2026-12-03", reason: "Charged twice" }));
   expect(consulting(await pnlFor(dir, "2026-11-01", "2026-11-30"))).toBe(50000);
   expect(consulting(await pnlFor(dir, "2026-12-03", "2026-12-03"))).toBe(-50000);
@@ -144,14 +144,14 @@ test("ISC-110 cash basis: client credit applied to a later invoice is income on 
   const oct = await issued(dir, "2026-10-01", 100000, 30);
   await ok(dir, json(["payment", "add"], { invoice_id: oct.id, date: "2026-10-10", amount_cents: 130000, deposit_account_id: acct(1) })); // $300 held
   const dec = await issued(dir, "2026-12-01", 50000, 30);
-  await ok(dir, json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
+  await at(dir, "2027-01-04", json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
 
   // October counts what settled October's invoice; the held $300 counts nowhere until it settles December's, in January.
   expect(consulting(await pnlFor(dir, "2026-10-01", "2026-10-31"))).toBe(100000);
   expect(consulting(await pnlFor(dir, "2026-12-01", "2026-12-31"))).toBe(0);
   expect(consulting(await pnlFor(dir, "2027-01-01", "2027-01-31"))).toBe(30000);
   // When the client pays the rest, the invoice has counted exactly its total.
-  await ok(dir, json(["payment", "add"], { invoice_id: dec.id, date: "2027-01-20", amount_cents: 20000, deposit_account_id: acct(1) }));
+  await at(dir, "2027-01-20", json(["payment", "add"], { invoice_id: dec.id, date: "2027-01-20", amount_cents: 20000, deposit_account_id: acct(1) }));
   expect(consulting(await pnlFor(dir, "2027-01-01", "2027-01-31"))).toBe(50000);
 }, 30_000); // many CLI runs: allow for a busy machine
 

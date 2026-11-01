@@ -23,7 +23,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 ## The rules that matter
 
 1. **Pending means nothing happened.** Issuing, voiding and crediting invoices, changing payment instructions (`profile payment instructions set`), recording a payment with no bank line behind it (or undoing the bank match behind one), and changing approval levels wait for the person unless they chose otherwise. When a result says `"status": "pending"`, tell the person it is waiting for their approval and has not happened. Never say an invoice was issued or sent while it is pending. Read [references/approvals.md](references/approvals.md) the first time you see one.
-2. **You can't approve anything,** and no tool lets you. Don't look for one, and don't ask the person to lower the gate to save you a step. That choice is theirs, unprompted.
+2. **You can't approve anything,** and no tool lets you. Don't look for one, and don't ask the person to lower the gate to save you a step. That choice is theirs, unprompted. You never post to the approval page, with curl, a script or anything else, and you don't read its codes: only the person clicks there.
 3. **Never decide what is taxable.** solobooks adds sales tax only where the person set a rate on a client and named the line kinds it covers. Ask them; don't guess.
 4. **Issued money is locked.** Drafts can change freely. After issue, the only changes are void (a reversal) or a credit note.
 5. **solobooks makes the documents; you deliver them.** `invoice pdf` and `invoice email` give you the file and the text. Send through the person's own mail (prefer leaving a draft for them to send), then record it with `invoice sent`.

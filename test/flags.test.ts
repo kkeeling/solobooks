@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { install, run } from "../src/cli.ts";
+import { install, run, serve } from "../src/cli.ts";
 import { configFile } from "../src/config.ts";
 import { dbPath, tempDir } from "./support/books.ts";
 
@@ -96,4 +96,44 @@ test("ISC-142: mcp refuses a flag it doesn't know", async () => {
   expect(await typo.exited).toBe(2);
   expect(await new Response(typo.stdout).text()).toBe(""); // stdout belongs to the protocol
   expect(await new Response(typo.stderr).text()).toContain("has no --book flag");
+});
+
+for (const value of ["", "   "]) {
+  for (const [word, argv] of [
+    ["setup", ["--books", value]],
+    ["setup", [`--books=${value}`]],
+    ["doctor", ["--books", value]],
+    ["doctor", [`--books=${value}`]],
+    ["move", ["--to", value]],
+    ["move", ["--books", value, "--to", "somewhere"]],
+    ["backup", ["set", "--folder", value]],
+    ["backup", ["set", "--folder", "somewhere", "--books", value]],
+  ] as const) {
+    test(`ISC-156: ${word} ${JSON.stringify(argv)} is refused and creates nothing`, async () => {
+      const { home, env } = scratch();
+      await install("setup", [], env);
+      const cwd = process.cwd();
+      const here = join(home, "cwd");
+      mkdirSync(here);
+      process.chdir(here); // an empty value used to mean this folder
+      try {
+        const before = readFileSync(configFile(env)!, "utf8");
+        const r = await install(word, [...argv], env);
+        expect(r.code).toBe(2);
+        expect(JSON.parse(r.stdout).reason).toBe("That flag needs a value after it.");
+        expect(readdirSync(here)).toEqual([]);
+        expect(readFileSync(configFile(env)!, "utf8")).toBe(before);
+      } finally {
+        process.chdir(cwd);
+      }
+    });
+  }
+}
+
+test("ISC-156: mcp and serve refuse an empty --books too", async () => {
+  const typo = Bun.spawn(["bun", "src/cli.ts", "mcp", "--books", ""], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  expect(await typo.exited).toBe(2);
+  expect(await new Response(typo.stderr).text()).toContain("needs a value");
+  const { env } = scratch();
+  await expect(serve(["serve", "--books", ""], env)).rejects.toThrow("Say which folder");
 });

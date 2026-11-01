@@ -4,9 +4,9 @@ import { authenticationOptions, verifyPasskey } from "../src/core/passkey.ts";
 import { startPage, type Page } from "../src/page.ts";
 import { SoftAuthenticator } from "./support/authenticator.ts";
 import { clickAcme, draftOctober, json, ok, S } from "./support/billing.ts";
-import { cli } from "./support/books.ts";
+import { acct, cli } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
-import { asPerson, WHEN } from "./support/person.ts";
+import { asPerson, browserMarkers, WHEN } from "./support/person.ts";
 
 // The HTTP path of the local approval page. The real-browser screenshot (ISC-73) and the Touch ID check (ISC-74) are
 // the maintainer's; these prove the server side with plain requests and a software authenticator.
@@ -34,7 +34,7 @@ async function load(page: Page) {
 }
 
 const post = (page: Page, path: string, body: unknown, headers: Record<string, string> = {}) =>
-  fetch(new URL(path, page.url), { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  fetch(new URL(path, page.url), { method: "POST", headers: { "content-type": "application/json", ...browserMarkers(page.url), ...headers }, body: JSON.stringify(body) });
 
 const invoice = async (dir: string, id: number) => (await ok(dir, ["invoice", "get", "--id", String(id)])).invoice;
 
@@ -56,7 +56,7 @@ test("ISC-73 page approves: the local page lists a click-level pending action an
   expect((await post(page, "/approve", { pending_id: pid })).status).toBe(403);
   expect((await post(page, "/approve", { pending_id: pid, code: "guessed" })).status).toBe(403);
   expect((await post(page, "/approve", { pending_id: pid, code }, { origin: "http://evil.example" })).status).toBe(403);
-  expect((await fetch(new URL("/approve", page.url), { method: "POST", headers: { "content-type": "text/plain" }, body: "{}" })).status).toBe(415);
+  expect((await post(page, "/approve", {}, { "content-type": "text/plain" })).status).toBe(415);
   expect((await invoice(dir, d.id)).status).toBe("draft");
 
   const r = await post(page, "/approve", { pending_id: pid, code });
@@ -168,3 +168,152 @@ test("ISC-74 passkey: at passkey level approval completes only with a valid WebA
   expect(asPerson(dir, (db) => db.query("SELECT counter FROM passkeys").get())).toEqual({ counter: expect.any(Number) });
   expect((asPerson(dir, (db) => db.query("SELECT counter FROM passkeys").get()) as any).counter).toBeGreaterThan(0);
 }, 60_000);
+
+/** Every way a request can lack what a browser sends from the page itself. */
+const NOT_A_BROWSER = (page: Page): [string, Record<string, string>][] => [
+  ["no markers", { origin: "", "sec-fetch-site": "" }],
+  ["Sec-Fetch-Site with no Origin", { origin: "" }],
+  ["another site's Origin", { origin: "http://evil.example" }],
+  ["cross-site", { "sec-fetch-site": "cross-site" }],
+  ["same-site, not same-origin", { "sec-fetch-site": "same-site" }],
+  ["typed into the address bar", { "sec-fetch-site": "none", origin: new URL(page.url).origin }],
+];
+
+/** A POST with some markers taken away: an empty value means the header isn't sent at all. */
+const bare = (page: Page, path: string, body: unknown, headers: Record<string, string>) => {
+  const sent = Object.fromEntries(Object.entries({ "content-type": "application/json", ...browserMarkers(page.url), ...headers }).filter(([, v]) => v !== ""));
+  return fetch(new URL(path, page.url), { method: "POST", headers: sent, body: JSON.stringify(body) });
+};
+
+for (const path of ["/approve", "/reject"]) {
+  test(`ISC-163: ${path} refuses a request without the browser's same-origin markers, the card stays pending, and the code isn't spent`, async () => {
+    const dir = await clickAcme();
+    const d = await draftOctober(dir);
+    const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id;
+    const page = serve(dir);
+    const code = (await load(page)).item(pid).code;
+    for (const [, headers] of NOT_A_BROWSER(page)) {
+      const r = await bare(page, path, { pending_id: pid, code }, headers);
+      expect(r.status).toBe(403);
+      expect(await r.json()).toMatchObject({ ok: false, refusal: { field: "origin" } });
+      expect((await ok(dir, ["pending", "get", "--id", String(pid)])).pending.status).toBe("pending");
+      expect((await invoice(dir, d.id)).status).toBe("draft");
+    }
+    const yes = await post(page, path, { pending_id: pid, code });
+    expect(yes.status).toBe(200);
+    expect((await ok(dir, ["pending", "get", "--id", String(pid)])).pending.status).toBe(path === "/approve" ? "approved" : "rejected");
+  }, 30_000);
+}
+
+test("ISC-163: passkey registration refuses a request without the markers, and registers nothing", async () => {
+  const dir = await clickAcme();
+  const page = serve(dir);
+  const origin = new URL(page.url).origin;
+  const auth = await SoftAuthenticator.create();
+  const { data } = await load(page);
+  const body = { code: data.register.code, response: await auth.register(data.register.options, origin) };
+  for (const [, headers] of NOT_A_BROWSER(page)) {
+    expect((await bare(page, "/passkey/register", body, headers)).status).toBe(403);
+    expect(asPerson(dir, (db) => db.query("SELECT COUNT(*) n FROM passkeys").get())).toEqual({ n: 0 });
+  }
+  expect((await post(page, "/passkey/register", body)).status).toBe(200);
+  expect(asPerson(dir, (db) => db.query("SELECT COUNT(*) n FROM passkeys").get())).toEqual({ n: 1 });
+}, 30_000);
+
+test("ISC-163: the refusal says where to go, in plain words, and only these three routes check", async () => {
+  const dir = await clickAcme();
+  const page = serve(dir);
+  const r = await bare(page, "/approve", {}, { origin: "", "sec-fetch-site": "" });
+  expect(((await r.json()) as any).refusal.reason).toBe(`Approvals only work from the approval page in a browser, so open ${new URL(page.url).origin}/ there and click the button.`);
+  expect((await fetch(new URL("/anything", page.url), { method: "POST" })).status).toBe(404);
+});
+
+for (const path of ["/approve", "/reject"]) {
+  test(`ISC-163: ${path} takes the page's Origin alone, because a browser may leave Sec-Fetch-Site off on http://localhost`, async () => {
+    const dir = await clickAcme();
+    const d = await draftOctober(dir);
+    const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id;
+    const page = serve(dir);
+    const code = (await load(page)).item(pid).code;
+    expect((await bare(page, path, { pending_id: pid, code }, { "sec-fetch-site": "" })).status).toBe(200);
+  }, 30_000);
+}
+
+test("ISC-163: passkey registration takes the page's Origin alone too", async () => {
+  const dir = await clickAcme();
+  const page = serve(dir);
+  const auth = await SoftAuthenticator.create();
+  const { data } = await load(page);
+  const body = { code: data.register.code, response: await auth.register(data.register.options, new URL(page.url).origin) };
+  expect((await bare(page, "/passkey/register", body, { "sec-fetch-site": "" })).status).toBe(200);
+}, 30_000);
+
+/** A card waiting on a draft, with the page open: `click` is its button, posted as a browser would. */
+async function waitingCard() {
+  const dir = await clickAcme();
+  const d = await draftOctober(dir);
+  const pid = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).pending_id as number;
+  const page = serve(dir);
+  const code = (await load(page)).item(pid).code as string;
+  const click = (path = "/approve") => post(page, path, { pending_id: pid, code });
+  return { dir, d, pid, page, code, click };
+}
+
+test("ISC-169: a click refused for what it would do spends no code, so the same button works once the cause is undone", async () => {
+  const { dir, d, click } = await waitingCard();
+  const address = (await ok(dir, ["profile", "get"])).profile.address;
+  await ok(dir, json(["profile", "set"], { address: "2 Other St" }));
+  const r = await click();
+  expect(r.status).toBe(409);
+  expect(((await r.json()) as any).refusal.reason).toContain("What this would do has changed");
+  await ok(dir, json(["profile", "set"], { address }));
+  expect((await click()).status).toBe(200);
+  expect((await invoice(dir, d.id)).status).toBe("issued");
+}, 30_000);
+
+for (const path of ["/approve", "/reject"]) {
+  test(`ISC-169: a code that has completed at ${path} can't be reused`, async () => {
+    const { click } = await waitingCard();
+    expect((await click(path)).status).toBe(200);
+    const again = await click(path);
+    expect(again.status).toBe(403);
+    expect(((await again.json()) as any).refusal.field).toBe("code");
+  }, 30_000);
+}
+
+test("ISC-169: a passkey registration code that has completed can't be reused", async () => {
+  const dir = await clickAcme();
+  const page = serve(dir);
+  const auth = await SoftAuthenticator.create();
+  const { data } = await load(page);
+  const body = { code: data.register.code, response: await auth.register(data.register.options, new URL(page.url).origin) };
+  expect((await post(page, "/passkey/register", body)).status).toBe(200);
+  const again = await post(page, "/passkey/register", body);
+  expect(again.status).toBe(403);
+  expect(((await again.json()) as any).refusal.field).toBe("code");
+}, 30_000);
+
+test("ISC-169: a double click can't run twice", async () => {
+  const { dir, d, click } = await waitingCard();
+  const approvals = () => (asPerson(dir, (db) => db.query("SELECT COUNT(*) n FROM history WHERE op = 'pending_approve'").get()) as { n: number }).n;
+  const before = approvals();
+  const statuses = (await Promise.all([click(), click()])).map((r) => r.status).sort();
+  expect(statuses[0]).toBe(200);
+  expect(statuses[1]).not.toBe(200);
+  expect((await invoice(dir, d.id)).status).toBe("issued");
+  expect(approvals()).toBe(before + 1);
+  expect((await ok(dir, ["invoice", "list"])).invoices.filter((i: any) => i.status === "issued")).toHaveLength(1);
+}, 30_000);
+
+test("ISC-169: a double click on a part payment posts one payment, though a second would still fit the invoice", async () => {
+  const { dir, d, click } = await waitingCard();
+  expect((await click()).status).toBe(200);
+  const asked = await ok(dir, json(["payment", "add"], { invoice_id: d.id, amount_cents: 100, deposit_account_id: acct(1), date: "2026-10-22" }));
+  const page = serve(dir);
+  const code = (await load(page)).item(asked.pending_id).code as string;
+  const go = () => post(page, "/approve", { pending_id: asked.pending_id, code });
+  const statuses = (await Promise.all([go(), go()])).map((r) => r.status).sort();
+  expect(statuses[0]).toBe(200);
+  expect(statuses[1]).not.toBe(200);
+  expect((await ok(dir, ["payment", "list"])).payments).toHaveLength(1);
+}, 30_000);

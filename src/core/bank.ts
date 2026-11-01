@@ -59,7 +59,7 @@ export function parseCents(raw: string): number | null {
     s = s.slice(1, -1);
   }
   if (s.startsWith("-") || s.startsWith("+")) {
-    negative = negative !== s.startsWith("-");
+    negative = negative || s.startsWith("-"); // parentheses and a minus both mean money out, so (-45.00) is -45.00
     s = s.slice(1);
   }
   if (s.startsWith("$")) s = s.slice(1);

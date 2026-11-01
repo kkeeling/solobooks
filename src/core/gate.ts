@@ -123,7 +123,7 @@ type Prompt = { title: string; items: Record<string, unknown>[] };
 
 /**
  * Everything issuing freezes into a document, read from the row as the action leaves it: what the person approves
- * and, at approval, what must still be true. Only the number may differ later.
+ * and, at approval, what must still be true. Only the dates may differ later.
  */
 function frozen(db: Books, id: number, reason?: string) {
   const r = getInvoiceRow(db, id)!;
@@ -201,6 +201,7 @@ export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ct
           credit_cents: p.credit_cents,
           open_after_cents: p.invoice_open_cents,
           memo: p.memo,
+          ...(preview.earlier_payment && { earlier_payment: preview.earlier_payment }),
         };
         return { title: `Record a payment of ${dollars(p.amount_cents)} on invoice ${p.invoice_number} with no bank line behind it?`, items: [item] };
       }
@@ -284,6 +285,10 @@ export function promptFields(p: Pick<PendingAction, "action" | "op" | "items">):
     ];
     if (i!.credit_cents > 0) out.push(["Client credit", dollars(i!.credit_cents)]);
     out.push(["Still owed after", dollars(i!.open_after_cents)], ["Bank line", "none imported; this payment isn't backed by the bank"]);
+    if (i!.earlier_payment) {
+      const e = i!.earlier_payment;
+      out.push(["Earlier payment", `payment ${e.id} on this invoice is also ${dollars(e.amount_cents)} into this account, paid on ${e.date}, so check this isn't the same money`]);
+    }
     if (i!.memo) out.push(["Memo", field(i!.memo)]);
     return [out];
   }
@@ -333,13 +338,16 @@ export function refuseIfHeld(db: Books, op: string, input: Record<string, any>):
 }
 
 /**
- * Whether what an approval would do now is exactly what the person was shown: every line, note, term, client and
- * seller detail and payment instruction. The number may move when another invoice was issued first, and an invoice
- * is dated the day it is approved, so a request parked in the evening can be approved the next morning.
+ * Whether what an approval would do now is exactly what the person was shown: the number, every line, note, term,
+ * client and seller detail and payment instruction. An invoice is dated the day it is approved, so a request parked in
+ * the evening can be approved the next morning. Drafts the person pulled from a batch move the numbers after them,
+ * which they chose, so `pulled` leaves numbers to the caller. An earlier payment is only a pointer on the card: one
+ * that came since moves the balance, which is compared, and cards parked before it was shown have none.
  */
-export function stillAsShown(shown: Record<string, unknown>[], now: Record<string, unknown>[]): boolean {
-  // The number, invoice date and due date follow the day of approval; the terms that set the due date are compared.
-  const strip = (xs: Record<string, unknown>[]) => JSON.stringify(xs.map(({ number, invoice_date, due_date, ...rest }) => rest));
+export function stillAsShown(shown: Record<string, unknown>[], now: Record<string, unknown>[], pulled = false): boolean {
+  // The invoice date and due date follow the day of approval; the terms that set the due date are compared.
+  const strip = (xs: Record<string, unknown>[]) =>
+    JSON.stringify(xs.map(({ number, invoice_date, due_date, earlier_payment, ...rest }) => (pulled ? rest : { ...rest, number: number === null || number === undefined ? null : String(number) })));
   return strip(shown) === strip(now);
 }
 
@@ -353,6 +361,37 @@ export function park(db: Books, op: Op, input: Record<string, any>, ctx: Ctx, ac
     )
     .get(ctx.now, action, op.name, JSON.stringify(input), level, JSON.stringify(prompt), key ?? null, ctx.source) as { id: number };
   return waiting(requirePending(db, id), ctx.page);
+}
+
+/**
+ * The card already waiting for the drafts in an issue request, so asking again parks no second one that could only
+ * fail. A batch that only partly overlaps what is waiting can't be answered by one card, so it is refused.
+ */
+export function waitingIssue(db: Books, input: Record<string, any>): PendingAction | null {
+  if ((input.id === undefined) === (input.ids === undefined)) return null; // the operation itself refuses this
+  const asked: number[] = input.ids ?? [input.id];
+  const open = db.query("SELECT id FROM pending_actions WHERE status = 'pending' AND op = 'invoice_issue' ORDER BY id").all() as { id: number }[];
+  for (const { id } of open) {
+    const p = requirePending(db, id);
+    const held: number[] = p.input.ids ?? [p.input.id];
+    const both = asked.filter((x) => held.includes(x));
+    if (both.length === asked.length) return p;
+    if (both.length > 0) {
+      throw new Refusal(`Draft invoice ${both[0]} is already waiting for approval in pending action ${p.id}, so leave it out of this batch, or have the person decide that one first.`, "ids");
+    }
+  }
+  return null;
+}
+
+/** The card already waiting to void this invoice or credit note, so asking again parks no second one that could only fail. */
+function waitingVoid(db: Books, input: Record<string, any>): PendingAction | null {
+  const row = db.query("SELECT id FROM pending_actions WHERE status = 'pending' AND op = 'invoice_void' AND json_extract(input, '$.id') = ? ORDER BY id").get(input.id) as { id: number } | null;
+  return row && requirePending(db, row.id);
+}
+
+/** The card already answering this request, if the request is one that only makes sense once. */
+export function alreadyWaiting(db: Books, op: string, input: Record<string, any>): PendingAction | null {
+  return op === "invoice_issue" ? waitingIssue(db, input) : op === "invoice_void" ? waitingVoid(db, input) : null;
 }
 
 /** What the agent gets back for an action waiting at the gate, including what to tell the person. */
@@ -369,6 +408,29 @@ export function waiting(p: PendingAction, page: string) {
     approve_url: `${page}#pending-${p.id}`,
     message: `Nothing has happened yet: this waits until ${how}. The agent can't approve it.`,
   };
+}
+
+/** A waiting action's answer as it stands now, at the level it has to clear today. */
+export function waitingNow(db: Books, p: PendingAction, page: string) {
+  return waiting({ ...p, level: levelToApprove(db, p) as PendingAction["level"] }, page);
+}
+
+/** What the agent gets back for an action the person already decided: their decision and, when approved, the result. */
+export function decided(p: PendingAction) {
+  const how = p.decided_via === "page" ? "on the approval page" : "in their agent app";
+  const shared = { pending_id: p.id, title: p.title, decided_at: p.decided_at, decided_via: p.decided_via };
+  if (p.status === "approved") {
+    return { status: "approved", ...shared, ...(p.excluded.length > 0 && { excluded: p.excluded }), result: p.result, message: `The person approved this ${how}, so it has happened.` };
+  }
+  return { status: "rejected", ...shared, message: `The person rejected this ${how}, so nothing changed.` };
+}
+
+/** A repeated request's first answer, as it stands now: a parked action may have been decided, or its level raised, since. */
+export function asItStands(db: Books, first: Record<string, any>, page: string): Record<string, unknown> {
+  if (first.status !== "pending" || typeof first.pending_id !== "number") return first;
+  const p = getPending(db, first.pending_id);
+  if (!p) return first;
+  return p.status === "pending" ? waitingNow(db, p, page) : decided(p);
 }
 
 // ---------------------------------------------------------------- operations
