@@ -341,8 +341,8 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 
 - [ ] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
 - [ ] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
-- [ ] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit-unapply` as the way out.
-- [ ] ISC-178: `report pnl` and `report unpaid` after taking credit back show the income and what is owed as if the credit had not settled that invoice, and books from every older version migrate with their rows unchanged.
+- [ ] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit unapply` as the way out.
+- [ ] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported, and books from every older version migrate with their rows unchanged.
 - [ ] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
 - [ ] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
 - [ ] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
@@ -614,6 +614,7 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - 2026-11-01: The approval check requires a matching Origin and refuses a Sec-Fetch-Site that isn't same-origin only when one is sent, rather than requiring it. The fresh review pointed out that a browser omitting it would refuse every click. Real Safari 26.6 sends both on localhost (a scratch page logged them), but older browsers may not, and the extra strictness buys nothing against something that can forge headers anyway.
 - 2026-11-01: A fresh review of the fix round reproduced six defects, all fixed: ISC-171 to ISC-174, and ISC-157 and ISC-166 widened. The card's terms now read "if approved on <the day it was asked>", because a parked card is frozen and that sentence stays true without recomputing it. New payment cards store `earlier_payment: null`, so a card that showed none is held to that, while a card parked by an older version, which has no such field, still goes through. Left alone: after "reject it and ask again", the same idempotency key answers rejected and parks nothing, which is visible and costs nothing.
 - 2026-11-01: F20 takes the buildable items off Remaining Work. `backup set` and `move` stay CLI-only: installing already needs a terminal, moving a live books file from inside its own server is the riskier design, and an agent with no shell can hand the person one command to paste (ISC-183). Taking credit back isn't gated, the same as applying it, because neither reaches the client on its own.
+- 2026-11-01: Credit taken back in a later month comes off in that month, the same as a refund and the ledger, so a month already reported doesn't change. A start date inside a cycle doesn't bill that cycle, the same as a mid-month `period_start` today, and the guide says to use the cycle's first day. The command is spelled `client credit unapply` only: the builder's change reading any hyphen in a command word as a space was a parser-wide change nothing asked for, so it came back out.
 - 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
 
 ## Learning
@@ -692,12 +693,13 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
-- [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
+- [x] Optional start date on engagements — built in F20 (ISC-179, ISC-180).
+- [ ] Set a start date on an engagement that already exists: there is no `engagement_edit`, so today it can only be set when the engagement is added.
 - [x] Flip the repo public — done 2026-10-23 by the maintainer; INSTALL.md fetches anonymously (HTTP 200).
 - [x] Rerun the installer check against the real GitHub Releases URL — done 2026-10-23 on release v0.1.0: the README one-liner in a bare fresh home (no bun on PATH) installed `solobooks 0.1.0`, and its hash matches the release's SHA256SUMS.
 - [x] Publish the npm wrapper — done 2026-10-23: `solobooks` and the five `@solobooks/<os>-<arch>` packages at 0.1.0, built from the v0.1.0 release binaries. npm staged them until the maintainer cleared them. A fresh registry install printed `solobooks 0.1.0`, its binary hash matches the release, and MCP answered with 66 tools.
-- [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
+- [x] Un-apply a client credit — built in F20 (ISC-175 to ISC-178).
 - [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
-- [ ] Show each invoice line's charge id in `invoice get` — the charge already names its invoice; adding the field changes the line shape a parked approval compares against, so it needs a check that approvals parked before the upgrade still go through.
+- [x] Show each invoice line's charge id in `invoice get` — built in F20 (ISC-181, ISC-182).
 - [ ] Test which other agent apps (Codex, Claude Desktop, Cursor, ChatGPT, VS Code and the rest) show the in-chat approval prompt for a gated tool; each one that does gets named in the README.
-- [ ] `backup set` and `move` are CLI-only, so an MCP-only app such as Claude Desktop can't pick a backup folder or move the books.
+- [x] `backup set` and `move` are CLI-only — kept that way, and the guide hands the person the command (ISC-183, Decisions 2026-11-01).

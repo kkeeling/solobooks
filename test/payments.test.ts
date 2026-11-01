@@ -672,7 +672,7 @@ test("ISC-176: taking credit back refuses a date after today or before it was ap
   });
 });
 
-test("ISC-177: an invoice holding credit is refused a void naming client credit-unapply, which runs as named, and then it voids", async () => {
+test("ISC-177: an invoice holding credit is refused a void naming client credit unapply, which runs as named, and then it voids", async () => {
   const { dir, next } = await creditReady();
   const first = await applyCredit(dir, next.id, 15000);
   const second = await applyCredit(dir, next.id, 5000);
@@ -681,15 +681,15 @@ test("ISC-177: an invoice holding credit is refused a void naming client credit-
   const both = await voidIt();
   expect(both).toMatchObject({ code: 2, out: { field: "id" } });
   expect(both.out.reason).toBe(
-    `Invoice ${next.number} still holds credit applications ${first.id}, ${second.id}, so take each back with solobooks client credit-unapply --application-id <id> --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+    `Invoice ${next.number} still holds credit applications ${first.id}, ${second.id}, so take each back with solobooks client credit unapply --application-id <id> --date <day> before voiding it, or credit the rest with invoice credit instead.`,
   );
 
   // Exactly as the refusal spells it.
-  expect((await cli(dir, ["client", "credit-unapply", "--application-id", String(first.id), "--date", "2026-10-22", ...S])).code).toBe(0);
+  expect((await cli(dir, ["client", "credit", "unapply", "--application-id", String(first.id), "--date", "2026-10-22", ...S])).code).toBe(0);
   const one = await voidIt();
   expect(one.code).toBe(2);
   expect(one.out.reason).toBe(
-    `Invoice ${next.number} still holds credit application ${second.id}, so take it back with solobooks client credit-unapply --application-id ${second.id} --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+    `Invoice ${next.number} still holds credit application ${second.id}, so take it back with solobooks client credit unapply --application-id ${second.id} --date <day> before voiding it, or credit the rest with invoice credit instead.`,
   );
 
   expect((await takeBack(dir, second.id)).code).toBe(0);

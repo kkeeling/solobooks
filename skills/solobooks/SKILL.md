@@ -54,7 +54,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Import a bank or card statement | `bank import` with the CSV's column map, then `bank list --status unmatched` |
 | Record a client's payment | `payment add` (gross, fee, and the bank line it is) |
 | Refund a payment, or use a client's credit | `payment refund` (full or part; the fee stays spent unless the processor returned it), `client credit apply` |
-| Take a client's credit back off an invoice, such as one that has to be voided | `client credit unapply` (also spelled `client credit-unapply`), with the application id `client credits` shows |
+| Take a client's credit back off an invoice, such as one that has to be voided | `client credit unapply`, with the application id `client credits` shows |
 | Undo a wrong bank match | `bank unmatch` (waits for approval when the line backs a payment) |
 | Move their own money | `transfer add`, `owner draw`, `owner contribute`; personal-card costs are `expense add --paid-personally true` |
 | See who owes what | `report unpaid` |
