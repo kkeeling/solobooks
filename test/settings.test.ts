@@ -108,7 +108,7 @@ for (const [name, extra] of [["--books", true], ["SOLOBOOKS_DIR", false]] as con
   });
 }
 
-for (const [text, says] of [['{"books":5}', "books"], ['{"books":"/x","backups":7}', "backups"], ["[]", "object"], ["null", "object"]] as const) {
+for (const [text, says] of [['{"books":5}', "books"], ['{"books":""}', "books"], ['{"books":"  "}', "books"], ['{"books":"/x","backups":7}', "backups"], ["[]", "object"], ["null", "object"]] as const) {
   test(`ISC-157: settings holding ${text} get the same refusal and repair as invalid JSON, never a raw error`, async () => {
     const { env, settings, books } = person();
     expect((await run(["client", "add", "--name", "Acme", "--source", "s"], env)).code).toBe(0);
@@ -297,6 +297,31 @@ test("ISC-170: doctor fails the MCP check when the folder it checks isn't the on
   setup(["--books", a], env);
   expect((await doctored(["--books", a], env)).ok).toBe(true);
   expect((await doctored([], env)).ok).toBe(true);
+});
+
+test("ISC-174: doctor's fix names both ways out when its folder isn't the agent's, because either may be the right one", async () => {
+  const { env, books: old, home } = person();
+  const moved = join(home, "moved");
+  setup(["--books", moved], env);
+  const shell = claudeCheck(await doctored([], { ...env, SOLOBOOKS_DIR: old }));
+  expect(shell.fix).toContain(`If "${moved}" holds your books, unset SOLOBOOKS_DIR`);
+  expect(shell.fix).toContain(`If "${old}" does, run solobooks setup --books "${old}"`);
+  const named = claudeCheck(await doctored(["--books", old], env));
+  expect(named.fix).toContain(`If "${moved}" holds your books, check without --books`);
+});
+
+test("ISC-174: setup says so when it leaves books behind that have work in them, and not otherwise", async () => {
+  const { env, books: first, home } = person();
+  const second = join(home, "second");
+  setup(["--books", second], env);
+  expect(setup(["--books", first], env).warnings.join(" ")).not.toContain("still in"); // nothing in the second yet
+
+  setup(["--books", second], env);
+  expect((await run(["client", "add", "--name", "Zeta", "--source", "s"], env)).code).toBe(0);
+  const back = setup(["--books", first], env);
+  expect(back.warnings.join(" ")).toContain(`the books it was using are still in "${second}"`);
+  expect(back.warnings.join(" ")).toContain(`solobooks setup --books "${second}"`);
+  expect(setup(["--books", first], env).warnings.join(" ")).not.toContain("still in"); // already there
 });
 
 test("ISC-170: the same goes for SOLOBOOKS_DIR, and two names for one folder are one folder", async () => {

@@ -52,10 +52,11 @@ function checkBooks(argv: string[], env: Env): Check {
       const ok = (db.query("PRAGMA quick_check").get() as { quick_check: string }).quick_check;
       const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
       if (ok !== "ok") return { check: "books", ok: false, detail: `The books file ${file} is damaged: ${ok}.`, fix: "Restore the latest backup of the books folder." };
-      if (user_version > MIGRATIONS.length) {
+      const other = isOtherDatabase(db);
+      if (!other && user_version > MIGRATIONS.length) {
         return { check: "books", ok: false, detail: `The books in ${dir} were written by a newer solobooks.`, fix: "Install the latest solobooks." };
       }
-      if (isOtherDatabase(db)) {
+      if (other) {
         return { check: "books", ok: false, detail: `The file ${file} is a database from something other than solobooks.`, fix: "Move that file out of the way, or run solobooks setup --books <folder>, naming the folder that holds your books." };
       }
       return { check: "books", ok: true, detail: file };
@@ -207,7 +208,10 @@ export async function doctor(argv: string[], env: Env) {
     }
     const theirs = serverFolder(command.slice(1), serverEnv);
     const ours = here(booksDir(flag(argv, "books"), env));
-    if (theirs && real(here(theirs)) !== real(ours)) return { problem: `it uses the books in "${here(theirs)}", not the ones in "${ours}"`, fix: point() };
+    if (theirs && real(here(theirs)) !== real(ours)) {
+      const instead = flag(argv, "books") ? "check without --books" : "unset SOLOBOOKS_DIR";
+      return { problem: `it uses the books in "${here(theirs)}", not the ones in "${ours}"`, fix: `If "${here(theirs)}" holds your books, ${instead}. If "${ours}" does, run solobooks setup --books "${ours}", so the server finds them from the settings.` };
+    }
     return { problem: null };
   };
 

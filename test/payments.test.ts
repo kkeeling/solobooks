@@ -480,6 +480,27 @@ test("ISC-168: the warning stands beside the other warnings a write can carry", 
   expect(r.warnings.join(" ")).toContain("Dropbox");
 });
 
+test("ISC-172: with nothing owing, a second waiting payment can't go through on a card that doesn't show the first", async () => {
+  const { dir, inv } = await thousandDollarInvoice();
+  await approvedNoLine(dir, inv.id, 100000);
+  const body = { invoice_id: inv.id, amount_cents: 7500, deposit_account_id: acct(1), date: "2026-10-21" };
+  const one = await ok(dir, json(["payment", "add"], body));
+  const two = await ok(dir, json(["payment", "add"], body));
+  expect(two.pending_id).not.toBe(one.pending_id);
+  asPerson(dir, (db) => approveOnPage(db, one.pending_id));
+
+  const refused = asPerson(dir, (db) => approvePending(db, two.pending_id, { via: "page" }, WHEN));
+  expect(refused).toMatchObject({ ok: false, refusal: { field: "pending_id" } });
+  expect((refused as any).refusal.reason).toContain("has changed");
+  asPerson(dir, (db) => expect(getPending(db, two.pending_id)!.status).toBe("pending"));
+
+  asPerson(dir, (db) => rejectPending(db, two.pending_id, "page", WHEN));
+  const again = await ok(dir, json(["payment", "add"], body));
+  const card = asPerson(dir, (db) => getPending(db, again.pending_id)!);
+  expect(promptFields(card)[0]!.find(([label]) => label === "Earlier payment")![1]).toContain("also $75.00");
+  expect(asPerson(dir, (db) => approvePending(db, again.pending_id, { via: "page" }, WHEN)).ok).toBe(true);
+});
+
 test("ISC-168: the card shows the earlier payment, and a card parked before it was shown still goes through", async () => {
   const { dir, inv } = await thousandDollarInvoice();
   const first = await approvedNoLine(dir, inv.id);

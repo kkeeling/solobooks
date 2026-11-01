@@ -55,6 +55,9 @@ export function setup(argv: string[], env: Env) {
   if (fresh && left && left !== dir && hasBooks(booksFile(left)) && hasHistory(booksFile(left))) {
     warnings.push(`solobooks now uses new, empty books in "${dir}", and your books are still in "${left}"; to carry them over, run solobooks setup --books "${left}", then solobooks move --to <empty folder>.`);
   }
+  if (!fresh && left && left !== dir && hasBooks(booksFile(left)) && hasHistory(booksFile(left))) {
+    warnings.push(`solobooks now uses the books in "${dir}", and the books it was using are still in "${left}" with work in them; to go back, run solobooks setup --books "${left}".`);
+  }
   if (fresh && damaged) {
     warnings.push(`solobooks started new, empty books in "${dir}"; if your books are somewhere else, run solobooks setup --books <that folder>.`);
   }

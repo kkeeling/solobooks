@@ -201,7 +201,7 @@ export function promptFor(db: Books, op: Op, input: Record<string, any>, ctx: Ct
           credit_cents: p.credit_cents,
           open_after_cents: p.invoice_open_cents,
           memo: p.memo,
-          ...(preview.earlier_payment && { earlier_payment: preview.earlier_payment }),
+          earlier_payment: preview.earlier_payment ?? null,
         };
         return { title: `Record a payment of ${dollars(p.amount_cents)} on invoice ${p.invoice_number} with no bank line behind it?`, items: [item] };
       }
@@ -302,7 +302,7 @@ export function promptFields(p: Pick<PendingAction, "action" | "op" | "items">):
     if (d.tax) out.push(["Tax", `${field(d.tax.label)}: ${dollars(d.tax.amount_cents)}`]);
     out.push(["Total", dollars(d.total_cents)]);
     if (d.note) out.push(["Note", field(d.note)]);
-    if (d.kind === "invoice") out.push(["Terms", `${termsText(d.terms_days)}; dated the day it is approved, so due ${d.due_date} if approved today`]);
+    if (d.kind === "invoice") out.push(["Terms", `${termsText(d.terms_days)}; dated the day it is approved, so due ${d.due_date} if approved on ${d.invoice_date}`]);
     out.push(["Payment instructions", d.payment_instructions ? field(d.payment_instructions) : "(none)"]);
     if (d.reason !== undefined) out.push(["Reason", field(d.reason)]);
     return out;
@@ -341,10 +341,12 @@ export function refuseIfHeld(db: Books, op: string, input: Record<string, any>):
  * Whether what an approval would do now is exactly what the person was shown: the number, every line, note, term,
  * client and seller detail and payment instruction. An invoice is dated the day it is approved, so a request parked in
  * the evening can be approved the next morning. Drafts the person pulled from a batch move the numbers after them,
- * which they chose, so `pulled` leaves numbers to the caller. An earlier payment is only a pointer on the card: one
- * that came since moves the balance, which is compared, and cards parked before it was shown have none.
+ * which they chose, so `pulled` leaves numbers to the caller. An earlier payment is only a pointer on the card, but
+ * one that came since a card showed there was none has to be seen, because with nothing owing the balance doesn't move.
+ * Cards parked before it was shown have no such field, so they aren't held to it.
  */
 export function stillAsShown(shown: Record<string, unknown>[], now: Record<string, unknown>[], pulled = false): boolean {
+  if (shown.some((s, i) => s.earlier_payment === null && now[i]?.earlier_payment)) return false;
   // The invoice date and due date follow the day of approval; the terms that set the due date are compared.
   const strip = (xs: Record<string, unknown>[]) =>
     JSON.stringify(xs.map(({ number, invoice_date, due_date, earlier_payment, ...rest }) => (pulled ? rest : { ...rest, number: number === null || number === undefined ? null : String(number) })));
@@ -420,7 +422,7 @@ export function decided(p: PendingAction) {
   const how = p.decided_via === "page" ? "on the approval page" : "in their agent app";
   const shared = { pending_id: p.id, title: p.title, decided_at: p.decided_at, decided_via: p.decided_via };
   if (p.status === "approved") {
-    return { status: "approved", ...shared, ...(p.excluded.length > 0 && { excluded: p.excluded }), result: p.result, message: `The person approved this ${how}, so it has happened.` };
+    return { status: "approved", ...shared, ...(p.excluded.length > 0 && { excluded: p.excluded }), result: p.result, message: p.excluded.length > 0 ? `The person approved this ${how} and pulled part of it: invoice id ${p.excluded.join(", ")} stays a draft, and the rest has happened.` : `The person approved this ${how}, so it has happened.` };
   }
   return { status: "rejected", ...shared, message: `The person rejected this ${how}, so nothing changed.` };
 }

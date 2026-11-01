@@ -108,7 +108,7 @@ function otherDatabase(dir: string, tables = ["recipes"], version = 0) {
   return readFileSync(dbPath(dir));
 }
 
-for (const [what, tables, version] of [["no solobooks tables", ["recipes"], 0], ["its own version number", ["recipes"], 3], ["one table named like ours", ["accounts", "recipes"], 0]] as const) {
+for (const [what, tables, version] of [["no solobooks tables", ["recipes"], 0], ["its own version number", ["recipes"], 3], ["a version number past ours", ["recipes"], 5000], ["one table named like ours", ["accounts", "recipes"], 0]] as const) {
   test(`ISC-166: a SQLite file that isn't books (${what}) is refused where books are opened, and left byte-identical`, async () => {
     const home = tempDir();
     mkdirSync(join(home, ".claude"));

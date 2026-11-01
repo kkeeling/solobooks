@@ -494,12 +494,12 @@ test("ISC-63 parks: a request parked in the evening is approved the next morning
   }
 });
 
-test("ISC-69 payment details: the prompt says the invoice is dated the day it is approved, with the due date if approved today", async () => {
+test("ISC-69 ISC-171 payment details: the prompt says the invoice is dated the day it is approved, with the due date for the day it was asked, so it stays true", async () => {
   const db = coreBooks();
   setLevels(db, ALL("click"));
   const pid = must(db, "invoice_issue", { id: draft(db) }).pending_id;
   const p = must(db, "pending_get", { id: pid }).pending;
-  expect(promptFields(p)[0]).toContainEqual(["Terms", "Net 30; dated the day it is approved, so due 2026-11-21 if approved today"]);
+  expect(promptFields(p)[0]).toContainEqual(["Terms", "Net 30; dated the day it is approved, so due 2026-11-21 if approved on 2026-10-22"]);
 });
 
 test("ISC-70 mark paid: a payment with no matching bank line is gated by default, and one backed by an imported line isn't", async () => {
@@ -602,6 +602,18 @@ test("ISC-148: retrying a gated request after the person approved it reports app
   }
   expect((await ok(dir, ["invoice", "list"])).invoices.filter((i: any) => i.status === "issued")).toHaveLength(1); // the retry issued nothing more
 }, 30_000);
+
+test("ISC-173: retrying a batch after the person pulled a draft says that draft wasn't issued", async () => {
+  const db = coreBooks();
+  setLevels(db, ALL("click"));
+  const ids = [draft(db, 1), draft(db, 2)];
+  const key = { idempotency_key: "batch-1" };
+  approveOnPage(db, must(db, "invoice_issue", { ids }, key).pending_id, [ids[1]!]);
+  const replay = must(db, "invoice_issue", { ids }, key);
+  expect(replay).toMatchObject({ status: "approved", excluded: [ids[1]] });
+  expect(replay.message).toContain(`invoice id ${ids[1]} stays a draft`);
+  expect(status(db, ids[1]!)).toBe("draft");
+});
 
 test("ISC-148: retrying a gated request after the person rejected it reports rejected, and nothing happened", async () => {
   const dir = await clickAcme();

@@ -42,7 +42,7 @@ export function readConfig(env: Env): Config {
     throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
   const { books, backups } = c as Record<string, unknown>;
-  const wrong = books !== undefined && typeof books !== "string" ? "books" : backups !== undefined && typeof backups !== "string" ? "backups" : null;
+  const wrong = books !== undefined && (typeof books !== "string" || books.trim() === "") ? "books" : backups !== undefined && typeof backups !== "string" ? "backups" : null;
   if (wrong) {
     throw new Refusal(`The settings file ${file} has the wrong kind of value for ${wrong}, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
