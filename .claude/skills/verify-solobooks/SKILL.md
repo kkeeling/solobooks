@@ -37,7 +37,7 @@ bun install                     # only when node_modules is missing
 .claude/skills/verify-solobooks/control.ts up --seed billing
 ```
 
-`up` runs the real `solobooks setup` in an empty scratch home, which creates the books and applies every migration, then applies the seed and starts `solobooks serve` on a free port. It is ready when it prints `"ready": true`, which it does only after the page's `/data` answered from the books. It runs the source in this checkout, not an installed binary.
+`up` runs the real `solobooks setup --books <scratch folder>` in an empty scratch home, which creates the books and applies every migration, then applies the seed and starts `solobooks serve` on a free port. It is ready when it prints `"ready": true`, which it does only after the page's `/data` answered from the books. It runs the source in this checkout, not an installed binary.
 
 | Seed | Starts with | Use for |
 |---|---|---|

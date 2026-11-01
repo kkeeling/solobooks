@@ -9,6 +9,8 @@ The agent imports a bank or card statement, then records each client payment aga
 - `money-unbacked` parks a payment with no bank line until the person decides.
 - `money-once` refuses a bank line that's already matched.
 - `money-reports` updates what is owed and the P&L, in reports and on the page.
+- `money-mcp` shows the agent the same bank lines through its tool.
+- `money-approve` records a parked payment once the person approves it.
 
 ## How to get to it (user POV)
 
@@ -28,7 +30,7 @@ Preconditions:
 - **Unbacked payment waits.** Run `control.ts cli --as money-unbacked -- payment add --invoice-id 1 --date 2026-10-20 --amount-cents 25000 --deposit-account-id 26 --source agent:verify`. It returns `"status": "pending"`, `"pending_id": 3`, title `Record a payment of $250.00 on invoice 1001 with no bank line behind it?`.
 - **Person rejects it.** Run `control.ts page --as money-unbacked open` and `control.ts page --as money-unbacked click --selector '[data-reject="3"]'`. Run `control.ts cli --as money-unbacked -- pending get --id 3`. `status` is `rejected`. `report unpaid` still shows `open_total_cents` of `27312`.
 - **Backed payment lands.** Run `control.ts cli --as money-backed -- payment add --invoice-id 1 --date 2026-10-20 --amount-cents 25000 --deposit-account-id 26 --bank-line-id 3 --source agent:verify`. The payment has `invoice_number` `1001`, `amount_cents` `25000` and `bank_line_id` `3`, with no pending status.
-- **Line is used up.** Run the same command again. It exits 2 with `Bank line 3 is already matched to entry 2.`
+- **Line is used up.** Run the same command again with `--as money-once`. It exits 2 with `Bank line 3 is already matched to entry 2.`
 - **Reports follow.** Run `control.ts cli --as money-reports -- report unpaid`. `paid_cents` is `25000`, `open_cents` is `2312`. Run `control.ts cli --as money-reports -- report pnl --from 2026-01-01 --to 2026-10-22`. `income_total_cents` and `net_cents` are `25000`.
 - **Page follows.** Run `control.ts page --as money-reports open` and `control.ts page shot money-reports`. `Owed to you` reads `$23.12` and `Net profit 2026` reads `$250.00`.
 - **Person approves instead.** Run `control.ts down`, start a fresh `billing` run, and repeat the preconditions. Run `control.ts cli --as money-approve -- account add --name Checking --type asset --source agent:verify` and `control.ts cli --as money-approve -- payment add --invoice-id 1 --date 2026-10-20 --amount-cents 25000 --deposit-account-id 26 --source agent:verify`, which returns `"pending_id": 3`. Run `control.ts page --as money-approve open` and `control.ts page --as money-approve click --selector '[data-approve="3"]'`. Run `control.ts cli --as money-approve -- payment list`. The payment has `amount_cents` `25000` and `bank_line_id` `null`. `report unpaid` shows `paid_cents` `25000`.

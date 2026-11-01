@@ -203,7 +203,7 @@ async function up(flags: Record<string, string>) {
   const env = scratchEnv(r);
 
   const setup = capture(solobooks(["setup", "--books", r.books]), env, ROOT);
-  record(r, "setup", "cli", "solobooks setup", setup);
+  record(r, "setup", "cli", `solobooks setup --books ${r.books}`, setup);
   if (setup.code !== 0) die(`setup failed, so run down:\n${setup.stdout}${setup.stderr}`, 1);
   seed(r, seedName);
 
