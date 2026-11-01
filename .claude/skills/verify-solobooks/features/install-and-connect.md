@@ -19,7 +19,7 @@
 
 Preconditions:
 
-- `control.ts up --seed empty` is ready. Its scratch home has a `.claude` folder, so it looks like a person with Claude Code. `up` already ran the first setup, as `001-setup.cli.txt`.
+- `control.ts up --seed empty` is ready. Its scratch home has a `.claude` folder, so it looks like a person with Claude Code. `up` already ran the first setup, naming the scratch folder with `--books`, as `001-setup.cli.txt`. Its output has `"started_new_books": true`, which a second setup doesn't.
 
 - **First setup.** Read `.verify/evidence/<run>/001-setup.cli.txt`. The exit is `0`, `Claude Code` has `detected` `true`, and `mcp` is `added`. Codex and Claude Desktop have `detected` `false`.
 - **Second setup changes nothing.** Run `control.ts cli --as install-again -- setup`. `Claude Code` shows `"mcp": "unchanged"` and every skill folder shows `"changed": false`.
@@ -27,16 +27,17 @@ Preconditions:
 - **MCP answers.** Run `control.ts mcp --as install-mcp --list`. It lists one tool per operation. Run `control.ts mcp --as install-mcp profile_get '{}'`. It answers with exit 0.
 - **Agent configs in place.** Read the Claude Code `config` path from `001-setup.cli.txt`, and read that file. `mcpServers.solobooks.args` ends in `mcp`. Don't use `$HOME` from your own shell, which is the real home.
 - **Full scratch-home check.** Run `bash scripts/setup-idempotent.sh`. It prints its own pass or fail, with three agents detected and other servers already in their configs.
-- **Doctor fails with a fix.** Run `bash scripts/doctor-negative.sh`. It prints `PASS: doctor passes after setup and exits non-zero, naming the fix, when an agent's MCP entry is missing or broken`. It runs in its own scratch home, without `SOLOBOOKS_DIR`, so it also proves the server finds the books from settings alone.
+- **Doctor fails with a fix.** Run `bash scripts/doctor-negative.sh`. It prints `PASS: doctor passes after setup and exits non-zero, naming the fix, when an agent's MCP entry is missing or broken`. It runs in its own scratch home, without `SOLOBOOKS_DIR`.
 
 ## Gotchas
 
 - Run setup and doctor through `control.ts`, never bare. A bare `solobooks setup` rewrites the person's real agent configs and settings, and it reads `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `SOLOBOOKS_DIR` and `XDG_CONFIG_HOME` from your shell. Run from this checkout, it would also point those configs at this source.
-- `control.ts` sets `SOLOBOOKS_DIR`, which outranks settings, so its runs don't prove the server finds the books from settings alone. The `doctor-negative` script does.
-- A damaged settings file can't say where the books are, so a bare setup refuses, naming `solobooks setup --books <folder>`. That command saves the damaged copy as `config.json.damaged` and writes the file again. `doctor` names the same fix.
+- `control.ts` sets `SOLOBOOKS_DIR`, which outranks settings, so its runs don't prove the server finds the books from settings alone, and a bare `setup` under it follows that folder, not the settings. Neither does the `doctor-negative` script any more, because doctor counts a server's no-books refusal as an answer. `bun scripts/eval/run.ts onboarding --agent claude --work <dir>` does, with a real agent calling the tools.
+- A damaged settings file can't say where the books are, so with no `SOLOBOOKS_DIR` a bare setup refuses, naming `solobooks setup --books <folder>`, and doctor names the same fix. That command saves the damaged copy as `config.json.damaged`, then `.damaged-2` and so on, and writes the file again. With `SOLOBOOKS_DIR` set, as under `control.ts`, a bare setup repairs it, and doctor doesn't notice, so its fix can't be seen there. Use a scratch `HOME` of your own, as `test/settings.test.ts` does.
 - A damaged agent config is a different case. Setup exits 0 with `"mcp": "failed"` and a warning, and doctor exits 1 with `Fix <config>, then run solobooks setup.`
-- Only setup starts new books. Every other command and tool refuses with `There are no books in <folder>`, and a bare setup refuses when the recorded books are gone. `setup --books <folder>` starts new ones there.
-- Setup, doctor, `move`, `backup set` and `mcp` read `--flag=value` like `--flag value`, and refuse a flag they don't know.
+- Only setup starts new books. Other commands and tools refuse with `There are no books in <folder>`, dry runs too, and a zero-byte file counts as no books. A bare setup refuses when the folder it would use, `SOLOBOOKS_DIR` then the recorded one, has none. `setup --books <folder>` starts new ones there, adopts books already there, and warns when it leaves earlier books behind.
+- With the books missing, doctor doesn't refuse. It exits 1 with only `books` failing, and its fix names `setup --books "<folder>"`. `backup set` saves the folder and exits 0, warning `no copy was written`.
+- Setup, doctor, `move`, `backup set` and `mcp` read `--flag=value` like `--flag value`, and refuse a flag they don't know or a stray argument (`This command doesn't take "stray"`).
 - With the plugin installed, setup shows Claude Code with `"mcp": "plugin"` and one skill folder, and doctor reports `the solobooks plugin's server answered with all 70 tools`. That is correct, not a failed registration.
 - In a home with no agent folder or `.claude.json`, doctor exits 1 with `No agent app was found`, while setup exits 0 with a warning. That's correct, so don't weaken a run to get past it.
 - Doctor warns `No backup folder is chosen` on every fresh run. That warning doesn't fail it.

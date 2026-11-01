@@ -15,6 +15,7 @@ An agent turns logged time and costs into a draft invoice and asks to issue it. 
 
 - The person tells their agent "bill Acme for October", and the agent calls the `engagement_add`, `time_add`, `charge_add`, `invoice_draft`, `invoice_issue`, `invoice_pdf`, `invoice_email` and `invoice_sent` tools.
 - An agent or person runs `solobooks engagement add`, `time add`, `charge add`, `invoice draft`, `invoice issue`, `invoice pdf`, `invoice email` and `invoice sent`.
+- The person approves the issue on the page. An agent app's own prompt isn't verified; see [Approve on the page](./approve-on-page.md).
 
 ## Driving it with control.ts
 
@@ -38,7 +39,7 @@ Preconditions:
 - `invoice issue` is parked even while the payment instructions are still waiting, so approve those first, as the recipe does.
 - Issuing refuses when the profile lacks a legal name, address or EIN. The `billing` seed sets all three. An `empty` run has no draft to issue, so it refuses earlier with `There is no invoice or credit note with id 1.`
 - Issuing also refuses a client with no address, with `Set client 2's billing address with client edit before issuing an invoice.`
-- Time logged for a client with no engagement has no rate. `invoice draft` refuses with `Time entry 2 has no hourly rate, so give it the engagement_id of an hourly engagement.` until the client has an hourly engagement.
+- Time logged for a client with no engagement has no rate. `invoice draft` refuses with `Time entry 2 has no hourly rate, so give it the engagement_id of an hourly engagement.` until the client has exactly one hourly engagement. With two or more, the entry has to name one, and one unpriced entry blocks the client's whole draft.
 - A draft can also carry manual lines through `--json '{"lines":[{"description":"Setup","amount_cents":5000}]}'`, which gets past the `Nothing unbilled` refusal.
 - A draft has a PDF too: `invoice pdf --id 1` before approval saves `invoices/draft-1.pdf`. Only the numbered file proves the issue.
 - `invoice pdf` returns a path relative to the books folder. The scratch folder is gone after `down`, so read the copy under `books-final/`.
