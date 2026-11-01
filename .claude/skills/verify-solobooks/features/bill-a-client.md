@@ -10,6 +10,7 @@ An agent turns logged time and costs into a draft invoice and asks to issue it. 
 - `bill-docs` produces the client's PDF and the email text.
 - `bill-sent` records delivery, and an issued invoice can't be issued again.
 - `bill-mcp` does the same work through the MCP tools an agent app uses.
+- `bill-start` bills a retainer's earlier months from its start date on the first draft.
 
 ## How to get to it (user POV)
 
@@ -33,6 +34,7 @@ Preconditions:
 - **Email text.** Run `control.ts cli --as bill-docs -- invoice email --id 1`. It returns `from` `jane@example.com`, `to` `ap@acme.example`, subject `Invoice 1001 from Jane Doe Consulting LLC: $273.12 due November 21, 2026`, and `attachment` `invoices/1001.pdf`.
 - **Recorded sent.** Run `control.ts cli --as bill-sent -- invoice sent --id 1 --source agent:verify`. `status` is `sent`. Run `control.ts page --as bill-sent open`. The invoice reads `Sent`.
 - **Locked after issue.** Run `control.ts cli --as bill-sent -- invoice issue --id 1 --source agent:verify`. It exits 2 with `Invoice 1001 is sent, so it can't be issued again; void or credit it instead.`
+- **Retainer start date.** Run `control.ts cli --as bill-start -- client add --name "Beta LLC" --address "9 Elm Rd, Austin, TX 78701" --email ap@beta.example --source agent:verify`, then `engagement add --client-id 2 --name Retainer --recurring-amount-cents 50000 --recurring-interval monthly --start-date 2026-08-01 --source agent:verify`, then `invoice draft --client-id 2 --period-start 2026-10-01 --period-end 2026-10-31 --source agent:verify`. It has `Retainer, August 2026` and `Retainer, September 2026` with `carried_over` true, and `Retainer, October 2026` with it false.
 
 ## Gotchas
 
@@ -46,4 +48,6 @@ Preconditions:
 - Asking to issue or void a second time returns the card already waiting, with the same `pending_id`. Once a void is done, another says `Invoice 1001 is already void.`
 - A voided invoice's PDF replaces the old one at the same path. It says `VOID INVOICE`, `Status: void, nothing is owed on it` and `Total voided $273.12`, with a VOID watermark and no amount due.
 - `invoice email` and `invoice reminder` refuse a client with no email address, naming `solobooks client edit --id <id> --email <address>`. A reminder on an invoice that isn't overdue refuses first with `Invoice 1002 isn't overdue until after November 21, 2026.`
+- A start date on or before the end of a past invoice brought in for that client is refused, naming the date, because a draft can't tell which months that invoice billed. A past invoice brought in after the start date was set isn't caught, so check the lines on the card.
+- `invoice get` shows each line's `charge_id`, null unless it came from a charge. A card's lines don't carry it.
 - The clock is pinned, so dates in the output are the run's, not today's. Pass `--now` on `up` when a date matters.
