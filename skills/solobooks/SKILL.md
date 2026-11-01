@@ -4,7 +4,7 @@ description: Use when the person mentions solobooks, "my books", bookkeeping, "i
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
-  version: "0.1.7"
+  version: "0.1.8"
 ---
 
 # solobooks
@@ -44,7 +44,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | They want to | Use |
 |---|---|
 | Set their business details | `profile set` (name, address, EIN, email, next invoice number); payment instructions go through `profile payment instructions set` (waits for approval) |
-| Add a client and how they pay | `client add`, then `engagement add` (hourly rate, milestones, or a recurring fee) |
+| Add a client and how they pay | `client add`, then `engagement add` (hourly rate, milestones, or a recurring fee, with `start_date` if it began before its first draft) |
 | Log time | `time add` (client, date, minutes, note) |
 | Count time spent directing agents | the bill-agent-time add-on, see [references/agent-time.md](references/agent-time.md) |
 | Bill a period | `invoice draft` → show it → `invoice issue` (waits for approval) |
@@ -54,6 +54,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Import a bank or card statement | `bank import` with the CSV's column map, then `bank list --status unmatched` |
 | Record a client's payment | `payment add` (gross, fee, and the bank line it is) |
 | Refund a payment, or use a client's credit | `payment refund` (full or part; the fee stays spent unless the processor returned it), `client credit apply` |
+| Take a client's credit back off an invoice, such as one that has to be voided | `client credit unapply`, with the application id `client credits` shows |
 | Undo a wrong bank match | `bank unmatch` (waits for approval when the line backs a payment) |
 | Move their own money | `transfer add`, `owner draw`, `owner contribute`; personal-card costs are `expense add --paid-personally true` |
 | See who owes what | `report unpaid` |
@@ -63,7 +64,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 | Give the accountant the year | `export --year <y> --format csv` plus `report yearend --year <y>` |
 | Bring in old invoices | `invoice import` |
 | See what's waiting | `pending list` |
-| Keep daily backups | `solobooks backup set --folder <dir>` (CLI only) |
-| Move the books to another folder or machine | `solobooks move --to <empty dir>` (CLI only) |
+| Keep daily backups | `solobooks backup set --folder <dir>` (CLI only; with no shell, give the person the exact command to paste into a terminal) |
+| Move the books to another folder or machine | `solobooks move --to <empty dir>` (CLI only; with no shell, give the person the exact command to paste into a terminal) |
 
 solobooks keeps books in US dollars, for one US business, on one machine. It isn't tax or accounting advice, and you shouldn't present its numbers as such.

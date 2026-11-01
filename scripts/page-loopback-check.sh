@@ -40,13 +40,13 @@ done
 echo "solobooks serve is listening on:"
 lsof -nP -iTCP -sTCP:LISTEN -a -c solobooks
 # The probe below passes when nothing listens at all, so first prove the server is there to be checked.
-if ! lsof -nP -iTCP -sTCP:LISTEN -a -c solobooks | rg -q LISTEN; then
+if ! lsof -nP -iTCP -sTCP:LISTEN -a -c solobooks | grep -q LISTEN; then
   echo "FAIL: lsof found no listening socket for solobooks" >&2
   exit 1
 fi
 
-# The ISA probe, as written in Test Strategy for ISC-104.
-if lsof -iTCP -sTCP:LISTEN -a -c solobooks | rg -v "127.0.0.1|localhost|\[::1\]" | rg -c LISTEN ; test $? -eq 1; then
+# The ISA probe for ISC-104, in grep so a release runner needs nothing extra.
+if lsof -iTCP -sTCP:LISTEN -a -c solobooks | grep -Ev "127.0.0.1|localhost|\[::1\]" | grep -c LISTEN ; test $? -eq 1; then
   echo "PASS: solobooks serve listens only on loopback"
 else
   echo "FAIL: solobooks serve listens beyond loopback" >&2

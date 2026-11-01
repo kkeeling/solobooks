@@ -144,6 +144,7 @@ function frozen(db: Books, id: number, reason?: string) {
     terms_days: r.terms_days,
     due_date: r.due_date,
     note: r.note,
+    // Only what the card shows: a new field on an invoice line stays off here, or cards parked before it could never be approved.
     lines: v.lines.map((l) => ({ kind: l.kind, description: l.description, amount_cents: l.amount_cents })),
     tax: v.tax ? { label: v.tax.label, rate_ppm: v.tax.rate_ppm, amount_cents: v.tax.amount_cents } : null,
     subtotal_cents: v.subtotal_cents,

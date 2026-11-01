@@ -215,6 +215,7 @@ test("ISC-13: every business-rule refusal also gives one sentence and the field 
     ["client_credit_apply", { client_id: 2, invoice_id: 99, date: "2026-10-01" }, {}, "invoice_id"],
     ["client_credit_apply", { client_id: 1, invoice_id: 2, date: "2026-10-01" }, {}, "client_id"], // Acme holds no credit
     ["client_credit_apply", { client_id: 2, invoice_id: 2, date: "2026-10-01" }, {}, "invoice_id"], // invoice 2 is Acme's
+    ["client_credit_unapply", { application_id: 99, date: "2026-10-01" }, {}, "application_id"],
   ];
   for (const [op, input, env, field] of cases) {
     const r = write(db, op, input, env);

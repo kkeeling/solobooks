@@ -162,3 +162,40 @@ test("ISC-166: books setup just created open, and so does a database with nothin
   expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
   db.close();
 });
+
+// The schema version 015 starts from.
+const BEFORE_015 = 14;
+for (const v of VERSIONS.filter((x) => x <= BEFORE_015)) {
+  test(`ISC-178: books from schema v${v} keep every row exactly as it was through migration 015`, () => {
+    const upTo = (db: Database, to: number) => {
+      for (let i = v; i < to; i++) db.exec(MIGRATIONS[i]!);
+      return db;
+    };
+    const before = dumpDb(upTo(buildFixture(v), BEFORE_015));
+    const after = dumpDb(upTo(buildFixture(v), BEFORE_015 + 1));
+    expect(after.credit_unapplications).toEqual([]);
+    delete after.credit_unapplications;
+    // The one column it adds says nothing about an engagement that was already there.
+    after.engagements = after.engagements!.map((e: any) => {
+      const { start_date, ...rest } = e;
+      expect(start_date).toBeNull();
+      return rest;
+    });
+    expect(after).toEqual(before);
+  });
+}
+
+test("ISC-178: credit applied by an older version can be taken back after the upgrade", async () => {
+  const home = tempDir();
+  const env = { HOME: home, SOLOBOOKS_NOW: "2026-10-23T12:00:00.000Z" };
+  const dir = join(home, "solobooks");
+  mkdirSync(dir);
+  copyFileSync(fixtureFile(BEFORE_015), dbPath(dir));
+  expect((await install("setup", ["--books", dir], env)).code).toBe(0);
+  const open = async () => JSON.parse((await run(["invoice", "get", "--id", "4"], env)).stdout).invoice.open_cents;
+  const held = await open();
+  const r = await run(["client", "credit", "unapply", "--application-id", "1", "--date", "2026-10-23", "--source", "person"], env);
+  expect(r.code).toBe(0);
+  expect(await open()).toBe(held + 2000);
+  expect(JSON.parse(r.stdout).client_balance_cents).toBe(4475);
+});

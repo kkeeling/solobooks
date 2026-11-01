@@ -4,6 +4,8 @@ solobooks has no importers for other apps. You bring old data in through its nor
 
 ## Past invoices: `invoice import`
 
+Bring these in before adding a retainer with a `start_date`: a draft can't see which of the fee's months a past invoice billed. Set `start_date` to the first month they don't cover.
+
 A past invoice is one that was already sent before solobooks. It comes in as **historical**: it keeps its original number, posts to the books (owed from its invoice date until paid; the P&L counts it as income on the day it was paid), and never waits for approval, because nothing about it reaches a client now. In return:
 
 - It must be dated **before today**. Anything dated today or later is a new invoice: draft it and issue it.

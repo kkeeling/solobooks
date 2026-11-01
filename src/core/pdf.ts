@@ -129,7 +129,11 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
     const base = doc.tax.taxable_cents === doc.subtotal_cents ? "" : ` of ${dollars(doc.tax.taxable_cents)}`;
     row(`${doc.tax.label} (${percent(doc.tax.rate_ppm)}${base})`, doc.tax.amount_cents);
   }
-  row(doc.void ? "Total voided" : doc.kind === "credit" ? "Total credit" : "Total due", doc.total_cents, bold, 12);
+  if (doc.settled_cents > 0) {
+    row("Total", doc.total_cents);
+    row("Paid or credited", -doc.settled_cents);
+  }
+  row(doc.void ? "Total voided" : doc.kind === "credit" ? "Total credit" : "Total due", doc.total_cents - doc.settled_cents, bold, 12);
 
   // Payment instructions and note.
   const block = (heading: string, body: string | null) => {
@@ -144,7 +148,7 @@ export async function renderPdf(doc: InvoiceDocument, createdAt: string): Promis
       y -= 13;
     }
   };
-  if (doc.kind === "invoice" && !doc.void) block("How to pay", doc.payment_instructions);
+  if (doc.kind === "invoice" && !doc.void && doc.settled_cents < doc.total_cents) block("How to pay", doc.payment_instructions);
   block(doc.kind === "credit" ? "Reason" : "Note", doc.note);
 
   if (pages.length > 1) {

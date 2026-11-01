@@ -29,6 +29,8 @@ export interface InvoiceDocument {
   subtotal_cents: number;
   tax: { label: string; rate_ppm: number; taxable_cents: number; amount_cents: number } | null;
   total_cents: number;
+  /** What payments, credit notes and client credit have already settled on an issued invoice. */
+  settled_cents: number;
   payment_instructions: string | null;
   note: string | null;
 }
@@ -58,6 +60,7 @@ export function invoiceDocument(db: Books, r: InvoiceRow): InvoiceDocument {
     subtotal_cents: a.subtotal,
     tax: a.tax,
     total_cents: a.total,
+    settled_cents: r.kind === "invoice" && !draft && r.status !== "void" && r.paid_on === null ? Math.min(a.total, a.total - openBalance(db, r)) : 0,
     payment_instructions: draft ? p.payment_instructions : r.payment_instructions,
     note: r.note,
   };
@@ -102,7 +105,7 @@ const invoicePdf: Op = {
 };
 
 function signOff(r: InvoiceRow, doc: InvoiceDocument): string {
-  const pay = doc.payment_instructions ? `\n\nHow to pay:\n${doc.payment_instructions}` : "";
+  const pay = doc.payment_instructions && doc.settled_cents < doc.total_cents ? `\n\nHow to pay:\n${doc.payment_instructions}` : "";
   return `${pay}\n\nThank you,\n${doc.seller.legal_name ?? ""}`;
 }
 
@@ -129,11 +132,18 @@ const invoiceEmail: Op = {
     const doc = invoiceDocument(db, r);
     const { from, to } = emailAddresses(db, r, doc);
     const amount = dollars(doc.total_cents);
+    const due = dollars(doc.total_cents - doc.settled_cents);
+    const asks = () =>
+      doc.settled_cents === 0
+        ? `, due ${longDate(doc.due_date!)}`
+        : doc.settled_cents < doc.total_cents
+          ? `, with ${dollars(doc.settled_cents)} already paid or credited, so ${due} is due ${longDate(doc.due_date!)}`
+          : ", which is paid in full";
     const head =
       r.kind === "invoice"
         ? {
-            subject: `Invoice ${doc.number} from ${doc.seller.legal_name}: ${amount} due ${longDate(doc.due_date!)}`,
-            body: `Hi ${doc.client.name},\n\nAttached is invoice ${doc.number} for ${amount}, due ${longDate(doc.due_date!)}, for services from ${longDate(doc.period_start)} to ${longDate(doc.period_end)}.`,
+            subject: `Invoice ${doc.number} from ${doc.seller.legal_name}: ${doc.settled_cents < doc.total_cents ? `${due} due ${longDate(doc.due_date!)}` : "paid in full"}`,
+            body: `Hi ${doc.client.name},\n\nAttached is invoice ${doc.number} for ${amount}${asks()}, for services from ${longDate(doc.period_start)} to ${longDate(doc.period_end)}.`,
           }
         : {
             subject: `Credit note ${doc.number} from ${doc.seller.legal_name}: ${amount} against invoice ${doc.credits_number}`,

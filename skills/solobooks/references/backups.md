@@ -2,6 +2,8 @@
 
 The books are seven years of records on one machine. solobooks keeps dated copies on that machine; getting copies off it is your job and the person's, because solobooks never reaches outside the machine.
 
+`backup set` and `move` are CLI commands, with no MCP tool. If you have no shell, as in Claude Desktop, don't say it can't be done: give the person the exact command, with their folder filled in, to paste into a terminal, and ask them to tell you what it prints.
+
 ## Pick a backup folder
 
 Ask the person where backups should go, ideally a folder that leaves the machine: an external drive, or a folder their cloud drive syncs (a synced folder is fine for backups, just not for the live books). Then:

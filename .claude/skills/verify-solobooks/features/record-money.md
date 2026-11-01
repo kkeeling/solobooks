@@ -11,6 +11,7 @@ The agent imports a bank or card statement, then records each client payment aga
 - `money-reports` updates what is owed and the P&L, in reports and on the page.
 - `money-mcp` shows the agent the same bank lines through its tool.
 - `money-approve` records a parked payment once the person approves it.
+- `money-credit` holds an overpayment as credit, applies it to the next invoice, and takes it back.
 
 ## How to get to it (user POV)
 
@@ -34,6 +35,7 @@ Preconditions:
 - **Reports follow.** Run `control.ts cli --as money-reports -- report unpaid`. `paid_cents` is `25000`, `open_cents` is `2312`. Run `control.ts cli --as money-reports -- report pnl --from 2026-01-01 --to 2026-10-22`. `income_total_cents` and `net_cents` are `25000`.
 - **Page follows.** Run `control.ts page --as money-reports open` and `control.ts page shot money-reports`. `Owed to you` reads `$23.12` and `Net profit 2026` reads `$250.00`.
 - **Person approves instead.** Run `control.ts down`, start a fresh `billing` run, and repeat the preconditions. Run `control.ts cli --as money-approve -- account add --name Checking --type asset --source agent:verify` and `control.ts cli --as money-approve -- payment add --invoice-id 1 --date 2026-10-20 --amount-cents 25000 --deposit-account-id 26 --source agent:verify`, which returns `"pending_id": 3`. Run `control.ts page --as money-approve open` and `control.ts page --as money-approve click --selector '[data-approve="3"]'`. Run `control.ts cli --as money-approve -- payment list`. The payment has `amount_cents` `25000` and `bank_line_id` `null`. `report unpaid` shows `paid_cents` `25000`.
+- **Credit, then taken back.** On a fresh `billing` run with invoice 1 issued and `Checking` added as account 26, run `control.ts cli --as money-credit -- payment add --invoice-id 1 --date 2026-10-20 --amount-cents 30000 --deposit-account-id 26 --source agent:verify`, then approve pending 3 on the page. `client credits --client-id 1` holds `2688`. Add an hour with `time add --client-id 1 --date 2026-10-21 --minutes 60 --note "More work" --source agent:verify`, draft and issue invoice 2, and approve pending 4. Run `client credit apply --client-id 1 --invoice-id 2 --date 2026-10-22 --source agent:verify`. `invoice_open_cents` is `12312`. `invoice email --id 2` asks for `$123.12`, and the PDF shows `Paid or credited -$26.88` and `Total due $123.12`. `invoice void --id 2 --reason "Billed in error" --source agent:verify` exits 2 naming `client credit unapply --application-id 1 --date 2026-10-22`. Run `control.ts mcp --as money-credit client_credit_unapply '{"application_id":1,"date":"2026-10-22","source":"agent:verify"}'`. `invoice_open_cents` is `15000` and `client_balance_cents` is `2688`. Doing it again is refused with `already taken back`. The void then parks, and approving it on the page leaves invoice 2 `void`.
 
 ## Gotchas
 
@@ -42,9 +44,10 @@ Preconditions:
 - A bank line must be on the deposit account and equal the gross less any fee. Its description isn't compared, and neither is its date unless the payment is dated after today, so a matching amount is enough to skip approval.
 - The account id depends on order. Approving the first issue creates two accounts, so `Checking` is `26` here but `24` if added before the issue. Read the `id` from the reply if it differs.
 - The deposit account must be an asset. A card statement imports into a liability account, but a payment against it is refused with `Account <id> is a liability, and a payment lands in an asset account such as checking or a processor balance.`
-- A waiting payment's card is frozen. If the invoice's balance moves first, approving it answers `What this would do has changed since the person was asked, so reject it and ask again.`, and it stays pending.
+- A waiting payment's card is frozen. If the invoice's balance moves first, approving it answers `What this would do has changed since you were asked, so reject it and ask again.`, and it stays pending.
 - A payment dated after today is refused, whether it has a bank line or not, unless it names a bank line with that same date. Credit applied is refused the same way. A date before the invoice's date is allowed.
 - `payment add --bank-line-id` refuses when the invoice already has a same-amount payment into that account with no bank line and not fully refunded, because one deposit could count twice. The refusal names `bank match --line-id <line> --entry-id <entry>`, and that command attaches the line to the earlier payment with nothing new recorded (`payment list` shows `bank_line_id` set, `report unpaid` is unchanged). For a real second payment of the same amount, it names the route: record it with no bank line, get it approved, then `bank match`.
 - A second same-amount payment with no bank line isn't refused. Its card shows an `Earlier payment` row saying to check it isn't the same money.
+- The invoice's email and PDF ask for what is still owed, and say paid in full when nothing is. They read as they always did when nothing has been settled.
 - `bank unmatch` on the line behind a payment waits for approval too, with a title starting `Undo the bank match behind the`.
 - The `full` seed leaves the gate to the agent, so an unbacked payment doesn't wait there. Use `billing` for this feature.

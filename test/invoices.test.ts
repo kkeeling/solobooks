@@ -165,3 +165,109 @@ test("issue checks: issuing needs every standard field, and says which one is mi
   const r = await cli(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
   expect(r.out).toEqual({ reason: "Set client 1's billing address with client edit before issuing an invoice.", field: "address" });
 });
+
+// A client of their own, so none of acmeBooks' billable items land on these drafts.
+async function retainer(dir: string, engagement: Record<string, unknown>) {
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  return (await ok(dir, json(["engagement", "add"], { client_id: 2, name: "Retainer", recurring_amount_cents: 300000, recurring_interval: "monthly", ...engagement }))).engagement;
+}
+const draftBeta = (dir: string, period_start: string, period_end: string) => cli(dir, json(["invoice", "draft"], { client_id: 2, period_start, period_end }));
+const cycles = (inv: any) => inv.lines.map((l: any) => [l.description, l.cycle_start, l.carried_over]);
+
+test("ISC-179: a retainer started three months before its first draft bills every cycle from that date, the earlier ones carried over", async () => {
+  const dir = await acmeBooks();
+  expect((await retainer(dir, { start_date: "2026-07-01" })).start_date).toBe("2026-07-01");
+  const first = (await draftBeta(dir, "2026-10-01", "2026-10-31")).out.invoice;
+  expect(cycles(first)).toEqual([
+    ["Retainer, July 2026", "2026-07-01", true],
+    ["Retainer, August 2026", "2026-08-01", true],
+    ["Retainer, September 2026", "2026-09-01", true],
+    ["Retainer, October 2026", "2026-10-01", false],
+  ]);
+  expect(first.subtotal_cents).toBe(1200000);
+  expect(first.lines.every((l: any) => l.kind === "recurring" && l.amount_cents === 300000)).toBe(true);
+  expect((await ok(dir, ["engagement", "list", "--client-id", "2"])).engagements[0].start_date).toBe("2026-07-01");
+
+  // None of them comes back on the next draft, unless the first goes away.
+  const nov = (await draftBeta(dir, "2026-11-01", "2026-11-30")).out.invoice;
+  expect(cycles(nov)).toEqual([["Retainer, November 2026", "2026-11-01", false]]);
+  await ok(dir, ["invoice", "delete", "--id", String(first.id), ...S]);
+  await ok(dir, ["invoice", "delete", "--id", String(nov.id), ...S]);
+  expect(cycles((await draftBeta(dir, "2026-11-01", "2026-11-30")).out.invoice)).toEqual([
+    ["Retainer, July 2026", "2026-07-01", true],
+    ["Retainer, August 2026", "2026-08-01", true],
+    ["Retainer, September 2026", "2026-09-01", true],
+    ["Retainer, October 2026", "2026-10-01", true],
+    ["Retainer, November 2026", "2026-11-01", false],
+  ]);
+});
+
+test("ISC-185: a start date reaching back over a past invoice is refused, because a draft can't tell which months that invoice billed", async () => {
+  const dir = await acmeBooks();
+  await retainer(dir, {});
+  const past = { client_id: 2, due_date: "2026-04-30", lines: [{ description: "Retainer, March 2026", amount_cents: 300000 }] };
+  await ok(dir, json(["invoice", "import"], { ...past, number: 900, invoice_date: "2026-03-31", period_start: "2026-03-01", period_end: "2026-03-31" }));
+  const add = (name: string, start_date: string) => cli(dir, json(["engagement", "add"], { client_id: 2, name, recurring_amount_cents: 300000, recurring_interval: "monthly", start_date }));
+
+  const refused = await add("Early", "2026-01-01");
+  expect(refused).toMatchObject({ code: 2, out: { field: "start_date" } });
+  expect(refused.out.reason).toContain("through 2026-03-31");
+  expect(refused.out.reason).toContain("after 2026-03-31");
+  expect((await ok(dir, ["engagement", "list", "--client-id", "2"])).engagements.map((e: any) => e.name)).toEqual(["Retainer"]);
+
+  // The month after the past invoice bills from there, with none of the past months on the draft.
+  expect((await add("Later", "2026-04-01")).code).toBe(0);
+  const lines = (await draftBeta(dir, "2026-05-01", "2026-05-31")).out.invoice.lines.filter((l: any) => l.description.startsWith("Later"));
+  expect(lines.map((l: any) => l.cycle_start)).toEqual(["2026-04-01", "2026-05-01"]);
+
+  // Another client's past invoice doesn't count.
+  await ok(dir, json(["client", "add"], { name: "Gamma LLC", address: "3 Oak Rd" }));
+  expect((await cli(dir, json(["engagement", "add"], { client_id: 3, name: "Retainer", recurring_amount_cents: 100, recurring_interval: "monthly", start_date: "2026-01-01" }))).code).toBe(0);
+});
+
+test("ISC-179: a start date bills nothing before it: a later start, a mid-month start and a quarterly fee", async () => {
+  const dir = await acmeBooks();
+  await retainer(dir, { start_date: "2026-11-01" });
+  // It hasn't begun by the end of October, so October has nothing to bill.
+  const none = await draftBeta(dir, "2026-10-01", "2026-10-31");
+  expect(none).toMatchObject({ code: 2, out: { field: "period_end" } });
+  expect(cycles((await draftBeta(dir, "2026-10-01", "2026-12-31")).out.invoice)).toEqual([
+    ["Retainer, November 2026", "2026-11-01", false],
+    ["Retainer, December 2026", "2026-12-01", false],
+  ]);
+
+  const mid = await acmeBooks();
+  await retainer(mid, { start_date: "2026-08-15" }); // August's cycle was already under way
+  expect(cycles((await draftBeta(mid, "2026-10-01", "2026-10-31")).out.invoice).map((c: any) => c[1])).toEqual(["2026-09-01", "2026-10-01"]);
+
+  const quarterly = await acmeBooks();
+  await retainer(quarterly, { recurring_interval: "quarterly", start_date: "2026-01-01" });
+  expect(cycles((await draftBeta(quarterly, "2026-10-01", "2026-12-31")).out.invoice)).toEqual([
+    ["Retainer, Q1 2026", "2026-01-01", true],
+    ["Retainer, Q2 2026", "2026-04-01", true],
+    ["Retainer, Q3 2026", "2026-07-01", true],
+    ["Retainer, Q4 2026", "2026-10-01", false],
+  ]);
+});
+
+test("ISC-180: with no start date a draft bills what it always did: the period's own cycles, then carry-over from the first one billed", async () => {
+  const dir = await acmeBooks();
+  expect((await retainer(dir, {})).start_date).toBeNull();
+  expect(cycles((await draftBeta(dir, "2026-10-01", "2026-10-31")).out.invoice)).toEqual([["Retainer, October 2026", "2026-10-01", false]]);
+  expect(cycles((await draftBeta(dir, "2026-12-01", "2026-12-31")).out.invoice)).toEqual([
+    ["Retainer, November 2026", "2026-11-01", true],
+    ["Retainer, December 2026", "2026-12-01", false],
+  ]);
+});
+
+test("ISC-180: a start date on an engagement with no recurring fee is refused, and nothing is added", async () => {
+  const dir = await acmeBooks();
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  const asked = await cli(dir, json(["engagement", "add"], { client_id: 2, name: "Build", rate_cents_per_hour: 15000, start_date: "2026-07-01" }));
+  expect(asked).toMatchObject({ code: 2, out: { field: "start_date" } });
+  expect(asked.out.reason).toContain("this engagement has none");
+  expect((await ok(dir, ["engagement", "list", "--client-id", "2"])).engagements).toEqual([]);
+  const db = new Database(dbPath(dir));
+  expect(() => db.exec("INSERT INTO engagements (client_id, name, rate_cents_per_hour, start_date, source) VALUES (2, 'X', 100, '2026-07-01', 's')")).toThrow();
+  db.close();
+});

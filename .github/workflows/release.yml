@@ -24,7 +24,8 @@ jobs:
           test "$GITHUB_REF_NAME" = "v$version" || { echo "tag $GITHUB_REF_NAME but src/version.ts says $version"; exit 1; }
       - run: bun test
       - run: sh scripts/build-release.sh
-      - run: bash scripts/install-check.sh
+      # Every probe that needs no other app, install-check among them. One that fails stops the release here.
+      - run: bash scripts/release-probes.sh
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}

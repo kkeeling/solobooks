@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 174/174
+progress: 185/186
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -336,6 +336,22 @@ Why: the page is where the person decides, so a click that can't work says why i
 - [x] ISC-169: A click that fails for any reason but a bad code spends no code, so the same button works once the cause is fixed, and a completed code can't run twice.
 - [x] ISC-164: The README and the approvals guide say what each level holds against: a click stops tools and mistakes, but an agent with a shell on the same account can reach anything that account can; and the agent guide forbids posting to the page.
 
+### F20 · Loose ends from the follow-up list
+Why: each of these is a dead end someone hits in ordinary use, a voidable invoice that can't be voided, a retainer's early months lost, a charge that can't be traced from its line, or a probe that goes red unseen.
+
+- [x] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
+- [x] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
+- [x] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit unapply` as the way out.
+- [x] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported when it is taken back with today's date, which the void refusal, the tool and the guide all say to use, and books from every older version migrate with their rows unchanged.
+- [x] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
+- [x] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
+- [x] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
+- [x] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
+- [x] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
+- [ ] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
+- [x] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
+- [x] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -513,6 +529,18 @@ Why: the page is where the person decides, so a click that can't work says why i
 | ISC-172 | bun-test | nothing owing, two identical no-line payments parked, approve both | second answers changed, stays pending; asking again shows the earlier payment | bun test -t "ISC-172" | derived: money |
 | ISC-173 | bun-test | keyed batch, one draft pulled, retry | status approved, message names the draft left | bun test -t "ISC-173" | derived: gate |
 | ISC-174 | bun-test | doctor with its folder not the server's; setup --books leaving used books | fix names both; warning only when the left books have history | bun test -t "ISC-174" | derived: install |
+| ISC-175 | bun-test | apply credit, take it back, CLI and MCP | open and credit balances restored; trial balance zero; rows kept | bun test -t "ISC-175" | derived: money |
+| ISC-176 | bun-test | second un-apply, unknown id, void invoice | refusal; books byte-identical | bun test -t "ISC-176" | derived: money |
+| ISC-177 | bun-test | void with credit held, then after un-apply | refusal names the command; void goes through | bun test -t "ISC-177" | derived: money |
+| ISC-178 | bun-test | reports before apply and after un-apply; fixture books of every version | same figures for that invoice; older rows unchanged | bun test -t "ISC-178" | derived: money |
+| ISC-179 | bun-test | monthly retainer started three months before the first draft | one line per cycle, earlier ones carried over | bun test -t "ISC-179" | derived: billing |
+| ISC-180 | bun-test | no start date; start date with no recurring fee | same draft as before; refusal | bun test -t "ISC-180" | derived: billing |
+| ISC-181 | bun-test | invoice with a charge line and a time line | charge_id on one, null on the other | bun test -t "ISC-181" | derived: charges |
+| ISC-182 | bun-test | stored card with the old line shape | approves; card text unchanged | bun test -t "ISC-182" | derived: gate |
+| ISC-183 | grep | skills/solobooks/references/backups.md | names running the command for the person with no shell | rg -q 'no shell' skills/solobooks/references/backups.md | derived: docs |
+| ISC-185 | bun-test | past invoice through March, start dates January and April | January refused naming the date; April bills April on | bun test -t "ISC-185" | derived: billing |
+| ISC-186 | bun-test | credit applied, taken back, then paid in full | email and PDF amounts at each step | bun test -t "ISC-186" | derived: money |
+| ISC-184 | ci | .github/workflows/release.yml and a real release | probes step before publish; a failing script exits non-zero | rg -q 'release-probes' .github/workflows/release.yml && bash scripts/release-probes.sh | derived: release |
 | ISC-164 | bash | read the three docs | each states it | `rg -q 'with a shell' README.md && rg -q 'with a shell' skills/solobooks/references/approvals.md && rg -qi 'never post' skills/solobooks/SKILL.md` | derived: gate |
 
 ## Decisions
@@ -589,6 +617,9 @@ Why: the page is where the person decides, so a click that can't work says why i
 
 - 2026-11-01: The approval check requires a matching Origin and refuses a Sec-Fetch-Site that isn't same-origin only when one is sent, rather than requiring it. The fresh review pointed out that a browser omitting it would refuse every click. Real Safari 26.6 sends both on localhost (a scratch page logged them), but older browsers may not, and the extra strictness buys nothing against something that can forge headers anyway.
 - 2026-11-01: A fresh review of the fix round reproduced six defects, all fixed: ISC-171 to ISC-174, and ISC-157 and ISC-166 widened. The card's terms now read "if approved on <the day it was asked>", because a parked card is frozen and that sentence stays true without recomputing it. New payment cards store `earlier_payment: null`, so a card that showed none is held to that, while a card parked by an older version, which has no such field, still goes through. Left alone: after "reject it and ask again", the same idempotency key answers rejected and parks nothing, which is visible and costs nothing.
+- 2026-11-01: F20 takes the buildable items off Remaining Work. `backup set` and `move` stay CLI-only: installing already needs a terminal, moving a live books file from inside its own server is the riskier design, and an agent with no shell can hand the person one command to paste (ISC-183). Taking credit back isn't gated, the same as applying it, because neither reaches the client on its own.
+- 2026-11-01: Credit taken back in a later month comes off in that month, the same as a refund and the ledger, so a month already reported doesn't change. A start date inside a cycle doesn't bill that cycle, the same as a mid-month `period_start` today, and the guide says to use the cycle's first day. The command is spelled `client credit unapply` only: the builder's change reading any hyphen in a command word as a space was a parser-wide change nothing asked for, so it came back out.
+- 2026-11-01: The independent review of F20 reproduced three defects, all fixed. A start date could re-bill months already brought in as past invoices (ISC-185), so that's refused, with no way past it except a later date, because an engagement can't be edited afterward and a false refusal costs one hand-added line. The email and PDF asked for the full total after credit was applied, an older bug outside F20, so the client would have overpaid (ISC-186). A back-dated take-back changes a closed month, which stays possible, as back-dated refunds are, but everything now says to use today (ISC-178). Left open: a past invoice brought in after the start date was set is only covered by the guide.
 - 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
 
 ## Learning
@@ -659,6 +690,9 @@ Why: the page is where the person decides, so a click that can't work says why i
 - ISC-147, 149..152, 167, 168, 171: live CLI and page on scratch books 2026-11-01: double-count refusal, then its own `bank match` fix leaves one payment with the line; void PDF read: VOID INVOICE, nothing owed, watermark; future date refused; no-address email refused; second issue and second void return the same card; card shows Earlier payment and terms name the asked day
 - Real-agent evals on 26664cc 2026-11-01: install with Claude Code and with Codex, onboarding, past invoices, planted instructions (0 pending actions created), charges, all PASS
 - ISC-154, 170, 174: live on a scratch home 2026-11-01: damaged settings under control.ts fail doctor with the fix; `setup --books` on another app's SQLite refused with the same bytes
+- ISC-175..183, 185, 186: `bun test` 406 pass 0 fail 2026-11-01, each new test seen failing with its fix undone; live on scratch books: credit applied, email and PDF read with $123.12 due, void refused naming the command with today's date, taken back through MCP, second take-back refused, void approved in real Brave via Interceptor; retainer start date billed August and September as carried over; start date over a past invoice refused; page screenshot viewed
+- v0.1.7 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.7`, hash matches SHA256SUMS, setup and doctor pass
+- All script probes on ac2e800 2026-11-01, including `scripts/release-probes.sh`, export-check and plugin-install-check, PASS; real-agent evals on the same commit: install with Claude Code and Codex, onboarding, past invoices, planted instructions, charges, all PASS
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
@@ -667,12 +701,13 @@ Why: the page is where the person decides, so a click that can't work says why i
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
 - [ ] CPA review of a full year's transactions CSV and P&L with no follow-up questions — April, during tax season; can't be checked sooner.
-- [ ] Optional start date on engagements, so a retainer started before its first draft carries over its earlier cycles — the step-1b carry-over covers only cycles after the first one billed.
+- [x] Optional start date on engagements — built in F20 (ISC-179, ISC-180).
+- [ ] Set a start date on an engagement that already exists: there is no `engagement_edit`, so today it can only be set when the engagement is added.
 - [x] Flip the repo public — done 2026-10-23 by the maintainer; INSTALL.md fetches anonymously (HTTP 200).
 - [x] Rerun the installer check against the real GitHub Releases URL — done 2026-10-23 on release v0.1.0: the README one-liner in a bare fresh home (no bun on PATH) installed `solobooks 0.1.0`, and its hash matches the release's SHA256SUMS.
 - [x] Publish the npm wrapper — done 2026-10-23: `solobooks` and the five `@solobooks/<os>-<arch>` packages at 0.1.0, built from the v0.1.0 release binaries. npm staged them until the maintainer cleared them. A fresh registry install printed `solobooks 0.1.0`, its binary hash matches the release, and MCP answered with 66 tools.
-- [ ] Un-apply a client credit, so an invoice with credit applied can be voided — step 4 follow-up; today it can only be credit-noted.
+- [x] Un-apply a client credit — built in F20 (ISC-175 to ISC-178).
 - [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
-- [ ] Show each invoice line's charge id in `invoice get` — the charge already names its invoice; adding the field changes the line shape a parked approval compares against, so it needs a check that approvals parked before the upgrade still go through.
+- [x] Show each invoice line's charge id in `invoice get` — built in F20 (ISC-181, ISC-182).
 - [ ] Test which other agent apps (Codex, Claude Desktop, Cursor, ChatGPT, VS Code and the rest) show the in-chat approval prompt for a gated tool; each one that does gets named in the README.
-- [ ] `backup set` and `move` are CLI-only, so an MCP-only app such as Claude Desktop can't pick a backup folder or move the books.
+- [x] `backup set` and `move` are CLI-only — kept that way, and the guide hands the person the command (ISC-183, Decisions 2026-11-01).
