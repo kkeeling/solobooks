@@ -223,3 +223,43 @@ test("ISC-60 ytd: year-to-date profit is one exact number, from January 1 throug
   expect((await ok(dir, ["report", "ytd", "--as-of", "2026-12-31"])).profit_cents).toBe(123457 - 3611 - 4200 - 999);
   expect((await ok(dir, ["report", "ytd", "--as-of", "2025-12-31"])).profit_cents).toBe(-70000);
 }, 30_000); // many CLI runs: allow for a busy machine
+
+/** Beta overpaid October's invoice by $300, and December's $500 invoice is open: the held credit is waiting for it. */
+async function creditWaiting(dir: string) {
+  await ok(dir, json(["client", "add"], { name: "Beta LLC", address: "9 Elm Rd" }));
+  const oct = await issued(dir, "2026-10-01", 100000, 30);
+  await ok(dir, json(["payment", "add"], { invoice_id: oct.id, date: "2026-10-10", amount_cents: 130000, deposit_account_id: acct(1) }));
+  return issued(dir, "2026-12-01", 50000, 30);
+}
+const onUnpaid = (r: any, id: number) => r.invoices.find((i: any) => i.invoice_id === id);
+
+test("ISC-178: after credit is taken back, report pnl and report unpaid read as if it never settled the invoice", async () => {
+  const dir = await acmeBooks();
+  const dec = await creditWaiting(dir);
+  const year = ["report", "pnl", "--from", "2026-01-01", "--to", "2027-12-31"];
+  const pnl = await at(dir, "2027-01-04", year);
+  const unpaid = await at(dir, "2027-01-04", ["report", "unpaid"]);
+  expect(onUnpaid(unpaid, dec.id).open_cents).toBe(50000);
+
+  const { applied } = await at(dir, "2027-01-04", json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
+  // The credit did settle it for now, so the figures moved.
+  expect(consulting(await at(dir, "2027-01-04", year))).toBe(consulting(pnl) + 30000);
+  expect(onUnpaid(await at(dir, "2027-01-04", ["report", "unpaid"]), dec.id).open_cents).toBe(20000);
+
+  await at(dir, "2027-01-04", json(["client", "credit", "unapply"], { application_id: applied.id, date: "2027-01-04" }));
+  expect(await at(dir, "2027-01-04", year)).toEqual(pnl);
+  expect(await at(dir, "2027-01-04", ["report", "unpaid"])).toEqual(unpaid);
+}, 30_000); // many CLI runs: allow for a busy machine
+
+test("ISC-178: credit taken back in a later month comes off in that month, so the month it counted in stays as reported", async () => {
+  const dir = await acmeBooks();
+  const dec = await creditWaiting(dir);
+  const { applied } = await at(dir, "2027-01-04", json(["client", "credit", "apply"], { client_id: 2, invoice_id: dec.id, date: "2027-01-04", amount_cents: 30000 }));
+  const january = await pnlFor(dir, "2027-01-01", "2027-01-31");
+  expect(consulting(january)).toBe(30000);
+
+  await at(dir, "2027-02-10", json(["client", "credit", "unapply"], { application_id: applied.id, date: "2027-02-10" }));
+  expect(await pnlFor(dir, "2027-01-01", "2027-01-31")).toEqual(january);
+  expect(consulting(await pnlFor(dir, "2027-02-01", "2027-02-28"))).toBe(-30000);
+  expect(consulting(await pnlFor(dir, "2027-01-01", "2027-02-28"))).toBe(0);
+}, 30_000); // many CLI runs: allow for a busy machine

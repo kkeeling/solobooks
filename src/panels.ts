@@ -207,6 +207,7 @@ function describe(db: Books, op: string, input: any, result: any, names: Map<num
     payment_add: () => `Recorded a payment${amount(pay)} on invoice ${esc(pay.invoice_number)}`,
     payment_refund: () => `Recorded a refund on invoice ${esc(pay.invoice_number)}`,
     client_credit_apply: () => `Applied client credit${amount(result.applied)} to invoice ${esc(result.applied?.invoice_number)}`,
+    client_credit_unapply: () => `Took back client credit${amount(result.taken_back)} from invoice ${esc(result.taken_back?.invoice_number)}`,
     account_add: () => `Added account ${short(result.account?.name, 48)}`,
     account_edit: () => `Changed account ${short(result.account?.name, 48)}`,
     entry_post: () => `Posted a ledger entry${result.entry?.memo ? `: ${short(result.entry.memo, 60)}` : ""}`,

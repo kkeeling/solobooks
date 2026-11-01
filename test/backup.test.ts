@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { install, run } from "../src/cli.ts";
+import { OPS } from "../src/core/perform.ts";
 import { MIGRATIONS } from "../src/db/migrations.ts";
-import { dbPath, dumpFile, fileHash, tempDir } from "./support/books.ts";
+import { dbPath, dumpFile, fileHash, ROOT, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 
 const DAY1 = "2026-10-22T12:00:00.000Z";
@@ -195,3 +196,20 @@ test("ISC-93 synced folder: live books in iCloud, Dropbox, OneDrive or Google Dr
   const m = await machine();
   expect((await sb(m.env, ["client", "add", "--name", "Acme", "--source", "person"])).out.warnings).toBeUndefined();
 }, 60_000);
+
+test("ISC-183: the guide tells an agent with no shell to give the person the exact backup set or move command, and neither is a tool", () => {
+  const guide = readFileSync(join(ROOT, "skills/solobooks/references/backups.md"), "utf8");
+  const skill = readFileSync(join(ROOT, "skills/solobooks/SKILL.md"), "utf8");
+  const said = guide.split("\n").find((l) => l.includes("no shell"))!;
+  expect(said).toContain("`backup set` and `move`");
+  expect(said).toContain("give the person the exact command");
+  expect(said).toContain("paste into a terminal");
+  for (const row of ["solobooks backup set --folder", "solobooks move --to"]) {
+    const line = skill.split("\n").find((l) => l.includes(row))!;
+    expect(line).toContain("CLI only");
+    expect(line).toContain("with no shell, give the person the exact command");
+  }
+  const names = OPS.map((o) => o.name);
+  expect(names).not.toContain("backup_set");
+  expect(names).not.toContain("move");
+});

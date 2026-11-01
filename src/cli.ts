@@ -101,7 +101,8 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
   try {
     const { words, flags, dryRun } = parse(argv);
     if (words.length === 0 || words[0] === "help") return out(0, help());
-    const op = findOp(words.join("_"));
+    // A hyphen in a command word reads the same as a space, as it does in a flag's name.
+    const op = findOp(words.join("_").replaceAll("-", "_"));
     if (!op) throw new Refusal("There is no such command; run solobooks help for the list.", "command");
 
     let json: unknown = {};

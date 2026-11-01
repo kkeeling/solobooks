@@ -2,8 +2,11 @@ import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { approvePending } from "../src/core/approve.ts";
+import { getPending, promptFields } from "../src/core/gate.ts";
 import { acmeBooks, cli, draftOctober, issueOctober, json, ok, S } from "./support/billing.ts";
 import { acct, dbPath } from "./support/books.ts";
+import { asPerson, setEveryLevel, WHEN } from "./support/person.ts";
 import { RECEIPT } from "./support/scenario.ts";
 
 // acmeBooks: Acme (client 1) with October time, a milestone, a monthly fee, and two pass-through expenses recorded
@@ -243,4 +246,49 @@ test("ISC-133 no billing choice: an expense recorded with no client is recorded 
   const { OPS } = await import("../src/core/perform.ts");
   const fields = OPS.find((o) => o.name === "expense_add")!.fields as Record<string, { required?: boolean }>;
   expect(Object.entries(fields).filter(([k, f]) => f.required && /client|charge|bill/.test(k))).toEqual([]);
+});
+
+test("ISC-181: invoice get shows a charge line's charge id, and null on a line that didn't come from a charge", async () => {
+  const dir = await acmeBooks();
+  const added = await charge(dir, USAGE);
+  const inv = await issueOctober(dir);
+  const { lines } = (await ok(dir, ["invoice", "get", "--id", String(inv.id)])).invoice;
+  const fromCharge = lines.filter((l: any) => l.kind === "pass_through");
+  expect(fromCharge.map((l: any) => l.charge_id)).toEqual([1, added.out.charge.id]);
+  const others = lines.filter((l: any) => l.kind !== "pass_through");
+  expect(others.length).toBeGreaterThan(0);
+  for (const l of others) expect(l.charge_id).toBeNull();
+  // The charge names this invoice back.
+  expect((await ok(dir, ["charge", "list"])).charges.find((c: any) => c.id === added.out.charge.id).invoice).toMatchObject({ invoice_id: inv.id });
+  // A credit note mirrors the lines, but doesn't bill the charge, so it names none.
+  const cn = (await ok(dir, json(["invoice", "credit"], { invoice_id: inv.id, reason: "Cancelled" }))).credit_note;
+  for (const l of cn.lines) expect(l.charge_id).toBeNull();
+});
+
+test("ISC-182: a card parked with lines stored without a charge id is still approved as shown, and a charge line's card reads the same", async () => {
+  const dir = await acmeBooks();
+  asPerson(dir, (db) => setEveryLevel(db, "click"));
+  await charge(dir, USAGE);
+  const d = await draftOctober(dir);
+  const asked = await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S]);
+  const card = asPerson(dir, (db) => getPending(db, asked.pending_id)!);
+
+  // A card holds only what it shows, so nothing added to a line can make it unapprovable.
+  const shown = card.items[0]!.lines as Record<string, unknown>[];
+  for (const l of shown) expect(Object.keys(l)).toEqual(["kind", "description", "amount_cents"]);
+  expect(promptFields(card)[0]!).toContainEqual(["Line", `${USAGE.line_text}: $48.12`]);
+
+  asPerson(dir, (db) => {
+    // As an older solobooks parked it, written out literally: this stored shape has to keep working.
+    const { prompt } = db.query("SELECT prompt FROM pending_actions WHERE id = ?").get(asked.pending_id) as { prompt: string };
+    const old = JSON.parse(prompt);
+    old.items[0].lines = shown.map((l) => ({ kind: l.kind, description: l.description, amount_cents: l.amount_cents }));
+    const { id } = db
+      .query("INSERT INTO pending_actions (created_at, action, op, input, level, prompt, source) SELECT created_at, action, op, input, level, ?, source FROM pending_actions WHERE id = ? RETURNING id")
+      .get(JSON.stringify(old), asked.pending_id) as { id: number };
+    const parked = getPending(db, id)!;
+    expect(promptFields(parked)).toEqual(promptFields(card));
+    expect(approvePending(db, id, { via: "page" }, WHEN).ok).toBe(true);
+  });
+  expect((await ok(dir, ["invoice", "get", "--id", String(d.id)])).invoice.status).toBe("issued");
 });

@@ -7,7 +7,7 @@ import { getPending, promptFields } from "../src/core/gate.ts";
 import { perform } from "../src/core/perform.ts";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
 import { approveOnPage, asPerson, setEveryLevel, WHEN } from "./support/person.ts";
-import { acct, dbPath, tempDir } from "./support/books.ts";
+import { acct, dbPath, dumpFile, tempDir } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 
 // Payments on issued invoices, through the CLI on books where the person lets the agent decide everything.
@@ -99,7 +99,7 @@ test("ISC-41 overpay: a payment beyond what is owed becomes a client credit row 
   expect(p.client_credit).toMatchObject({ amount_cents: 20000, client_balance_cents: 20000 });
 
   const credits = await ok(dir, ["client", "credits"]);
-  expect(credits.credits).toEqual([{ id: p.client_credit.id, client_id: 2, date: "2026-10-22", amount_cents: 20000, payment_id: p.id, refund_id: null, application_id: null, applied_to_invoice_id: null, source: "agent:test" }]);
+  expect(credits.credits).toEqual([{ id: p.client_credit.id, client_id: 2, date: "2026-10-22", amount_cents: 20000, payment_id: p.id, refund_id: null, application_id: null, applied_to_invoice_id: null, taken_back_on: null, source: "agent:test" }]);
   expect(credits.balances).toEqual([{ client_id: 2, client: "Beta LLC", balance_cents: 20000 }]);
   // Held for the client, owed back to them: a liability, not income.
   expect(balance(dir, "Client credits")).toBe(-20000);
@@ -527,4 +527,178 @@ test("ISC-168: the card shows the earlier payment, and a card parked before it w
     expect(approvePending(db, id, { via: "page" }, WHEN).ok).toBe(true);
   });
   expect(await open(dir, inv.id)).toBe(50000);
+});
+
+// ---------------------------------------------------------------- taking client credit back
+
+const SECOND = { client_id: 2, period_start: "2026-10-01", period_end: "2026-10-31", lines: [{ description: "More work", amount_cents: 50000 }] };
+
+/** Beta's $1,000 invoice overpaid by $200, so Beta holds $200 of credit, and a second issued invoice for $500. */
+async function creditReady() {
+  const { dir, inv } = await thousandDollarInvoice();
+  await pay(dir, { invoice_id: inv.id, amount_cents: 120000 });
+  const d = (await ok(dir, json(["invoice", "draft"], SECOND))).invoice;
+  const next = (await ok(dir, ["invoice", "issue", "--id", String(d.id), ...S])).invoice;
+  return { dir, next };
+}
+const creditHeld = async (dir: string) => (await ok(dir, ["client", "credits", "--client-id", "2"])).balances[0].balance_cents;
+const applyCredit = async (dir: string, invoice: number, cents: number) =>
+  (await ok(dir, json(["client", "credit", "apply"], { client_id: 2, invoice_id: invoice, date: "2026-10-22", amount_cents: cents }))).applied;
+const takeBack = (dir: string, application: number, date = "2026-10-22") => cli(dir, json(["client", "credit", "unapply"], { application_id: application, date }));
+/** Debits less credits over every line in the books: zero when the ledger balances. */
+const trialBalance = (dir: string) => asPerson(dir, (db) => (db.query("SELECT SUM(debit_cents) - SUM(credit_cents) AS n FROM lines").get() as { n: number }).n);
+
+test("ISC-175: taking credit back restores the invoice's open balance and the client's credit, posts a reversal, and keeps the rows", async () => {
+  const { dir, next } = await creditReady();
+  const receivable = balance(dir, "Accounts receivable");
+  const held = balance(dir, "Client credits");
+
+  const applied = await applyCredit(dir, next.id, 15000);
+  expect(await open(dir, next.id)).toBe(35000);
+  expect(await creditHeld(dir)).toBe(5000);
+
+  const r = await takeBack(dir, applied.id);
+  expect(r.code).toBe(0);
+  expect(r.out).toMatchObject({
+    taken_back: { application_id: applied.id, client_id: 2, invoice_id: next.id, invoice_number: next.number, date: "2026-10-22", amount_cents: 15000 },
+    invoice_open_cents: 50000,
+    client_balance_cents: 20000,
+  });
+  expect(await open(dir, next.id)).toBe(50000);
+  expect(await creditHeld(dir)).toBe(20000);
+
+  // The ledger balances, and each account is back where it was, by a new entry and not by an edit.
+  expect(trialBalance(dir)).toBe(0);
+  expect(balance(dir, "Accounts receivable")).toBe(receivable);
+  expect(balance(dir, "Client credits")).toBe(held);
+  const entries = (await ok(dir, ["entry", "list"])).entries;
+  expect(entries.at(-1).memo).toBe(`Client credit taken back from invoice ${next.number} for Beta LLC`);
+  expect(entries.at(-2).memo).toBe(`Client credit applied to invoice ${next.number} for Beta LLC`);
+
+  // The application and its credit row stay, and the listing says it was taken back.
+  asPerson(dir, (db) => {
+    expect(db.query("SELECT id, invoice_id, date, amount_cents, entry_id FROM credit_applications").all()).toEqual([
+      { id: applied.id, invoice_id: next.id, date: "2026-10-22", amount_cents: 15000, entry_id: applied.entry_id },
+    ]);
+    expect(db.query("SELECT application_id, date, entry_id FROM credit_unapplications").all()).toEqual([
+      { application_id: applied.id, date: "2026-10-22", entry_id: r.out.taken_back.entry_id },
+    ]);
+  });
+  const rows = (await ok(dir, ["client", "credits", "--client-id", "2"])).credits;
+  expect(rows.map((x: any) => [x.amount_cents, x.application_id, x.applied_to_invoice_id, x.taken_back_on])).toEqual([
+    [20000, null, null, null],
+    [-15000, applied.id, next.id, "2026-10-22"],
+    [15000, applied.id, next.id, "2026-10-22"],
+  ]);
+
+  // The credit is there to use again.
+  expect((await applyCredit(dir, next.id, 20000)).amount_cents).toBe(20000);
+  expect(await open(dir, next.id)).toBe(30000);
+});
+
+test("ISC-175: credit taken back can be refunded from the payment that made it again", async () => {
+  const { dir, next } = await creditReady();
+  const made = (await ok(dir, ["payment", "list", "--client-id", "2"])).payments[0];
+  const applied = await applyCredit(dir, next.id, 20000);
+  expect((await ok(dir, ["payment", "list", "--client-id", "2"])).payments[0].refundable_cents).toBe(100000);
+  expect((await takeBack(dir, applied.id)).code).toBe(0);
+  expect((await ok(dir, ["payment", "list", "--client-id", "2"])).payments[0].refundable_cents).toBe(120000);
+  await ok(dir, json(["payment", "refund"], { payment_id: made.id, date: "2026-10-22", reason: "Overpaid", amount_cents: 20000 }));
+  expect(await creditHeld(dir)).toBe(0);
+  expect(trialBalance(dir)).toBe(0);
+});
+
+test("ISC-175: the MCP tool takes credit back the same way, without waiting for approval", async () => {
+  const { dir, next } = await creditReady();
+  asPerson(dir, (db) => setEveryLevel(db, "click")); // not gated, even with every gate up
+  const applied = await applyCredit(dir, next.id, 15000);
+  const mcp = await inProcessMcp(dir, { SOLOBOOKS_NOW: "2026-10-22T12:00:00.000Z" });
+  try {
+    const r = await mcp.call("client_credit_unapply", { application_id: applied.id, date: "2026-10-22", source: "agent:x" });
+    expect(r.isError).toBeFalsy();
+    expect(r.structuredContent).toMatchObject({ invoice_open_cents: 50000, client_balance_cents: 20000 });
+  } finally {
+    await mcp.close();
+  }
+  expect(await open(dir, next.id)).toBe(50000);
+});
+
+test("ISC-176: a second take-back, an unknown id, and a void invoice are refused with nothing changed", async () => {
+  const { dir, next } = await creditReady();
+  const applied = await applyCredit(dir, next.id, 15000);
+  expect((await takeBack(dir, applied.id)).code).toBe(0);
+
+  const before = dumpFile(dbPath(dir));
+  const twice = await takeBack(dir, applied.id);
+  expect(twice).toMatchObject({ code: 2, out: { field: "application_id" } });
+  expect(twice.out.reason).toContain("already taken back on 2026-10-22");
+  const unknown = await takeBack(dir, 99);
+  expect(unknown).toMatchObject({ code: 2, out: { field: "application_id" } });
+  expect(unknown.out.reason).toContain("no credit application with id 99");
+  expect(dumpFile(dbPath(dir))).toEqual(before);
+  expect(await creditHeld(dir)).toBe(20000);
+
+  // Voiding refuses while credit stands, so a standing application on a void invoice takes books written some other way.
+  const second = await applyCredit(dir, next.id, 5000);
+  asPerson(dir, (db) => db.query("UPDATE invoices SET status = 'void', voided_at = '2026-10-22T12:00:00.000Z', void_reason = 'Written directly' WHERE id = ?").run(next.id));
+  const voided = dumpFile(dbPath(dir));
+  const onVoid = await takeBack(dir, second.id);
+  expect(onVoid).toMatchObject({ code: 2, out: { field: "application_id" } });
+  expect(onVoid.out.reason).toContain(`Invoice ${next.number} is void`);
+  expect(dumpFile(dbPath(dir))).toEqual(voided);
+});
+
+test("ISC-176: taking credit back refuses a date after today or before it was applied, and the books say never twice", async () => {
+  const { dir, next } = await creditReady();
+  const applied = await applyCredit(dir, next.id, 15000);
+  const before = dumpFile(dbPath(dir));
+  const late = await takeBack(dir, applied.id, "2026-10-23");
+  expect(late).toMatchObject({ code: 2, out: { field: "date" } });
+  expect(late.out.reason).toContain("after today, 2026-10-22");
+  const early = await takeBack(dir, applied.id, "2026-10-21");
+  expect(early).toMatchObject({ code: 2, out: { field: "date" } });
+  expect(early.out.reason).toContain("dated 2026-10-22");
+  expect(dumpFile(dbPath(dir))).toEqual(before);
+
+  expect((await takeBack(dir, applied.id)).code).toBe(0);
+  asPerson(dir, (db) => {
+    expect(() => db.exec("INSERT INTO credit_unapplications (application_id, date, entry_id, source) SELECT application_id, date, entry_id, source FROM credit_unapplications")).toThrow();
+    expect(() => db.exec("UPDATE credit_unapplications SET date = 'x'")).toThrow(/never changes/);
+    expect(() => db.exec("DELETE FROM credit_unapplications")).toThrow(/never changes/);
+    expect(() => db.exec("UPDATE client_credits SET amount_cents = 1")).toThrow(/never change/);
+    expect(() => db.exec("DELETE FROM client_credits")).toThrow(/never change/);
+    expect(() => db.exec("INSERT INTO client_credits (client_id, date, amount_cents, source) VALUES (2, 'd', 1, 's')")).toThrow();
+    expect(() => db.exec("INSERT INTO client_credits (client_id, date, amount_cents, application_id, source) VALUES (2, 'd', -999999, 1, 's')")).toThrow(/below zero/);
+  });
+});
+
+test("ISC-177: an invoice holding credit is refused a void naming client credit-unapply, which runs as named, and then it voids", async () => {
+  const { dir, next } = await creditReady();
+  const first = await applyCredit(dir, next.id, 15000);
+  const second = await applyCredit(dir, next.id, 5000);
+  const voidIt = () => cli(dir, ["invoice", "void", "--id", String(next.id), "--reason", "Billed in error", ...S]);
+
+  const both = await voidIt();
+  expect(both).toMatchObject({ code: 2, out: { field: "id" } });
+  expect(both.out.reason).toBe(
+    `Invoice ${next.number} still holds credit applications ${first.id}, ${second.id}, so take each back with solobooks client credit-unapply --application-id <id> --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+  );
+
+  // Exactly as the refusal spells it.
+  expect((await cli(dir, ["client", "credit-unapply", "--application-id", String(first.id), "--date", "2026-10-22", ...S])).code).toBe(0);
+  const one = await voidIt();
+  expect(one.code).toBe(2);
+  expect(one.out.reason).toBe(
+    `Invoice ${next.number} still holds credit application ${second.id}, so take it back with solobooks client credit-unapply --application-id ${second.id} --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+  );
+
+  expect((await takeBack(dir, second.id)).code).toBe(0);
+  const voided = await voidIt();
+  expect(voided.code).toBe(0);
+  expect(voided.out.invoice.status).toBe("void");
+  expect(trialBalance(dir)).toBe(0);
+  expect(balance(dir, "Client credits")).toBe(-20000);
+  expect(await creditHeld(dir)).toBe(20000);
+  // An application on the now void invoice stays taken back.
+  expect((await takeBack(dir, second.id)).code).toBe(2);
 });
