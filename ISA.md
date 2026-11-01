@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 174/174
+progress: 174/184
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -336,6 +336,20 @@ Why: the page is where the person decides, so a click that can't work says why i
 - [x] ISC-169: A click that fails for any reason but a bad code spends no code, so the same button works once the cause is fixed, and a completed code can't run twice.
 - [x] ISC-164: The README and the approvals guide say what each level holds against: a click stops tools and mistakes, but an agent with a shell on the same account can reach anything that account can; and the agent guide forbids posting to the page.
 
+### F20 · Loose ends from the follow-up list
+Why: each of these is a dead end someone hits in ordinary use, a voidable invoice that can't be voided, a retainer's early months lost, a charge that can't be traced from its line, or a probe that goes red unseen.
+
+- [ ] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
+- [ ] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
+- [ ] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit-unapply` as the way out.
+- [ ] ISC-178: `report pnl` and `report unpaid` after taking credit back show the income and what is owed as if the credit had not settled that invoice, and books from every older version migrate with their rows unchanged.
+- [ ] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
+- [ ] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
+- [ ] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
+- [ ] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
+- [ ] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
+- [ ] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -513,6 +527,16 @@ Why: the page is where the person decides, so a click that can't work says why i
 | ISC-172 | bun-test | nothing owing, two identical no-line payments parked, approve both | second answers changed, stays pending; asking again shows the earlier payment | bun test -t "ISC-172" | derived: money |
 | ISC-173 | bun-test | keyed batch, one draft pulled, retry | status approved, message names the draft left | bun test -t "ISC-173" | derived: gate |
 | ISC-174 | bun-test | doctor with its folder not the server's; setup --books leaving used books | fix names both; warning only when the left books have history | bun test -t "ISC-174" | derived: install |
+| ISC-175 | bun-test | apply credit, take it back, CLI and MCP | open and credit balances restored; trial balance zero; rows kept | bun test -t "ISC-175" | derived: money |
+| ISC-176 | bun-test | second un-apply, unknown id, void invoice | refusal; books byte-identical | bun test -t "ISC-176" | derived: money |
+| ISC-177 | bun-test | void with credit held, then after un-apply | refusal names the command; void goes through | bun test -t "ISC-177" | derived: money |
+| ISC-178 | bun-test | reports before apply and after un-apply; fixture books of every version | same figures for that invoice; older rows unchanged | bun test -t "ISC-178" | derived: money |
+| ISC-179 | bun-test | monthly retainer started three months before the first draft | one line per cycle, earlier ones carried over | bun test -t "ISC-179" | derived: billing |
+| ISC-180 | bun-test | no start date; start date with no recurring fee | same draft as before; refusal | bun test -t "ISC-180" | derived: billing |
+| ISC-181 | bun-test | invoice with a charge line and a time line | charge_id on one, null on the other | bun test -t "ISC-181" | derived: charges |
+| ISC-182 | bun-test | stored card with the old line shape | approves; card text unchanged | bun test -t "ISC-182" | derived: gate |
+| ISC-183 | grep | skills/solobooks/references/backups.md | names running the command for the person with no shell | rg -q 'no shell' skills/solobooks/references/backups.md | derived: docs |
+| ISC-184 | ci | .github/workflows/release.yml and a real release | probes step before publish; a failing script exits non-zero | rg -q 'release-probes' .github/workflows/release.yml && bash scripts/release-probes.sh | derived: release |
 | ISC-164 | bash | read the three docs | each states it | `rg -q 'with a shell' README.md && rg -q 'with a shell' skills/solobooks/references/approvals.md && rg -qi 'never post' skills/solobooks/SKILL.md` | derived: gate |
 
 ## Decisions
@@ -589,6 +613,7 @@ Why: the page is where the person decides, so a click that can't work says why i
 
 - 2026-11-01: The approval check requires a matching Origin and refuses a Sec-Fetch-Site that isn't same-origin only when one is sent, rather than requiring it. The fresh review pointed out that a browser omitting it would refuse every click. Real Safari 26.6 sends both on localhost (a scratch page logged them), but older browsers may not, and the extra strictness buys nothing against something that can forge headers anyway.
 - 2026-11-01: A fresh review of the fix round reproduced six defects, all fixed: ISC-171 to ISC-174, and ISC-157 and ISC-166 widened. The card's terms now read "if approved on <the day it was asked>", because a parked card is frozen and that sentence stays true without recomputing it. New payment cards store `earlier_payment: null`, so a card that showed none is held to that, while a card parked by an older version, which has no such field, still goes through. Left alone: after "reject it and ask again", the same idempotency key answers rejected and parks nothing, which is visible and costs nothing.
+- 2026-11-01: F20 takes the buildable items off Remaining Work. `backup set` and `move` stay CLI-only: installing already needs a terminal, moving a live books file from inside its own server is the riskier design, and an agent with no shell can hand the person one command to paste (ISC-183). Taking credit back isn't gated, the same as applying it, because neither reaches the client on its own.
 - 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
 
 ## Learning
