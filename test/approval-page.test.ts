@@ -4,7 +4,7 @@ import { authenticationOptions, verifyPasskey } from "../src/core/passkey.ts";
 import { startPage, type Page } from "../src/page.ts";
 import { SoftAuthenticator } from "./support/authenticator.ts";
 import { clickAcme, draftOctober, json, ok, S } from "./support/billing.ts";
-import { cli } from "./support/books.ts";
+import { acct, cli } from "./support/books.ts";
 import { inProcessMcp } from "./support/mcp-client.ts";
 import { asPerson, browserMarkers, WHEN } from "./support/person.ts";
 
@@ -303,4 +303,17 @@ test("ISC-169: a double click can't run twice", async () => {
   expect((await invoice(dir, d.id)).status).toBe("issued");
   expect(approvals()).toBe(before + 1);
   expect((await ok(dir, ["invoice", "list"])).invoices.filter((i: any) => i.status === "issued")).toHaveLength(1);
+}, 30_000);
+
+test("ISC-169: a double click on a part payment posts one payment, though a second would still fit the invoice", async () => {
+  const { dir, d, click } = await waitingCard();
+  expect((await click()).status).toBe(200);
+  const asked = await ok(dir, json(["payment", "add"], { invoice_id: d.id, amount_cents: 100, deposit_account_id: acct(1), date: "2026-10-22" }));
+  const page = serve(dir);
+  const code = (await load(page)).item(asked.pending_id).code as string;
+  const go = () => post(page, "/approve", { pending_id: asked.pending_id, code });
+  const statuses = (await Promise.all([go(), go()])).map((r) => r.status).sort();
+  expect(statuses[0]).toBe(200);
+  expect(statuses[1]).not.toBe(200);
+  expect((await ok(dir, ["payment", "list"])).payments).toHaveLength(1);
 }, 30_000);
