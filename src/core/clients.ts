@@ -77,7 +77,7 @@ function taxColumns(input: TaxInput, old: Pick<Client, "tax_rate_ppm" | "tax_lab
 export function getEngagement(db: Books, id: number) {
   const e = db
     .query(
-      `SELECT id, client_id, name, rate_cents_per_hour, recurring_amount_cents, recurring_interval, source
+      `SELECT id, client_id, name, rate_cents_per_hour, recurring_amount_cents, recurring_interval, start_date, source
        FROM engagements WHERE id = ?`,
     )
     .get(id) as Record<string, any> | null;
@@ -98,6 +98,7 @@ export function getEngagement(db: Books, id: number) {
     rate_cents_per_hour: e.rate_cents_per_hour,
     recurring_amount_cents: e.recurring_amount_cents,
     recurring_interval: e.recurring_interval,
+    start_date: e.start_date,
     milestones,
     source: e.source,
   };
@@ -221,6 +222,10 @@ const engagementAdd: Op = {
     },
     recurring_amount_cents: { type: "int", min: 1, max: MAX_CENTS, unit: "cents", description: "Recurring fee in cents." },
     recurring_interval: { type: "enum", values: INTERVALS, description: "monthly, quarterly or yearly; required with a recurring fee." },
+    start_date: {
+      type: "date",
+      description: "The day a recurring fee began, YYYY-MM-DD, for a retainer that began before its first draft: that draft bills every cycle starting on or after this day, with earlier ones carried over. A cycle already under way on this day isn't billed, so give the cycle's first day to bill it. Default: billing starts with the first draft's period.",
+    },
     currency,
   },
   run(db, input, ctx) {
@@ -233,6 +238,9 @@ const engagementAdd: Op = {
       const field = recurring ? "recurring_interval" : "recurring_amount_cents";
       throw new Refusal("A recurring fee needs both recurring_amount_cents and recurring_interval.", field);
     }
+    if (input.start_date !== undefined && !recurring) {
+      throw new Refusal("start_date says when a recurring fee began, and this engagement has none, so add recurring_amount_cents and recurring_interval, or leave start_date out.", "start_date");
+    }
     if (input.rate_cents_per_hour === undefined && !input.milestones && !recurring) {
       throw new Refusal(
         "An engagement needs at least one term: rate_cents_per_hour, milestones or a recurring fee.",
@@ -241,8 +249,8 @@ const engagementAdd: Op = {
     }
     const { id } = db
       .query(
-        `INSERT INTO engagements (client_id, name, rate_cents_per_hour, recurring_amount_cents, recurring_interval, source)
-         VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO engagements (client_id, name, rate_cents_per_hour, recurring_amount_cents, recurring_interval, start_date, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
         input.client_id,
@@ -250,6 +258,7 @@ const engagementAdd: Op = {
         input.rate_cents_per_hour ?? null,
         input.recurring_amount_cents ?? null,
         input.recurring_interval ?? null,
+        input.start_date ?? null,
         ctx.source,
       ) as { id: number };
     const ins = db.query("INSERT INTO milestones (engagement_id, name, amount_cents, billable_on, source) VALUES (?, ?, ?, ?, ?)");

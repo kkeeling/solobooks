@@ -57,6 +57,8 @@ export type LineRow = {
   engagement_id: number | null;
   cycle_start: string | null;
   expense_id: number | null;
+  /** The billable charge a pass-through line bills, if it came from one. */
+  charge_id: number | null;
   /** The date of what the line bills: the time entry's day, the milestone's billable day, the cycle start, the cost's day. */
   item_date: string | null;
 };
@@ -74,7 +76,7 @@ export function requireInvoice(db: Books, id: number, field = "id"): InvoiceRow 
 export function linesOf(db: Books, invoiceId: number): LineRow[] {
   return db
     .query(
-      `SELECT id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, item_date
+      `SELECT id, kind, description, amount_cents, time_entry_id, milestone_id, engagement_id, cycle_start, expense_id, charge_id, item_date
        FROM invoice_lines WHERE invoice_id = ? ORDER BY id`,
     )
     .all(invoiceId) as LineRow[];
@@ -132,9 +134,19 @@ export function paidCents(db: Books, invoiceId: number): number {
   return n;
 }
 
-/** What client credit applied to an invoice has settled on it. */
+/** Client credit applied to an invoice that still settles it: every application not taken back. */
+function standingCredit(db: Books, invoiceId: number): { id: number; amount_cents: number }[] {
+  return db
+    .query(
+      `SELECT a.id, a.amount_cents FROM credit_applications a
+       WHERE a.invoice_id = ? AND NOT EXISTS (SELECT 1 FROM credit_unapplications u WHERE u.application_id = a.id) ORDER BY a.id`,
+    )
+    .all(invoiceId) as { id: number; amount_cents: number }[];
+}
+
+/** What client credit applied to an invoice has settled on it, less any taken back since. */
 export function creditAppliedCents(db: Books, invoiceId: number): number {
-  return (db.query("SELECT COALESCE(SUM(amount_cents), 0) AS n FROM credit_applications WHERE invoice_id = ?").get(invoiceId) as { n: number }).n;
+  return standingCredit(db, invoiceId).reduce((s, a) => s + a.amount_cents, 0);
 }
 
 /**
@@ -227,10 +239,10 @@ function post(db: Books, r: InvoiceRow, direction: "forward" | "reverse", date: 
 const ON_LIVE_INVOICE = (col: string) =>
   `EXISTS (SELECT 1 FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id WHERE l.${col} = x.id AND i.status <> 'void')`;
 
-/** A line to add; charge_id names the billable charge a pass-through line bills. */
-type NewLine = Omit<LineRow, "id"> & { charge_id?: number | null };
+/** A line to add. */
+type NewLine = Omit<LineRow, "id">;
 
-const blank = { time_entry_id: null, milestone_id: null, engagement_id: null, cycle_start: null, expense_id: null, item_date: null };
+const blank = { time_entry_id: null, milestone_id: null, engagement_id: null, cycle_start: null, expense_id: null, charge_id: null, item_date: null };
 
 /** First days of the recurring-fee cycles that start between two days. */
 function cycleStarts(interval: string, start: string, end: string): string[] {
@@ -286,17 +298,17 @@ function unbilled(db: Books, clientId: number, start: string, end: string): NewL
   }
 
   const recurring = db
-    .query("SELECT id, name, recurring_amount_cents AS amt, recurring_interval AS iv FROM engagements WHERE client_id = ? AND recurring_amount_cents IS NOT NULL ORDER BY id")
-    .all(clientId) as { id: number; name: string; amt: number; iv: string }[];
+    .query("SELECT id, name, recurring_amount_cents AS amt, recurring_interval AS iv, start_date AS began FROM engagements WHERE client_id = ? AND recurring_amount_cents IS NOT NULL ORDER BY id")
+    .all(clientId) as { id: number; name: string; amt: number; iv: string; began: string | null }[];
   const liveCycles = `FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
      WHERE l.engagement_id = ? AND l.kind = 'recurring' AND i.status <> 'void'`;
   const billedCycle = db.query(`SELECT 1 ${liveCycles} AND l.cycle_start = ?`);
   const firstBilled = db.query(`SELECT MIN(l.cycle_start) AS d ${liveCycles}`);
   for (const e of recurring) {
-    // An engagement has no start date, so cycles are owed from the first one ever billed; before any is billed,
-    // the period's own cycles are where billing starts.
+    // Cycles are owed from the engagement's start date. One that doesn't say owes them from the first one ever billed;
+    // before any is billed, the period's own cycles are where billing starts.
     const first = (firstBilled.get(e.id) as { d: string | null }).d;
-    for (const d of cycleStarts(e.iv, first !== null && first < start ? first : start, end)) {
+    for (const d of cycleStarts(e.iv, e.began ?? (first !== null && first < start ? first : start), end)) {
       if (billedCycle.get(e.id, d)) continue;
       lines.push({
         ...blank, kind: "recurring", description: `${e.name}, ${cycleName(e.iv, d)}`, amount_cents: e.amt, engagement_id: e.id, cycle_start: d, item_date: d,
@@ -324,7 +336,7 @@ function insertLines(db: Books, invoiceId: number, lines: NewLine[], ctx: Ctx): 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lines) {
-    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, l.charge_id ?? null, l.item_date, ctx.source);
+    ins.run(invoiceId, l.kind, l.description, l.amount_cents, l.time_entry_id, l.milestone_id, l.engagement_id, l.cycle_start, l.expense_id, l.charge_id, l.item_date, ctx.source);
   }
 }
 
@@ -355,7 +367,7 @@ const invoiceDraft: Op = {
   name: "invoice_draft",
   kind: "write",
   description:
-    "Draft an invoice for a client and service period. It pulls in everything unbilled dated on or before the period's end: time, fixed-fee milestones billable by then, recurring fee cycles starting by then, and billable charges (see charge_add) dated by then. Lines from before the period are marked carried_over. A draft holds no number and can be edited or deleted freely.",
+    "Draft an invoice for a client and service period. It pulls in everything unbilled dated on or before the period's end: time, fixed-fee milestones billable by then, recurring fee cycles starting by then (from the engagement's start_date if it has one, else from the first one billed or this period), and billable charges (see charge_add) dated by then. Lines from before the period are marked carried_over. A draft holds no number and can be edited or deleted freely.",
   fields: {
     client_id: { type: "int", required: true, min: 1, description: "Client id." },
     period_start: { type: "date", required: true, description: "First day of the service period, YYYY-MM-DD." },
@@ -548,8 +560,12 @@ const invoiceVoid: Op = {
     if (r.kind === "invoice" && paidCents(db, r.id) > 0) {
       throw new Refusal(`Invoice ${r.number} has payments on it, so refund them with payment refund before voiding it.`, "id");
     }
-    if (r.kind === "invoice" && creditAppliedCents(db, r.id) > 0) {
-      throw new Refusal(`Invoice ${r.number} has client credit applied to it, so credit the rest with invoice credit instead of voiding it.`, "id");
+    if (r.kind === "invoice") {
+      const held = standingCredit(db, r.id).map((a) => a.id);
+      if (held.length > 0) {
+        const how = held.length === 1 ? `credit application ${held[0]}, so take it back with solobooks client credit-unapply --application-id ${held[0]}` : `credit applications ${held.join(", ")}, so take each back with solobooks client credit-unapply --application-id <id>`;
+        throw new Refusal(`Invoice ${r.number} still holds ${how} --date <day> before voiding it, or credit the rest with invoice credit instead.`, "id");
+      }
     }
     db.query("UPDATE invoices SET status = 'void', voided_at = ?, void_reason = ? WHERE id = ?").run(ctx.now, input.reason, r.id);
     const label = r.kind === "credit" ? `credit note ${displayNumber(r)}` : `invoice ${r.number}`;
@@ -779,7 +795,7 @@ const invoiceList: Op = {
 const invoiceGet: Op = {
   name: "invoice_get",
   kind: "read",
-  description: "Show one invoice or credit note with its lines and totals.",
+  description: "Show one invoice or credit note with its lines and totals. Each line gives its charge_id: the billable charge it bills, or null when it didn't come from a charge.",
   fields: { id: { type: "int", required: true, min: 1, description: "Invoice or credit note id." } },
   run(db, input) {
     return { invoice: invoiceView(db, input.id) };

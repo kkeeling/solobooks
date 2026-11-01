@@ -69,7 +69,7 @@ export function approvePending(db: Books, id: number, a: Approval, when: When): 
       // Pulling drafts moves the numbers after them, but what is left still starts where the batch was shown starting.
       const moved = exclude.length > 0 && String(p.items[0]!.number) !== String(now[0]!.number);
       if (moved || !stillAsShown(shown, now, exclude.length > 0)) {
-        throw new Refusal("What this would do has changed since the person was asked, so reject it and ask again.", "pending_id");
+        throw new Refusal("What this would do has changed since you were asked, so reject it and ask again.", "pending_id");
       }
       const result = op.run(db, run, asked) as Record<string, unknown>;
       db.query("UPDATE pending_actions SET status = 'approved', decided_at = ?, decided_via = ?, excluded = ?, result = ? WHERE id = ?").run(

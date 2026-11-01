@@ -62,7 +62,7 @@ function refundable(db: Books, p: PaymentRow, clientId: number) {
   return { credit, applied, total: credit + applied, fee: p.fee_cents - done.fee, refunded: done.amount };
 }
 
-/** A client's credit balance: overpayments held for them, less what was refunded or applied to invoices since. */
+/** A client's credit balance: overpayments held for them, less what was refunded or applied to invoices since, plus any application taken back. */
 export function creditBalance(db: Books, clientId: number): number {
   return (db.query("SELECT COALESCE(SUM(amount_cents), 0) AS n FROM client_credits WHERE client_id = ?").get(clientId) as { n: number }).n;
 }
@@ -301,7 +301,7 @@ const clientCreditApply: Op = {
   name: "client_credit_apply",
   kind: "write",
   description:
-    "Apply a client's credit, held from an overpayment, to one of that client's issued invoices. The invoice's open balance and the client's credit balance both drop by the amount, posted as one entry; the money never leaves the books, so this isn't gated. amount_cents defaults to as much as the credit and the invoice allow. A date after today is refused.",
+    "Apply a client's credit, held from an overpayment, to one of that client's issued invoices. The invoice's open balance and the client's credit balance both drop by the amount, posted as one entry; the money never leaves the books, so this isn't gated. amount_cents defaults to as much as the credit and the invoice allow. A date after today is refused. client_credit_unapply takes it back.",
   fields: {
     client_id: { type: "int", required: true, min: 1, description: "The client whose credit is used." },
     invoice_id: { type: "int", required: true, min: 1, description: "That client's issued invoice the credit pays down." },
@@ -352,6 +352,54 @@ const clientCreditApply: Op = {
   },
 };
 
+const clientCreditUnapply: Op = {
+  name: "client_credit_unapply",
+  kind: "write",
+  description:
+    "Take back one application of a client's credit, by the application_id client_credits shows. The invoice is owed that much again and the client holds it as credit again, posted as one reversing entry; the application stays in the books, marked taken back, and can only be taken back once. An invoice can't be voided until the credit on it is taken back. The money never leaves the books, so this isn't gated. A date after today, or before the application, is refused.",
+  fields: {
+    application_id: { type: "int", required: true, min: 1, description: "The credit application being taken back, as client_credits lists it." },
+    date: { type: "date", required: true, description: "Day the credit is taken back, YYYY-MM-DD: today or earlier, and not before it was applied." },
+  },
+  run(db, input, ctx) {
+    if (input.date > today(ctx.now)) {
+      throw new Refusal(`Taking the credit back is dated ${input.date}, which is after today, ${today(ctx.now)}, so date it today or earlier.`, "date");
+    }
+    const a = db
+      .query(
+        `SELECT a.id, a.client_id, a.invoice_id, a.date, a.amount_cents, u.date AS taken_back_on
+         FROM credit_applications a LEFT JOIN credit_unapplications u ON u.application_id = a.id WHERE a.id = ?`,
+      )
+      .get(input.application_id) as { id: number; client_id: number; invoice_id: number; date: string; amount_cents: number; taken_back_on: string | null } | null;
+    if (!a) throw new Refusal(`There is no credit application with id ${input.application_id}, so check the ids client credits lists.`, "application_id");
+    if (a.taken_back_on !== null) {
+      throw new Refusal(`Credit application ${a.id} was already taken back on ${a.taken_back_on}, so there is nothing left to take back; client credits shows what the client holds.`, "application_id");
+    }
+    const inv = requireInvoice(db, a.invoice_id);
+    if (inv.status === "void") {
+      throw new Refusal(`Invoice ${inv.number} is void, so credit application ${a.id} can't be taken back from it; client credits shows what the client holds.`, "application_id");
+    }
+    if (input.date < a.date) throw new Refusal(`Credit application ${a.id} is dated ${a.date}, so date taking it back on that day or later.`, "date");
+    const client = db.query("SELECT name FROM clients WHERE id = ?").get(a.client_id) as { name: string };
+
+    // What settled the invoice goes back to being held for the client.
+    const legs: [number, number][] = [
+      [invoiceAccount(db, "receivable", ctx), a.amount_cents],
+      [invoiceAccount(db, "clientCredits", ctx), -a.amount_cents],
+    ];
+    const entry = postEntry(db, input.date, `Client credit taken back from invoice ${inv.number} for ${client.name}`, legs, ctx.source);
+    db.query("INSERT INTO credit_unapplications (application_id, date, entry_id, source) VALUES (?, ?, ?, ?)").run(a.id, input.date, entry, ctx.source);
+    db.query("INSERT INTO client_credits (client_id, date, amount_cents, application_id, source) VALUES (?, ?, ?, ?, ?)").run(
+      a.client_id, input.date, a.amount_cents, a.id, ctx.source,
+    );
+    return {
+      taken_back: { application_id: a.id, client_id: a.client_id, invoice_id: inv.id, invoice_number: String(inv.number), date: input.date, amount_cents: a.amount_cents, entry_id: entry },
+      invoice_open_cents: openBalance(db, inv),
+      client_balance_cents: creditBalance(db, a.client_id),
+    };
+  },
+};
+
 const paymentList: Op = {
   name: "payment_list",
   kind: "read",
@@ -375,13 +423,13 @@ const clientCredits: Op = {
   name: "client_credits",
   kind: "read",
   description:
-    "Show money held for clients from overpayments: each credit row (an overpayment adds, a refund of it or applying it to an invoice takes away), and each client's balance.",
+    "Show money held for clients from overpayments: each credit row (an overpayment adds, a refund of it or applying it to an invoice takes away, and taking an application back adds it again, with the day in taken_back_on on both of that application's rows), and each client's balance.",
   fields: { client_id: { type: "int", min: 1, description: "Only this client." } },
   run(db, input) {
     const credits = db
       .query(
-        `SELECT x.id, x.client_id, x.date, x.amount_cents, x.payment_id, x.refund_id, x.application_id, a.invoice_id AS applied_to_invoice_id, x.source
-         FROM client_credits x LEFT JOIN credit_applications a ON a.id = x.application_id WHERE ?1 IS NULL OR x.client_id = ?1 ORDER BY x.id`,
+        `SELECT x.id, x.client_id, x.date, x.amount_cents, x.payment_id, x.refund_id, x.application_id, a.invoice_id AS applied_to_invoice_id, u.date AS taken_back_on, x.source
+         FROM client_credits x LEFT JOIN credit_applications a ON a.id = x.application_id LEFT JOIN credit_unapplications u ON u.application_id = a.id WHERE ?1 IS NULL OR x.client_id = ?1 ORDER BY x.id`,
       )
       .all(input.client_id ?? null);
     const balances = db
@@ -394,4 +442,4 @@ const clientCredits: Op = {
   },
 };
 
-export const paymentOps: Op[] = [paymentAdd, paymentRefund, paymentList, clientCredits, clientCreditApply];
+export const paymentOps: Op[] = [paymentAdd, paymentRefund, paymentList, clientCredits, clientCreditApply, clientCreditUnapply];

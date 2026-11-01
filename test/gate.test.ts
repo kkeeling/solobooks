@@ -690,7 +690,7 @@ function twoWaiting() {
   const [pa, pb] = [must(db, "invoice_issue", { id: a }).pending_id as number, must(db, "invoice_issue", { id: b }).pending_id as number];
   return { db, a, b, pa, pb };
 }
-const CHANGED = "What this would do has changed since the person was asked, so reject it and ask again.";
+const CHANGED = "What this would do has changed since you were asked, so reject it and ask again.";
 
 test("ISC-165: approving a card whose number was taken since says it changed, and nothing issues; asked again, it goes through at the new number", () => {
   const { db, b, pa, pb } = twoWaiting();

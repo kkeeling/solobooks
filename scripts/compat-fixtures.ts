@@ -217,6 +217,19 @@ San Francisco, CA 94105', client_email = 'ap@acme.example', note = 'Thank you fo
     (3, 1, '2026-04-20', 1000, 'Printer paper for the workshop', NULL, 3, NULL, NULL, NULL, ${S});
   ${history("2026-04-30T09:00:00.000Z", "charge_add")}
   `,
+  // 015: a second credit applied to invoice 1002 and taken back, and a retainer that began before its first draft.
+  `
+  INSERT INTO entries (id, date, memo, source) VALUES
+    (19, '2026-05-01', 'Client credit applied to invoice 1002 for Acme', ${S}), (20, '2026-05-04', 'Client credit taken back from invoice 1002 for Acme', ${S});
+  INSERT INTO lines (entry_id, account_id, debit_cents, credit_cents, source) VALUES
+    (19, 11, 500, 0, ${S}), (19, 4, 0, 500, ${S}), (20, 4, 500, 0, ${S}), (20, 11, 0, 500, ${S});
+  INSERT INTO credit_applications (id, client_id, invoice_id, date, amount_cents, entry_id, source) VALUES (2, 1, 4, '2026-05-01', 500, 19, ${S});
+  INSERT INTO client_credits (id, client_id, date, amount_cents, payment_id, refund_id, application_id, source) VALUES
+    (4, 1, '2026-05-01', -500, NULL, NULL, 2, ${S}), (5, 1, '2026-05-04', 500, NULL, NULL, 2, ${S});
+  INSERT INTO credit_unapplications (id, application_id, date, entry_id, source) VALUES (1, 2, '2026-05-04', 20, ${S});
+  INSERT INTO engagements (id, client_id, name, recurring_amount_cents, recurring_interval, start_date, source) VALUES (4, 1, 'Support retainer', 50000, 'monthly', '2026-03-01', ${S});
+  ${history("2026-05-04T09:00:00.000Z", "client_credit_unapply")}
+  `,
 ];
 
 /** Books as solobooks at schema `version` would have saved them, in memory. */
