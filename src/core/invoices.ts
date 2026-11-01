@@ -564,7 +564,7 @@ const invoiceVoid: Op = {
       const held = standingCredit(db, r.id).map((a) => a.id);
       if (held.length > 0) {
         const how = held.length === 1 ? `credit application ${held[0]}, so take it back with solobooks client credit unapply --application-id ${held[0]}` : `credit applications ${held.join(", ")}, so take each back with solobooks client credit unapply --application-id <id>`;
-        throw new Refusal(`Invoice ${r.number} still holds ${how} --date <day> before voiding it, or credit the rest with invoice credit instead.`, "id");
+        throw new Refusal(`Invoice ${r.number} still holds ${how} --date ${today(ctx.now)} before voiding it, or credit the rest with invoice credit instead.`, "id");
       }
     }
     db.query("UPDATE invoices SET status = 'void', voided_at = ?, void_reason = ? WHERE id = ?").run(ctx.now, input.reason, r.id);

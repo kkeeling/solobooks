@@ -359,7 +359,7 @@ const clientCreditUnapply: Op = {
     "Take back one application of a client's credit, by the application_id client_credits shows. The invoice is owed that much again and the client holds it as credit again, posted as one reversing entry; the application stays in the books, marked taken back, and can only be taken back once. An invoice can't be voided until the credit on it is taken back. The money never leaves the books, so this isn't gated. A date after today, or before the application, is refused.",
   fields: {
     application_id: { type: "int", required: true, min: 1, description: "The credit application being taken back, as client_credits lists it." },
-    date: { type: "date", required: true, description: "Day the credit is taken back, YYYY-MM-DD: today or earlier, and not before it was applied." },
+    date: { type: "date", required: true, description: "Day the credit is taken back, YYYY-MM-DD: today unless the person says otherwise, because an earlier date changes that month's income and sales tax, which may already be filed. Not after today, and not before it was applied." },
   },
   run(db, input, ctx) {
     if (input.date > today(ctx.now)) {

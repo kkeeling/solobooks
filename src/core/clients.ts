@@ -241,6 +241,18 @@ const engagementAdd: Op = {
     if (input.start_date !== undefined && !recurring) {
       throw new Refusal("start_date says when a recurring fee began, and this engagement has none, so add recurring_amount_cents and recurring_interval, or leave start_date out.", "start_date");
     }
+    if (input.start_date !== undefined) {
+      // Past invoices hold only manual lines, so a draft can't see which of the fee's months they billed.
+      const { through } = db
+        .query("SELECT MAX(MAX(period_end, invoice_date)) AS through FROM invoices WHERE client_id = ? AND historical = 1 AND kind = 'invoice' AND status <> 'void'")
+        .get(input.client_id) as { through: string | null };
+      if (through && input.start_date <= through) {
+        throw new Refusal(
+          `This client has a past invoice covering through ${through}, and a draft can't tell which months a past invoice billed, so this start date could bill them again; set start_date after ${through}, and add any earlier month those invoices didn't bill to the draft with invoice edit.`,
+          "start_date",
+        );
+      }
+    }
     if (input.rate_cents_per_hour === undefined && !input.milestones && !recurring) {
       throw new Refusal(
         "An engagement needs at least one term: rate_cents_per_hour, milestones or a recurring fee.",

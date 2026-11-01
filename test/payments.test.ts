@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { run } from "../src/cli.ts";
 import { approvePending, rejectPending } from "../src/core/approve.ts";
 import { getPending, promptFields } from "../src/core/gate.ts";
-import { perform } from "../src/core/perform.ts";
+import { dollars as dollarsOf } from "../src/core/format.ts";
+import { OPS, perform } from "../src/core/perform.ts";
+import { pdfLines } from "./support/pdf-text.ts";
 import { acmeBooks, cli, json, ok, S } from "./support/billing.ts";
 import { approveOnPage, asPerson, setEveryLevel, WHEN } from "./support/person.ts";
 import { acct, dbPath, dumpFile, tempDir } from "./support/books.ts";
@@ -672,6 +674,47 @@ test("ISC-176: taking credit back refuses a date after today or before it was ap
   });
 });
 
+test("ISC-186: with part of an invoice credited or paid, its email and PDF ask for what is still owed, and back to the whole once credit is taken back", async () => {
+  const { dir, next } = await creditReady();
+  const email = () => ok(dir, ["invoice", "email", "--id", String(next.id)]);
+  const pdf = async () => (await pdfLines(join(dir, (await ok(dir, ["invoice", "pdf", "--id", String(next.id)])).file))).join("\n");
+  const total = next.total_cents as number;
+  const whole = dollarsOf(total);
+  expect((await email()).subject).toContain(`${whole} due`);
+  expect(await pdf()).toContain(`Total due ${whole}`);
+  expect(await pdf()).not.toContain("Paid or credited");
+
+  const applied = await applyCredit(dir, next.id, 15000);
+  const left = dollarsOf(total - 15000);
+  const after = await email();
+  expect(after.subject).toContain(`${left} due`);
+  expect(after.body).toContain(`invoice ${next.number} for ${whole}, with $150.00 already paid or credited, so ${left} is due`);
+  const printed = await pdf();
+  expect(printed).toContain("Paid or credited -$150.00");
+  expect(printed).toContain(`Total due ${left}`);
+  expect(printed).toContain(`Total ${whole}`);
+
+  expect((await takeBack(dir, applied.id)).code).toBe(0);
+  expect((await email()).subject).toContain(`${whole} due`);
+  expect(await pdf()).not.toContain("Paid or credited");
+
+  // Settled in full: nothing to ask for.
+  await pay(dir, { invoice_id: next.id, amount_cents: total });
+  const paid = await email();
+  expect(paid.subject).toContain("paid in full");
+  expect(paid.body).toContain("which is paid in full");
+  expect(await pdf()).toContain("Total due $0.00");
+});
+
+test("ISC-178: taking credit back says to use today's date, because an earlier date changes that month's figures", async () => {
+  const { dir, next } = await creditReady();
+  const held = await applyCredit(dir, next.id, 15000);
+  const refused = await cli(dir, ["invoice", "void", "--id", String(next.id), "--reason", "Billed in error", ...S]);
+  expect(refused.out.reason).toContain(`--application-id ${held.id} --date 2026-10-22 `);
+  const op = OPS.find((o) => o.name === "client_credit_unapply")!;
+  expect(op.fields.date!.description).toContain("today unless the person says otherwise");
+});
+
 test("ISC-177: an invoice holding credit is refused a void naming client credit unapply, which runs as named, and then it voids", async () => {
   const { dir, next } = await creditReady();
   const first = await applyCredit(dir, next.id, 15000);
@@ -681,7 +724,7 @@ test("ISC-177: an invoice holding credit is refused a void naming client credit 
   const both = await voidIt();
   expect(both).toMatchObject({ code: 2, out: { field: "id" } });
   expect(both.out.reason).toBe(
-    `Invoice ${next.number} still holds credit applications ${first.id}, ${second.id}, so take each back with solobooks client credit unapply --application-id <id> --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+    `Invoice ${next.number} still holds credit applications ${first.id}, ${second.id}, so take each back with solobooks client credit unapply --application-id <id> --date 2026-10-22 before voiding it, or credit the rest with invoice credit instead.`,
   );
 
   // Exactly as the refusal spells it.
@@ -689,7 +732,7 @@ test("ISC-177: an invoice holding credit is refused a void naming client credit 
   const one = await voidIt();
   expect(one.code).toBe(2);
   expect(one.out.reason).toBe(
-    `Invoice ${next.number} still holds credit application ${second.id}, so take it back with solobooks client credit unapply --application-id ${second.id} --date <day> before voiding it, or credit the rest with invoice credit instead.`,
+    `Invoice ${next.number} still holds credit application ${second.id}, so take it back with solobooks client credit unapply --application-id ${second.id} --date 2026-10-22 before voiding it, or credit the rest with invoice credit instead.`,
   );
 
   expect((await takeBack(dir, second.id)).code).toBe(0);

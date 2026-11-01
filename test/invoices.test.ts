@@ -202,6 +202,29 @@ test("ISC-179: a retainer started three months before its first draft bills ever
   ]);
 });
 
+test("ISC-185: a start date reaching back over a past invoice is refused, because a draft can't tell which months that invoice billed", async () => {
+  const dir = await acmeBooks();
+  await retainer(dir, {});
+  const past = { client_id: 2, due_date: "2026-04-30", lines: [{ description: "Retainer, March 2026", amount_cents: 300000 }] };
+  await ok(dir, json(["invoice", "import"], { ...past, number: 900, invoice_date: "2026-03-31", period_start: "2026-03-01", period_end: "2026-03-31" }));
+  const add = (name: string, start_date: string) => cli(dir, json(["engagement", "add"], { client_id: 2, name, recurring_amount_cents: 300000, recurring_interval: "monthly", start_date }));
+
+  const refused = await add("Early", "2026-01-01");
+  expect(refused).toMatchObject({ code: 2, out: { field: "start_date" } });
+  expect(refused.out.reason).toContain("through 2026-03-31");
+  expect(refused.out.reason).toContain("after 2026-03-31");
+  expect((await ok(dir, ["engagement", "list", "--client-id", "2"])).engagements.map((e: any) => e.name)).toEqual(["Retainer"]);
+
+  // The month after the past invoice bills from there, with none of the past months on the draft.
+  expect((await add("Later", "2026-04-01")).code).toBe(0);
+  const lines = (await draftBeta(dir, "2026-05-01", "2026-05-31")).out.invoice.lines.filter((l: any) => l.description.startsWith("Later"));
+  expect(lines.map((l: any) => l.cycle_start)).toEqual(["2026-04-01", "2026-05-01"]);
+
+  // Another client's past invoice doesn't count.
+  await ok(dir, json(["client", "add"], { name: "Gamma LLC", address: "3 Oak Rd" }));
+  expect((await cli(dir, json(["engagement", "add"], { client_id: 3, name: "Retainer", recurring_amount_cents: 100, recurring_interval: "monthly", start_date: "2026-01-01" }))).code).toBe(0);
+});
+
 test("ISC-179: a start date bills nothing before it: a later start, a mid-month start and a quarterly fee", async () => {
   const dir = await acmeBooks();
   await retainer(dir, { start_date: "2026-11-01" });

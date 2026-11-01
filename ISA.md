@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 174/184
+progress: 174/186
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -342,13 +342,15 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - [ ] ISC-175: `client_credit_unapply`, from the CLI and MCP, takes one credit application back: the invoice's open balance and the client's credit balance both return to what they were, the ledger still balances, and the original rows stay in the books.
 - [ ] ISC-176: Anti: an application can't be taken back twice, and an unknown one, or one on a void invoice, is refused in plain words with nothing changed.
 - [ ] ISC-177: An invoice whose applied credit has been taken back can be voided, and the refusal on one still holding credit names `client credit unapply` as the way out.
-- [ ] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported, and books from every older version migrate with their rows unchanged.
+- [ ] ISC-178: `report pnl` over a period holding both the credit and its taking back, and `report unpaid` after it, show the income and what is owed as if the credit had not settled that invoice, a month already closed stays as reported when it is taken back with today's date, which the void refusal, the tool and the guide all say to use, and books from every older version migrate with their rows unchanged.
 - [ ] ISC-179: An engagement with a recurring fee can carry an optional start date, and the first draft bills every cycle from that date through the period, each line marked carried over where it falls before the period.
 - [ ] ISC-180: Anti: with no start date, drafts bill exactly what they do today, and a start date on an engagement with no recurring fee is refused.
 - [ ] ISC-181: `invoice get` shows each line's charge id, or null when it didn't come from a charge.
 - [ ] ISC-182: Anti: a card parked before the upgrade, with lines stored without a charge id, is still approved as shown, and a charge line's card reads the same as it did.
 - [ ] ISC-183: The guide tells an agent with no shell to give the person the exact `backup set` or `move` command to run, instead of saying it can't be done.
 - [ ] ISC-184: A release runs every script probe that needs no other app before it publishes, and a failing probe stops it.
+- [ ] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
+- [ ] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
 
 ## Test Strategy
 
@@ -536,6 +538,8 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 | ISC-181 | bun-test | invoice with a charge line and a time line | charge_id on one, null on the other | bun test -t "ISC-181" | derived: charges |
 | ISC-182 | bun-test | stored card with the old line shape | approves; card text unchanged | bun test -t "ISC-182" | derived: gate |
 | ISC-183 | grep | skills/solobooks/references/backups.md | names running the command for the person with no shell | rg -q 'no shell' skills/solobooks/references/backups.md | derived: docs |
+| ISC-185 | bun-test | past invoice through March, start dates January and April | January refused naming the date; April bills April on | bun test -t "ISC-185" | derived: billing |
+| ISC-186 | bun-test | credit applied, taken back, then paid in full | email and PDF amounts at each step | bun test -t "ISC-186" | derived: money |
 | ISC-184 | ci | .github/workflows/release.yml and a real release | probes step before publish; a failing script exits non-zero | rg -q 'release-probes' .github/workflows/release.yml && bash scripts/release-probes.sh | derived: release |
 | ISC-164 | bash | read the three docs | each states it | `rg -q 'with a shell' README.md && rg -q 'with a shell' skills/solobooks/references/approvals.md && rg -qi 'never post' skills/solobooks/SKILL.md` | derived: gate |
 
@@ -615,6 +619,7 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - 2026-11-01: A fresh review of the fix round reproduced six defects, all fixed: ISC-171 to ISC-174, and ISC-157 and ISC-166 widened. The card's terms now read "if approved on <the day it was asked>", because a parked card is frozen and that sentence stays true without recomputing it. New payment cards store `earlier_payment: null`, so a card that showed none is held to that, while a card parked by an older version, which has no such field, still goes through. Left alone: after "reject it and ask again", the same idempotency key answers rejected and parks nothing, which is visible and costs nothing.
 - 2026-11-01: F20 takes the buildable items off Remaining Work. `backup set` and `move` stay CLI-only: installing already needs a terminal, moving a live books file from inside its own server is the riskier design, and an agent with no shell can hand the person one command to paste (ISC-183). Taking credit back isn't gated, the same as applying it, because neither reaches the client on its own.
 - 2026-11-01: Credit taken back in a later month comes off in that month, the same as a refund and the ledger, so a month already reported doesn't change. A start date inside a cycle doesn't bill that cycle, the same as a mid-month `period_start` today, and the guide says to use the cycle's first day. The command is spelled `client credit unapply` only: the builder's change reading any hyphen in a command word as a space was a parser-wide change nothing asked for, so it came back out.
+- 2026-11-01: The independent review of F20 reproduced three defects, all fixed. A start date could re-bill months already brought in as past invoices (ISC-185), so that's refused, with no way past it except a later date, because an engagement can't be edited afterward and a false refusal costs one hand-added line. The email and PDF asked for the full total after credit was applied, an older bug outside F20, so the client would have overpaid (ISC-186). A back-dated take-back changes a closed month, which stays possible, as back-dated refunds are, but everything now says to use today (ISC-178). Left open: a past invoice brought in after the start date was set is only covered by the guide.
 - 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
 
 ## Learning
