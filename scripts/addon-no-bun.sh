@@ -40,6 +40,7 @@ sb() {
   shift
   bare "$H/bin/solobooks" "$@" --books "$H/books" > "$out" 2>&1 || fail "solobooks $* exited $?: $(cat "$out")"
 }
+bare "$H/bin/solobooks" setup --books "$H/books" > "$H/setup.json" 2>&1 || fail "solobooks setup exited $?: $(cat "$H/setup.json")"
 sb client-1 client add --name Acme --source person
 sb client-2 client add --name Beta --source person
 sb map-1 addon run "$SCRIPT" map --folder /work/acme --client-id 1 --timezone UTC

@@ -19,32 +19,40 @@ export function configFile(env: Env): string | null {
   return base ? join(base, "solobooks", "config.json") : null;
 }
 
-/** What setup and the durability commands record: the books folder, and the folder daily backups go to. */
-export type Config = { books?: string; backups?: string };
+/** What setup and the durability commands record: the books folder and the folder daily backups go to, plus the port `serve --port` chose. */
+export type Config = { books?: string; backups?: string; port?: number };
 
 /** The recorded settings, or none when setup hasn't run. */
 export function readConfig(env: Env): Config {
   const file = configFile(env);
   if (!file || !existsSync(file)) return {};
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (e) {
+    throw new Refusal(`solobooks can't read the settings file ${file} (${e instanceof Error ? e.message : e}), so check that you can open it.`, "settings");
+  }
   let c: unknown;
   try {
-    c = JSON.parse(readFileSync(file, "utf8"));
+    c = JSON.parse(text);
   } catch {
-    throw new Refusal(`The settings file ${file} isn't valid JSON, so run solobooks setup to write it again.`, "config");
+    throw new Refusal(`The settings file ${file} isn't valid JSON, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
   if (typeof c !== "object" || c === null || Array.isArray(c)) {
-    throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup to write it again.`, "config");
+    throw new Refusal(`The settings file ${file} must hold a JSON object, so run solobooks setup --books <folder>, naming the folder that holds your books, to write it again.`, "config");
   }
   return c as Config;
 }
 
 /** The books folder: `--books <dir>` wins, then SOLOBOOKS_DIR, then the folder setup recorded. Otherwise it refuses. */
 export function booksDir(flag: string | undefined, env: Env): string {
-  const dir = flag ?? env.SOLOBOOKS_DIR ?? readConfig(env).books;
+  const dir = flag ?? (env.SOLOBOOKS_DIR || readConfig(env).books);
   if (!dir || !dir.trim()) {
     throw new Refusal("Say which folder holds the books with --books <dir> or SOLOBOOKS_DIR, or run solobooks setup to pick one.", "books");
   }
-  return dir;
+  // A shell doesn't expand the ~ in --books=~/x.
+  const home = homeDir(env);
+  return home && (dir === "~" || dir.startsWith("~/")) ? absolute(dir, home) : dir;
 }
 
 /** Records settings, keeping the ones not given. Returns the settings file, or null when there is no home folder. */
@@ -64,9 +72,19 @@ export function now(env: Env): string {
   return env.SOLOBOOKS_NOW ?? new Date().toISOString();
 }
 
-/** The approval page's port: SOLOBOOKS_PORT, or 7317. */
+/** The port `serve --port` recorded, if any. Damaged settings don't stop the books working; the commands that need them say so. */
+function recordedPort(env: Env): number | undefined {
+  try {
+    const port = readConfig(env).port;
+    return Number.isInteger(port) && port! >= 1 && port! <= 65535 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The approval page's port: SOLOBOOKS_PORT, then the one `serve --port` recorded, or 7317. */
 export function pagePort(env: Env): number {
-  const raw = env.SOLOBOOKS_PORT;
+  const raw = env.SOLOBOOKS_PORT ?? recordedPort(env)?.toString();
   if (raw === undefined || raw === "") return DEFAULT_PORT;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Refusal("SOLOBOOKS_PORT must be a whole number from 1 to 65535.", "port");

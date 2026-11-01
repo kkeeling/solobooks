@@ -12,7 +12,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { booksDir, booksFile, now, pageUrl, type Env } from "./config.ts";
-import { beforeWrite, openOptions, withWarnings } from "./durability.ts";
+import { beforeWrite, flag, onlyFlags, openOptions, withWarnings } from "./durability.ts";
 import { approvePending } from "./core/approve.ts";
 import { type Books, openForRun } from "./core/db.ts";
 import { dollars } from "./core/format.ts";
@@ -202,8 +202,8 @@ export function createServer(env: Env, books?: string): McpServer {
 
 /** Serves MCP over stdio until the agent app closes it: what `solobooks mcp` runs. */
 export function serveMcp(argv: string[], env: Env = process.env): void {
-  const i = argv.indexOf("--books");
-  const books = i === -1 ? undefined : argv[i + 1];
+  onlyFlags(argv, "books");
+  const books = flag(argv, "books");
   serveStdio(() => createServer(env, books), {
     onerror: (e) => console.error("solobooks mcp:", e),
   });

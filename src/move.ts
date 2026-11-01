@@ -2,10 +2,10 @@ import { Database } from "bun:sqlite";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { absolute, booksDir, booksFile, DB_FILE, type Env, saveConfig } from "./config.ts";
-import { openBooks } from "./core/db.ts";
+import { hasBooks, openBooks } from "./core/db.ts";
 import { sha256 } from "./core/files.ts";
 import { Refusal } from "./core/refusal.ts";
-import { flag, needHome, openOptions, syncedWarning } from "./durability.ts";
+import { flag, needHome, onlyFlags, openOptions, syncedWarning } from "./durability.ts";
 
 // `solobooks move`: carries the books to a new folder on this machine, or packs them for the agent to carry to another.
 
@@ -32,11 +32,12 @@ function counts(db: Database): Record<string, number> {
  */
 export function move(argv: string[], env: Env) {
   const home = needHome(env);
+  onlyFlags(argv, "books", "to");
   const from = absolute(booksDir(flag(argv, "books"), env), home);
   const given = flag(argv, "to");
   if (!given || !given.trim()) throw new Refusal("Say which empty folder the books move to with --to <dir>.", "to");
   const to = absolute(given, home);
-  if (!existsSync(booksFile(from))) throw new Refusal(`There are no books in ${from} to move.`, "books");
+  if (!hasBooks(booksFile(from))) throw new Refusal(`There are no books in ${from} to move.`, "books");
   if (to === from || to.startsWith(from + sep)) throw new Refusal(`The new folder ${to} is inside the books folder ${from}, so choose one outside it.`, "to");
   if (from.startsWith(to + sep)) throw new Refusal(`The books folder ${from} is inside the new folder ${to}, so choose an empty folder elsewhere.`, "to");
   if (existsSync(to) && (!statSync(to).isDirectory() || readdirSync(to).length > 0)) {

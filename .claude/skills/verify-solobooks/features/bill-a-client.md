@@ -42,5 +42,4 @@ Preconditions:
 - A draft can also carry manual lines through `--json '{"lines":[{"description":"Setup","amount_cents":5000}]}'`, which gets past the `Nothing unbilled` refusal.
 - A draft has a PDF too: `invoice pdf --id 1` before approval saves `invoices/draft-1.pdf`. Only the numbered file proves the issue.
 - `invoice pdf` returns a path relative to the books folder. The scratch folder is gone after `down`, so read the copy under `books-final/`.
-- Output past 64 KB is cut when the real `solobooks` writes to a pipe (kkeeling/solobooks#1). `control.ts` captures it to files and passes all of it on, so a pipe after `control.ts cli` is safe. A pipe after a bare `solobooks` isn't.
 - The clock is pinned, so dates in the output are the run's, not today's. Pass `--now` on `up` when a date matters.

@@ -82,7 +82,7 @@ function scratchEnv(r: Pick<Run, "home" | "books" | "port" | "now" | "delayMs">)
 
 const solobooks = (args: string[]) => [process.execPath, "src/cli.ts", ...args];
 
-/** Runs to the end with output going to files: `solobooks` cuts anything past 64 KB when its stdout is a pipe. */
+/** Runs to the end with output going to files, so the run's evidence keeps everything it printed. */
 function capture(argv: string[], env: Record<string, string> | undefined, cwd: string) {
   const dir = mkdtempSync(join(tmpdir(), "verify-solobooks-out-"));
   const [o, e] = [join(dir, "out"), join(dir, "err")];

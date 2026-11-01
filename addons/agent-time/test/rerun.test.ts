@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { run } from "../../../src/cli.ts";
+import { openBooks } from "../../../src/core/db.ts";
 import { trapNetwork } from "../../../test/support/network-trap.ts";
 import { main } from "../skills/bill-agent-time/scripts/count-time.ts";
 import { claudeFile, claudeLines, codexFile, codexLines, put, tempDir } from "./support/logs.ts";
@@ -19,6 +20,7 @@ async function person() {
     if (r.code !== 0) throw new Error(r.stdout);
     return JSON.parse(r.stdout);
   };
+  openBooks(join(books, "solobooks.sqlite"), { create: true }).close(); // what setup does first
   await sb("client", "add", "--name", "Acme", "--source", "person");
   await sb("client", "add", "--name", "Beta", "--source", "person");
   const addon = async (...argv: string[]) => {

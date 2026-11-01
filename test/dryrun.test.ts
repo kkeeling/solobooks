@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { run } from "../src/cli.ts";
 import { OPS } from "../src/core/perform.ts";
 import { cli, dbPath, fileHash, tempDir } from "./support/books.ts";
 import { setUpPerson } from "./support/person.ts";
@@ -41,9 +42,10 @@ test("ISC-11: a dry run that the real write would do shows the same result", asy
   expect(dry.out.result).toEqual(real.out);
 });
 
-test("ISC-11: a dry run against a folder with no books creates no file", async () => {
+test("ISC-11: a dry run against a folder with no books refuses and creates no file", async () => {
   const dir = tempDir();
-  const r = await cli(dir, ["client", "add", "--name", "Acme", "--source", "s", "--dry-run"]);
-  expect(r.code).toBe(0);
+  const r = await run(["client", "add", "--name", "Acme", "--source", "s", "--dry-run", "--books", dir], {});
+  expect(r.code).toBe(2);
+  expect(JSON.parse(r.stdout).field).toBe("books");
   expect(readdirSync(dir)).toEqual([]);
 });

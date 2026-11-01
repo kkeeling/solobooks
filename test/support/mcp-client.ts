@@ -1,4 +1,6 @@
+import { join } from "node:path";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
+import { openBooks } from "../../src/core/db.ts";
 import { createServer } from "../../src/mcp.ts";
 
 /**
@@ -49,7 +51,12 @@ export async function inProcessMcp(
 
 /** Speaks newline-delimited JSON-RPC to `bun src/mcp.ts` over real stdio. */
 export async function stdioMcp(dir: string, env: Record<string, string> = {}) {
-  const proc = Bun.spawn(["bun", "src/mcp.ts", "--books", dir], {
+  openBooks(join(dir, "solobooks.sqlite"), { create: true }).close(); // what setup does first
+  return stdioMcpArgs(["--books", dir], env);
+}
+
+export async function stdioMcpArgs(args: string[], env: Record<string, string> = {}) {
+  const proc = Bun.spawn(["bun", "src/mcp.ts", ...args], {
     cwd: `${import.meta.dir}/../..`,
     stdin: "pipe",
     stdout: "pipe",

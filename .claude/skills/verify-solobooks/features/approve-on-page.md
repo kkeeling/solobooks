@@ -49,5 +49,5 @@ Preconditions:
 - A card asked for after the page loaded isn't on the page until you open it again.
 - Unticking every invoice in a batch is refused with `Pulling every invoice leaves nothing to issue, so reject the batch instead.` The batch stays pending.
 - A card's code lasts 15 minutes and doesn't survive restarting `serve`. A stale click gets the same `expired or was already used` answer as a guessed one.
-- `approve_url` follows `SOLOBOOKS_PORT`, not `serve --port`, so it can point at the wrong address (`billing-4g5`). `control.ts` sets the variable, so its runs don't show this.
+- `approve_url` follows `SOLOBOOKS_PORT`, then the port `serve --port` recorded in the settings, then 7317. `control.ts` sets the variable, so its runs don't show the recording; `test/serve-port.test.ts` does.
 - `page eval` needs `--main`. Without it, Interceptor reports that isolated eval is unavailable.

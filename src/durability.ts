@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { absolute, booksDir, booksFile, type Env, homeDir, now, readConfig, saveConfig, syncedFolder } from "./config.ts";
 import { backupInto } from "./core/backup.ts";
-import { type Books, openBooks, type OpenOptions } from "./core/db.ts";
+import { type Books, hasBooks, openBooks, type OpenOptions } from "./core/db.ts";
 import { today } from "./core/format.ts";
 import { Refusal } from "./core/refusal.ts";
 
@@ -66,12 +66,33 @@ export function withWarnings(result: Record<string, unknown>, warnings: string[]
   return warnings.length === 0 ? result : { ...result, warnings };
 }
 
+/** One flag's value, written as `--name value` or `--name=value`. */
 export function flag(argv: string[], name: string): string | undefined {
+  const joined = argv.find((a) => a.startsWith(`--${name}=`));
+  if (joined !== undefined) {
+    const v = joined.slice(name.length + 3);
+    if (v === "") throw new Refusal("That flag needs a value after it.", name);
+    return v;
+  }
   const i = argv.indexOf(`--${name}`);
   if (i === -1) return undefined;
   const v = argv[i + 1];
   if (v === undefined || v.startsWith("--")) throw new Refusal("That flag needs a value after it.", name);
   return v;
+}
+
+/** Refuses anything this command doesn't read, so a typo or an unquoted folder can't quietly put the books somewhere else. */
+export function onlyFlags(argv: string[], ...names: string[]): void {
+  const takes = names.map((n) => `--${n}`).join(" and ");
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!a.startsWith("--")) {
+      throw new Refusal(`This command doesn't take "${a}"; it takes ${takes}, and a folder with a space in its name needs quotes.`, a.replace(/^-+/, ""));
+    }
+    const name = a.slice(2).split("=")[0]!;
+    if (!names.includes(name)) throw new Refusal(`This command has no --${name} flag; it takes ${takes}.`, name);
+    if (!a.includes("=")) i++; // its value
+  }
 }
 
 export function needHome(env: Env): string {
@@ -83,6 +104,7 @@ export function needHome(env: Env): string {
 /** `solobooks backup set --folder <dir>`: records the backup folder, then writes today's backup there at once. */
 export function backupSet(argv: string[], env: Env) {
   const home = needHome(env);
+  onlyFlags(argv, "folder", "books");
   const given = flag(argv, "folder");
   if (!given || !given.trim()) throw new Refusal("Say which folder backups go to with --folder <dir>.", "folder");
   const folder = absolute(given, home);
@@ -102,7 +124,7 @@ export function backupSet(argv: string[], env: Env) {
     if (!(e instanceof Refusal)) throw e;
   }
   let latest: string | null = null;
-  if (dir && existsSync(booksFile(dir))) {
+  if (dir && hasBooks(booksFile(dir))) {
     const db = openBooks(booksFile(dir), openOptions(env));
     try {
       const warning = dailyBackup(db, env);
@@ -116,6 +138,7 @@ export function backupSet(argv: string[], env: Env) {
     backups: folder,
     settings,
     latest,
+    ...(dir && !latest && { warnings: [`There are no books in "${dir}" to back up yet, so no copy was written.`] }),
     next: "solobooks now writes a dated copy of the books here once a day, the first time they change that day, and keeps every one. Getting copies off this machine, such as to another drive or a cloud folder, is up to you or your agent.",
   };
 }

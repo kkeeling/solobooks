@@ -51,7 +51,7 @@ export async function registerTestPasskey(db: Books, auth?: SoftAuthenticator): 
 
 /** Books in a folder where the person registered a passkey and let the agent decide everything. */
 export async function setUpPerson(dir: string): Promise<void> {
-  const db = openBooks(dbPath(dir));
+  const db = openBooks(dbPath(dir), { create: true });
   try {
     await registerTestPasskey(db);
     letAgentDecide(db);
@@ -62,7 +62,7 @@ export async function setUpPerson(dir: string): Promise<void> {
 
 /** Opens a books folder for the person's side, then closes it, after the work finishes when it is async. */
 export function asPerson<T>(dir: string, f: (db: Books) => T): T {
-  const db = openBooks(dbPath(dir));
+  const db = openBooks(dbPath(dir), { create: true });
   let r: T;
   try {
     r = f(db);
@@ -87,7 +87,7 @@ export function setEveryLevel(db: Books, level: string): void {
 
 /** Books in a folder where the person let the agent decide everything. */
 export function letAgentDecideIn(dir: string): void {
-  const db = openBooks(dbPath(dir));
+  const db = openBooks(dbPath(dir), { create: true });
   try {
     letAgentDecide(db);
   } finally {

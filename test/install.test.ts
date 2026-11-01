@@ -55,10 +55,12 @@ test("setup warns when the books folder sits in a synced folder, and suggests an
   ];
   if (process.platform === "darwin") cases.push(["Documents/books", /inside Documents, which iCloud or OneDrive may sync/]);
   for (const [dir, says] of cases) {
-    const { warnings } = await setupIn(home, "--books", join(home, dir));
+    const person = tempDir(); // a first setup each time, so no earlier books are left behind
+    mkdirSync(join(person, ".claude"));
+    const { warnings } = await setupIn(person, "--books", join(person, dir));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(says);
-    expect(warnings[0]).toContain(`such as ${join(home, "solobooks")}, with solobooks setup --books <dir>`);
+    expect(warnings[0]).toContain(`such as ${join(person, "solobooks")}, with solobooks setup --books <dir>`);
   }
   expect((await setupIn(home, "--books", join(home, "solobooks"))).warnings).toEqual([]);
 });
