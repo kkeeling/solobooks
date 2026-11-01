@@ -3,7 +3,7 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 146/164
+progress: 146/170
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
@@ -302,10 +302,14 @@ Why: an agent acts on what solobooks answers and a client reads what it prints, 
 - [ ] ISC-147: Anti: one bank deposit can't back two payments: with a same-amount payment with no bank line on that invoice and deposit account, `payment add --bank-line-id` refuses and names `bank match`, and the books still show the deposit once.
 - [ ] ISC-148: Retrying a gated request with its idempotency key after the person decided reports that decision (approved with the result, or rejected), and never `Nothing has happened yet`.
 - [ ] ISC-149: A void invoice's PDF says VOID on its face and shows no amount due.
-- [ ] ISC-150: Anti: a payment dated after today is refused from the CLI and MCP, and approving one parked before that date arrives can't make it count as paid today.
-- [ ] ISC-151: `invoice email` refuses, naming the fix, when the client or the business has no email address.
+- [ ] ISC-150: Anti: a payment or credit applied with a date after today is refused from the CLI and MCP, unless a payment names a bank line carrying that date, and approving one parked before that date arrives can't make it count as paid today.
+- [ ] ISC-151: `invoice email` and `invoice reminder` refuse, naming the fix, when the client or the business has no email address.
 - [ ] ISC-152: Anti: asking to issue a draft that is already waiting returns the waiting card and parks no second one.
 - [ ] ISC-153: A statement amount written `(-45.00)` comes in as money out, the same as `(45.00)`.
+- [ ] ISC-165: Anti: approving a card whose invoice number has moved since the person was asked answers that what it would do has changed, and nothing issues; a card approved on a later day with its number intact still goes through.
+- [ ] ISC-166: Anti: a SQLite file that isn't solobooks books is refused where books are opened and left byte-identical, while books from every older version still open.
+- [ ] ISC-167: Anti: asking to void an invoice whose void is already waiting returns the waiting card and parks no second one.
+- [ ] ISC-168: A no-line payment on an invoice that already has a same-amount payment on that deposit account shows the earlier payment on its card, or as a warning at `agent_decides`.
 
 ### F18 · The install tells the truth
 Why: a passing doctor has to mean the person's agent can really reach their books, and a bad setting has to get a plain refusal and a working fix.
@@ -316,6 +320,7 @@ Why: a passing doctor has to mean the person's agent can really reach their book
 - [ ] ISC-157: Settings holding valid JSON of the wrong type get the same refusal and repair as invalid JSON, never a raw error.
 - [ ] ISC-158: An empty `SOLOBOOKS_PORT` counts as unset; `serve --port abc` blames `--port`; repairing damaged settings says the port must be chosen again; `setup --books` that differs from `SOLOBOOKS_DIR` says which one later commands use.
 - [ ] ISC-159: INSTALL.md sends an install with existing books in a synced folder to `move --to`, and says what to do when setup refuses.
+- [ ] ISC-170: `doctor` fails the MCP check, with a fix, when the folder it is checking isn't the one an agent's server would use.
 
 ### F19 · The page's clicks explain themselves
 Why: the page is where the person decides, so a click that can't work says why in plain words and costs them nothing, and it comes from a person's browser.
@@ -324,6 +329,7 @@ Why: the page is where the person decides, so a click that can't work says why i
 - [ ] ISC-161: A click when the books file isn't readable as books shows the can't-read message, spends no code, and the same button works once the file is back.
 - [ ] ISC-162: With a zero-byte books file, the page says the file is empty, not that it isn't there.
 - [ ] ISC-163: Anti: approve, reject and passkey registration refuse a request without the browser's same-origin markers, and the card stays pending.
+- [ ] ISC-169: A click that fails for any reason but a bad code spends no code, so the same button works once the cause is fixed, and a completed code can't run twice.
 - [ ] ISC-164: The README and the approvals guide say what each level holds against: a click stops tools and mistakes, but an agent with a shell on the same account can reach anything that account can; and the agent guide forbids posting to the page.
 
 ## Test Strategy
@@ -488,12 +494,18 @@ Why: the page is where the person decides, so a click that can't work says why i
 | ISC-156 | bun-test | empty value on setup, doctor, move and backup set path flags | exit 2; no file created in cwd | bun test -t "ISC-156" | derived: install |
 | ISC-157 | bun-test | settings {"books":5}, [] and null | refusal naming setup --books; setup --books repairs | bun test -t "ISC-157" | derived: install |
 | ISC-158 | bun-test | each of the four variable cases | stated answer for each | bun test -t "ISC-158" | derived: install |
-| ISC-159 | bash | read INSTALL.md | names move --to and the refusal branch | `rg -q 'move --to' INSTALL.md && rg -q 'refuses' INSTALL.md` | derived: install |
+| ISC-159 | bash | read INSTALL.md | names move --to and the refusal branch | `rg -q 'move --to' INSTALL.md && rg -q 'setup refuses' INSTALL.md` | derived: install |
 | ISC-160 | screenshot | server stopped, click Approve | plain message naming solobooks serve; no TypeError | Interceptor capture | derived: human-page |
 | ISC-161 | screenshot | books file replaced with text, click, restore, click | can't-read message; then approved | Interceptor capture | derived: human-page |
 | ISC-162 | screenshot | zero-byte books file, load the page | says empty | Interceptor capture | derived: human-page |
-| ISC-163 | bun-test | POST with a valid code and no markers, then with them | refused and still pending; then approved | bun test -t "ISC-163" | derived: gate |
-| ISC-164 | bash | read the three docs | each states it | `rg -q 'shell' README.md && rg -q 'shell' skills/solobooks/references/approvals.md && rg -q 'never post' skills/solobooks/SKILL.md` | derived: gate |
+| ISC-163 | bun-test | POST with a valid code and no Origin, then a cross-site Sec-Fetch-Site, then a matching Origin | refused and still pending twice; then approved | bun test -t "ISC-163" | derived: gate |
+| ISC-165 | bun-test | two parked drafts, approve both | second answers changed and stays draft | bun test -t "ISC-165" | derived: gate |
+| ISC-166 | bun-test | another app's SQLite file at the books path | refused; same bytes | bun test -t "ISC-166" | derived: install |
+| ISC-167 | bun-test | invoice void twice | same pending_id; one card | bun test -t "ISC-167" | derived: gate |
+| ISC-168 | bun-test | backed $250, then no-line $250, at click and agent_decides | card or result names the earlier payment | bun test -t "ISC-168" | derived: money |
+| ISC-169 | bun-test | click with a read-only file and a damaged page, fix the cause, click again; double click | no code spent, then approved; second run refused | bun test -t "ISC-169" | derived: human-page |
+| ISC-170 | bun-test | doctor --books A while settings name B | MCP check fails with a fix | bun test -t "ISC-170" | derived: install |
+| ISC-164 | bash | read the three docs | each states it | `rg -q 'with a shell' README.md && rg -q 'with a shell' skills/solobooks/references/approvals.md && rg -qi 'never post' skills/solobooks/SKILL.md` | derived: gate |
 
 ## Decisions
 
@@ -566,6 +578,9 @@ Why: the page is where the person decides, so a click that can't work says why i
 
 - 2026-11-01: The upkeep pass drove a shell-style approval on 0.1.6: read a card's code from the page and post it. The promise in F9 only covers commands and tools, so this was never a broken claim, but it is wider than the README's wording. Decided without waiting: raise the bar by requiring the browser's same-origin markers (ISC-163), which stops an agent doing it by accident or habit, and say plainly in the docs what a click does and doesn't hold against (ISC-164). A shell agent on the same account can forge headers or write the books file, so no click-level check can be a real boundary, and I won't claim one. Passkey level is the strongest the page offers.
 - 2026-11-01: A payment may be dated before its invoice, because clients do pay ahead and the invoice takes the approval day's date. Only a date after today is refused (ISC-150).
+
+- 2026-11-01: The approval check requires a matching Origin and refuses a Sec-Fetch-Site that isn't same-origin only when one is sent, rather than requiring it. The fresh review pointed out that a browser omitting it would refuse every click. Real Safari 26.6 sends both on localhost (a scratch page logged them), but older browsers may not, and the extra strictness buys nothing against something that can forge headers anyway.
+- 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
 
 ## Learning
 
