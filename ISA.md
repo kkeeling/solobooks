@@ -3,9 +3,9 @@ task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
 phase: climbing
-progress: 146/146
+progress: 146/164
 started: 2026-10-23T01:31:17Z
-updated: 2026-10-31T00:00:00Z
+updated: 2026-11-01T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
@@ -296,6 +296,36 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 - [x] ISC-145: Piped CLI output is complete: `help | wc -c` equals the size written to a file, and `help | head -1` exits without an error.
 - [x] ISC-146: With the server gone, the page's panels say solobooks isn't running and don't blame the books.
 
+### F17 · What the books say is what happened
+Why: an agent acts on what solobooks answers and a client reads what it prints, so a deposit counts once, a retry tells the truth, and a void invoice can't pass for a bill.
+
+- [ ] ISC-147: Anti: one bank deposit can't back two payments: with a same-amount payment with no bank line on that invoice and deposit account, `payment add --bank-line-id` refuses and names `bank match`, and the books still show the deposit once.
+- [ ] ISC-148: Retrying a gated request with its idempotency key after the person decided reports that decision (approved with the result, or rejected), and never `Nothing has happened yet`.
+- [ ] ISC-149: A void invoice's PDF says VOID on its face and shows no amount due.
+- [ ] ISC-150: Anti: a payment dated after today is refused from the CLI and MCP, and approving one parked before that date arrives can't make it count as paid today.
+- [ ] ISC-151: `invoice email` refuses, naming the fix, when the client or the business has no email address.
+- [ ] ISC-152: Anti: asking to issue a draft that is already waiting returns the waiting card and parks no second one.
+- [ ] ISC-153: A statement amount written `(-45.00)` comes in as money out, the same as `(45.00)`.
+
+### F18 · The install tells the truth
+Why: a passing doctor has to mean the person's agent can really reach their books, and a bad setting has to get a plain refusal and a working fix.
+
+- [ ] ISC-154: `doctor` fails and names the fix when the settings file is damaged, including with `--books` or `SOLOBOOKS_DIR` set, because commands refuse there.
+- [ ] ISC-155: `doctor` fails the MCP check when an agent's server refuses for missing books or settings while doctor's own books check passed, and `scripts/doctor-negative.sh` proves a registered server finds the books from settings alone.
+- [ ] ISC-156: Anti: an empty value on an install command's path flag, such as `setup --books ""`, is refused and creates nothing.
+- [ ] ISC-157: Settings holding valid JSON of the wrong type get the same refusal and repair as invalid JSON, never a raw error.
+- [ ] ISC-158: An empty `SOLOBOOKS_PORT` counts as unset; `serve --port abc` blames `--port`; repairing damaged settings says the port must be chosen again; `setup --books` that differs from `SOLOBOOKS_DIR` says which one later commands use.
+- [ ] ISC-159: INSTALL.md sends an install with existing books in a synced folder to `move --to`, and says what to do when setup refuses.
+
+### F19 · The page's clicks explain themselves
+Why: the page is where the person decides, so a click that can't work says why in plain words and costs them nothing, and it comes from a person's browser.
+
+- [ ] ISC-160: A click with the server gone says in plain words to run `solobooks serve`, with no raw browser error.
+- [ ] ISC-161: A click when the books file isn't readable as books shows the can't-read message, spends no code, and the same button works once the file is back.
+- [ ] ISC-162: With a zero-byte books file, the page says the file is empty, not that it isn't there.
+- [ ] ISC-163: Anti: approve, reject and passkey registration refuse a request without the browser's same-origin markers, and the card stays pending.
+- [ ] ISC-164: The README and the approvals guide say what each level holds against: a click stops tools and mistakes, but an agent with a shell on the same account can reach anything that account can; and the agent guide forbids posting to the page.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -446,6 +476,24 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 | ISC-144 | bun-test | two serves on one port | second refuses with a reason | bun test test/serve-port.test.ts -t "in use" | derived: gate |
 | ISC-145 | bash | source and compiled binary piped | sizes equal, head exits 0 | `bash scripts/pipe-check.sh` | derived: agent-native |
 | ISC-146 | screenshot | server stopped while a tab loads | panels name the server, not the books | Interceptor capture | derived: human-page |
+| ISC-147 | bun-test | approved no-line $250, then the same deposit named on a new payment | refused naming bank match; paid stays 25000 | bun test -t "ISC-147" | derived: money |
+| ISC-148 | bun-test | same key after approve and after reject | answer carries the decision, not the pending message | bun test -t "ISC-148" | derived: gate |
+| ISC-149 | bun-test | void an issued invoice, render its PDF | text has VOID and no Total due | bun test -t "ISC-149" | derived: documents |
+| ISC-150 | bun-test | future-dated payment from CLI and MCP, and one parked then approved | refused; open balance unchanged | bun test -t "ISC-150" | derived: money |
+| ISC-151 | bun-test | invoice email with client email missing, and business email missing | exit 2 naming the fix | bun test -t "ISC-151" | derived: documents |
+| ISC-152 | bun-test | invoice issue twice on one draft | same pending_id; one card | bun test -t "ISC-152" | derived: gate |
+| ISC-153 | bun-test | statement rows (45.00) and (-45.00) | both -4500 | bun test -t "ISC-153" | derived: money |
+| ISC-154 | bun-test | damaged settings with --books and with SOLOBOOKS_DIR | doctor exits 1 naming the fix | bun test -t "ISC-154" | derived: install |
+| ISC-155 | bash | scratch home, no SOLOBOOKS_DIR: recorded folder wrong, doctor --books good | doctor fails the MCP check; server reaches books when right | `bash scripts/doctor-negative.sh` | derived: install |
+| ISC-156 | bun-test | empty value on setup, doctor, move and backup set path flags | exit 2; no file created in cwd | bun test -t "ISC-156" | derived: install |
+| ISC-157 | bun-test | settings {"books":5}, [] and null | refusal naming setup --books; setup --books repairs | bun test -t "ISC-157" | derived: install |
+| ISC-158 | bun-test | each of the four variable cases | stated answer for each | bun test -t "ISC-158" | derived: install |
+| ISC-159 | bash | read INSTALL.md | names move --to and the refusal branch | `rg -q 'move --to' INSTALL.md && rg -q 'refuses' INSTALL.md` | derived: install |
+| ISC-160 | screenshot | server stopped, click Approve | plain message naming solobooks serve; no TypeError | Interceptor capture | derived: human-page |
+| ISC-161 | screenshot | books file replaced with text, click, restore, click | can't-read message; then approved | Interceptor capture | derived: human-page |
+| ISC-162 | screenshot | zero-byte books file, load the page | says empty | Interceptor capture | derived: human-page |
+| ISC-163 | bun-test | POST with a valid code and no markers, then with them | refused and still pending; then approved | bun test -t "ISC-163" | derived: gate |
+| ISC-164 | bash | read the three docs | each states it | `rg -q 'shell' README.md && rg -q 'shell' skills/solobooks/references/approvals.md && rg -q 'never post' skills/solobooks/SKILL.md` | derived: gate |
 
 ## Decisions
 
@@ -515,6 +563,9 @@ Why: when solobooks can't find the books or can't act on what it was told, it sa
 - 2026-10-31: refined: an independent review of the blank-books fix found following solobooks' own advice could still reach blank books: setup's synced-folder warning, a bare setup under SOLOBOOKS_DIR, and a zero-byte file passing doctor. All adopted: only `--books` or a first setup may start books, and setup says when it did and where earlier books still are. Also adopted: a repair keeps settings until the folder works, stray arguments refused, a failed write exits non-zero, serve refuses what would leave approve_url wrong. Deferred: nothing.
 - 2026-11-01: 0.1.6 ships the F16 fixes. The six real-agent evals passed on 6ece04f (install with Claude Code and Codex, onboarding, past invoices, planted instructions, charges); every script probe and `bun test` ran first. The review's fixes weren't given a second independent review, because each has a test and the daily upkeep pass re-drives every feature from latest main right after.
 - D-auto-2026-10-30T02:18:51.993Z: Auto-resumed from complete to learn at 2026-10-30T02:18:51.993Z — iteration 2
+
+- 2026-11-01: The upkeep pass drove a shell-style approval on 0.1.6: read a card's code from the page and post it. The promise in F9 only covers commands and tools, so this was never a broken claim, but it is wider than the README's wording. Decided without waiting: raise the bar by requiring the browser's same-origin markers (ISC-163), which stops an agent doing it by accident or habit, and say plainly in the docs what a click does and doesn't hold against (ISC-164). A shell agent on the same account can forge headers or write the books file, so no click-level check can be a real boundary, and I won't claim one. Passkey level is the strongest the page offers.
+- 2026-11-01: A payment may be dated before its invoice, because clients do pay ahead and the invoice takes the approval day's date. Only a date after today is refused (ISC-150).
 
 ## Learning
 
