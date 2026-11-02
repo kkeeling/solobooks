@@ -2,18 +2,18 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: complete
-progress: 186/186
+phase: climbing
+progress: 194/194
 started: 2026-10-23T01:31:17Z
-updated: 2026-11-01T00:00:00Z
+updated: 2026-11-02T00:00:00Z
 principal_stated_goal: "I want to build my own version of that without all the bells and whistles. That is, you know, minimal and agent native to perform most of those same tasks."
 principal_stated_goal_source: conversation
 principal_stated_goal_signal: 2
 principal_stated_goal_locked: 2026-10-21
 context_sufficient: true
 interview_invoked: true
-iteration: 3
-resumed_at: 2026-10-30T02:18:51.993Z
+iteration: 4
+resumed_at: 2026-11-02T14:47:36.244Z
 resumed_from_phase: complete
 ---
 
@@ -352,6 +352,18 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - [x] ISC-185: Anti: a start date reaching back over a past invoice brought in for that client is refused, naming the first day it can use, so those months can't bill twice.
 - [x] ISC-186: An invoice's email and PDF ask for what is still owed once part is paid or credited, say paid in full when nothing is, and read as before when nothing has been settled.
 
+### F21 · Old backups thin out
+Why: a copy every day the books change is about 1,750 files over seven years, in a folder the person chose and has to pay to store, while nobody restores to one exact day from three years ago.
+
+- [x] ISC-187: After a write goes through, daily copies more than 30 days old are gone, except the earliest copy of each calendar month and the newest 30 copies, and every copy 30 days old or newer is still there, each unchanged.
+- [x] ISC-188: Anti: only regular files named exactly `solobooks-YYYY-MM-DD.sqlite`, with a real calendar date, are ever removed. A copy made before an upgrade, a `-2` copy, a copy the person renamed, and anything else in the folder stay, however old.
+- [x] ISC-189: Anti: nothing is removed on a dry run, a read, a refused write or a write parked for the person, through the CLI or MCP, or when today's copy isn't a backup that could be restored, and that last case warns.
+- [x] ISC-190: An old copy the folder won't let go, or a folder that can't be read, adds a plain warning naming the folder, and the write still happens. A copy locked on purpose stays with no warning, and the other old copies still go.
+- [x] ISC-191: `backup set`, its help and the guide state the rule and how to keep a copy for good, and nothing still says every copy is kept.
+- [x] ISC-192: Anti: under a clock that jumps a year ahead, one write leaves the newest 30 copies.
+- [x] ISC-193: Anti: an empty, cut-off or inwardly damaged copy never stands in as a month's earliest, so a good copy from that month stays, the damaged copy stays too, and a month with no good copy loses nothing.
+- [x] ISC-194: A write that removes more than one old copy says how many and from which folder, and one copy ageing out goes unsaid.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -542,6 +554,14 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 | ISC-186 | bun-test | credit applied, taken back, then paid in full | email and PDF amounts at each step | bun test -t "ISC-186" | derived: money |
 | ISC-184 | ci | .github/workflows/release.yml and a real release | probes step before publish; a failing script exits non-zero | rg -q 'release-probes' .github/workflows/release.yml && bash scripts/release-probes.sh | derived: release |
 | ISC-164 | bash | read the three docs | each states it | `rg -q 'with a shell' README.md && rg -q 'with a shell' skills/solobooks/references/approvals.md && rg -qi 'never post' skills/solobooks/SKILL.md` | derived: gate |
+| ISC-187 | bun-test | old and recent daily copies, a real write, through the CLI and MCP | exact folder listing; kept copies hash the same | bun test -t "ISC-187" | derived: durability |
+| ISC-188 | bun-test | old files that only resemble a daily copy, a folder and a symlink under that name | all still there beside a removed real one | bun test -t "ISC-188" | derived: durability |
+| ISC-189 | bun-test | a read, a dry run and a refused write through the CLI and MCP; today's copy missing, empty or a folder | old copies all still there | bun test -t "ISC-189" | derived: durability |
+| ISC-190 | bun-test | a backup folder that refuses deletes; one locked copy | warning names the folder; exit 0; the write landed; the others went | bun test -t "ISC-190" | derived: durability |
+| ISC-191 | bun-test | the real `backup set` reply, help output and guide | each has the rule and "rename it", none "keeps every one" | bun test -t "ISC-191" | derived: docs |
+| ISC-192 | bun-test | 30 recent copies, a clock a year ahead, a real write | all still there | bun test -t "ISC-192" | derived: durability |
+| ISC-193 | bun-test | empty, cut-off and non-database files as a month's earliest | a good copy stays per month; an all-damaged month is untouched | bun test -t "ISC-193" | derived: durability |
+| ISC-194 | bun-test | three old copies due, then one | warning with the count and folder; then no warning | bun test -t "ISC-194" | derived: durability |
 
 ## Decisions
 
@@ -621,6 +641,11 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - 2026-11-01: Credit taken back in a later month comes off in that month, the same as a refund and the ledger, so a month already reported doesn't change. A start date inside a cycle doesn't bill that cycle, the same as a mid-month `period_start` today, and the guide says to use the cycle's first day. The command is spelled `client credit unapply` only: the builder's change reading any hyphen in a command word as a space was a parser-wide change nothing asked for, so it came back out.
 - 2026-11-01: The independent review of F20 reproduced three defects, all fixed. A start date could re-bill months already brought in as past invoices (ISC-185), so that's refused, with no way past it except a later date, because an engagement can't be edited afterward and a false refusal costs one hand-added line. The email and PDF asked for the full total after credit was applied, an older bug outside F20, so the client would have overpaid (ISC-186). A back-dated take-back changes a closed month, which stays possible, as back-dated refunds are, but everything now says to use today (ISC-178). Left open: a past invoice brought in after the start date was set is only covered by the guide.
 - 2026-11-01: Left as they are after review, each cheap to revisit: a zero-byte file says "no books" at `serve` and in the CLI, with only the page saying empty, because the fix is the same; doctor accepts a bare command its own PATH finds, though an app started from the Dock might not; a card asked for again after its level was lowered keeps the old card, which the person can still approve or reject.
+- D-auto-2026-11-02T14:47:36.244Z: Auto-resumed from complete to learn at 2026-11-02T14:47:36.244Z — iteration 4
+- 2026-11-02: Backup retention, the maintainer's answer "Use the suggested rule": every copy for 30 days, then the first of each month, plus every copy made before an upgrade. F21 builds it. "First of each month" means the earliest copy, because a day with no change has no copy.
+- 2026-11-02: The independent review of F21 reproduced these, all fixed: thinning ran before the operation, so a refused write could delete copies with no word (ISC-189, ISC-194); a damaged earliest copy could outlive every good one in its month (ISC-193); an empty file under today's name passed for a good copy (ISC-189); one write under a wrong clock took recent copies (ISC-192); a locked copy stopped the rest (ISC-190); and the rule's wording and its check were weaker than the claim (ISC-191). The newest 30 copies are kept whatever their dates: that keeps slightly more than the rule asked, and only a wrong clock or a long gap ever makes it differ. The first thinning doesn't wait to tell the person first: it reports on the write, and the release notes say it, written by hand because the workflow's generated notes only list PR titles.
+- 2026-11-02: A second fresh review of F21 reproduced these, all fixed: a write parked for the person could remove copies while saying nothing had happened, and two simultaneous writes could double the count (ISC-189, ISC-194); today's name holding a non-backup stopped thinning with no word (ISC-189); an unreadable folder got the wrong message (ISC-190); a copy locked on purpose warned on every write (ISC-190); and a copy damaged inside wasn't tested (ISC-193). It also measured the first thinning of 1,825 copies at 197 MB per copy: 324 seconds inside one write, and a run killed partway leaves the write committed with no result. Left: the first release was 2026-10-23, so no copy anywhere passes 30 days until 2026-11-22, and everyday thinning removes one copy and checks two. If a real folder ever holds a long backlog, thin a few months per write. A flipped byte that SQLite's own check can't see still passes as restorable, which is SQLite's limit.
+- 2026-11-02: Left as they are after review, each filed: a second set of books sharing the backup folder can leave its copy as a month's only one, a day whose only change is an approval on the page gets no copy, and backups hold only the database, not receipts or PDFs. A clock far behind for one write can still become a month's earliest; left, because it needs a wrong clock and the copy it makes is still real books. A full drive stops today's copy, so thinning waits with it, by design.
 
 ## Learning
 
@@ -695,11 +720,13 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - All script probes on ac2e800 2026-11-01, including `scripts/release-probes.sh`, export-check and plugin-install-check, PASS; real-agent evals on the same commit: install with Claude Code and Codex, onboarding, past invoices, planted instructions, charges, all PASS
 - ISC-184: real release 2026-11-01, run 41347916659: the probes step ran on GitHub's runner before publish and passed; a failing probe stopping the script is proven by test/release.test.ts with stand-in probes, not by a failed real release
 - v0.1.8 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.8`, hash matches SHA256SUMS, setup and doctor pass
+- npm 0.1.8 published 2026-11-02: all six packages on the registry, and a fresh install into an empty folder prints `solobooks 0.1.8`
+- ISC-187..194: `bun test` 2026-11-02, each safeguard undone in turn and seen failing its test; live through the harness on scratch books: five seeded dailies thinned to the earliest of each month after one write, the pre-upgrade copy stayed, every survivor passes SQLite's integrity check
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
 - [x] Keep the planning docs (`docs/brief.md`, `docs/proposal.md`, `docs/research/`) out of the public repo or scrub them first. They name the maintainer's clients and personal tax situation — they're a release step, not a product claim.
-- [ ] Publish 0.1.6 to 0.1.8 to npm: the registry is at 0.1.5, because this Mac isn't signed in and publishing needs the maintainer's passkey.
+- [x] Publish 0.1.6 to 0.1.8 to npm — done 2026-11-02: all six packages at 0.1.8, and a fresh registry install prints `solobooks 0.1.8`. Each package can ask for its own passkey approval, up to one per package, and a sign-in lapses within a day.
 - [ ] First real test: the maintainer's own month of client work becomes a correct invoice through the agent-time add-on — dogfood, not part of the product's definition of done.
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
@@ -710,7 +737,7 @@ Why: each of these is a dead end someone hits in ordinary use, a voidable invoic
 - [x] Rerun the installer check against the real GitHub Releases URL — done 2026-10-23 on release v0.1.0: the README one-liner in a bare fresh home (no bun on PATH) installed `solobooks 0.1.0`, and its hash matches the release's SHA256SUMS.
 - [x] Publish the npm wrapper — done 2026-10-23: `solobooks` and the five `@solobooks/<os>-<arch>` packages at 0.1.0, built from the v0.1.0 release binaries. npm staged them until the maintainer cleared them. A fresh registry install printed `solobooks 0.1.0`, its binary hash matches the release, and MCP answered with 66 tools.
 - [x] Un-apply a client credit — built in F20 (ISC-175 to ISC-178).
-- [ ] Backup retention: today every daily copy is kept, about 1,750 files over seven years. Suggested: every copy for 30 days, then the first of each month, plus every pre-upgrade copy — waits on the maintainer, since it deletes backups.
+- [x] Backup retention — built in F21 (ISC-187 to ISC-194), on the maintainer's answer (Decisions 2026-11-02).
 - [x] Show each invoice line's charge id in `invoice get` — built in F20 (ISC-181, ISC-182).
 - [ ] Test which other agent apps (Codex, Claude Desktop, Cursor, ChatGPT, VS Code and the rest) show the in-chat approval prompt for a gated tool; each one that does gets named in the README.
 - [x] `backup set` and `move` are CLI-only — kept that way, and the guide hands the person the command (ISC-183, Decisions 2026-11-01).

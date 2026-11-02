@@ -4,7 +4,7 @@ description: Use when the person mentions solobooks, "my books", bookkeeping, "i
 license: MIT
 compatibility: Needs the solobooks app on this machine, connected with `solobooks setup` (check with `solobooks doctor`). Works through its MCP tools or its CLI.
 metadata:
-  version: "0.1.8"
+  version: "0.1.9"
 ---
 
 # solobooks
@@ -17,7 +17,7 @@ solobooks is a small books app that runs on the person's own machine. It holds t
 - **CLI**: `solobooks <noun> <verb> --field value ... --source agent:<your-name>`, or `--json '{...}'` for lists. `solobooks help` lists every command and field. Add `--dry-run` to any write to see what it would do without changing anything.
 - Money is whole **cents** (`15000` is $150.00). Dates are `YYYY-MM-DD`. Rates are cents per hour.
 - A refusal is one sentence plus the field to change. Fix that field and retry; don't work around it.
-- A result may carry `warnings`: the books sit in a synced folder, or today's backup couldn't be written. The write still happened; tell the person what the warning says.
+- A result may carry `warnings`: the books sit in a synced folder, today's backup couldn't be written, or old backups were removed or couldn't be. The write still happened; tell the person what the warning says.
 - Pass an `idempotency_key` when a write might be retried (bulk imports especially): repeating it is a no-op.
 
 ## The rules that matter

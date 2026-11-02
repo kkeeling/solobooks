@@ -1,13 +1,16 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { absolute, booksDir, booksFile, type Env, homeDir, now, readConfig, saveConfig, syncedFolder } from "./config.ts";
-import { backupInto } from "./core/backup.ts";
+import { backupInto, thinDailyBackups, type Thinned } from "./core/backup.ts";
 import { type Books, hasBooks, openBooks, type OpenOptions } from "./core/db.ts";
 import { today } from "./core/format.ts";
 import { Refusal } from "./core/refusal.ts";
 
-// Durability: a dated backup each day the books change, and a warning while the live books sit in a synced folder.
+// Durability: a dated backup each day the books change, thinned as it ages, and a warning while the live books sit in a synced folder.
 // solobooks only ever writes copies on this machine; getting them off it is the person's or their agent's job.
+
+/** What stays in the backup folder, as every message and guide states it. */
+export const BACKUP_RULE = "every copy for 30 days, and always your newest 30, then the earliest copy of each month, and every copy made before an upgrade";
 
 /** How the adapters open books: with the person's backup folder and the clock, for a backup before an upgrade. */
 export function openOptions(env: Env): OpenOptions {
@@ -58,6 +61,28 @@ export function beforeWrite(db: Books, dir: string, env: Env, dryRun: boolean): 
   if (backup) warnings.push(backup);
   const synced = syncedWarning(dir, env);
   if (synced) warnings.push(synced);
+  return warnings;
+}
+
+/**
+ * What runs once a write has gone through: thins old daily copies, so a refused write or a dry run removes nothing and
+ * the result can say what went. One copy ageing out is the everyday case and goes unsaid; more than that gets told.
+ */
+export function afterWrite(env: Env, dryRun: boolean): string[] {
+  const folder = backupFolder(env);
+  if (dryRun || !folder || !existsSync(folder)) return [];
+  let thinned: Thinned;
+  try {
+    thinned = thinDailyBackups(folder, today(now(env)));
+  } catch (e) {
+    return [`solobooks couldn't check the old backups in ${folder} (${e instanceof Error ? e.message : e}), so none were removed. Check that folder's permissions.`];
+  }
+  const warnings: string[] = [];
+  if (thinned.todayUnusable) warnings.push(`The file under today's name in ${folder} isn't a backup that could be restored, so today has no good copy and no old backups were removed. Move that file away, and the next write makes a new copy.`);
+  if (thinned.removed > 1) warnings.push(`solobooks removed ${thinned.removed} old daily backups from ${folder}. It keeps ${BACKUP_RULE}.`);
+  if (thinned.stuck > 0) {
+    warnings.push(`Some old backups in ${folder} couldn't be removed (${thinned.reason}), so they stay, which only means the folder holds more copies than it needs. Check that folder's permissions.`);
+  }
   return warnings;
 }
 
@@ -141,6 +166,6 @@ export function backupSet(argv: string[], env: Env) {
     settings,
     latest,
     ...(dir && !latest && { warnings: [`There are no books in "${dir}" to back up yet, so no copy was written.`] }),
-    next: "solobooks now writes a dated copy of the books here once a day, the first time they change that day, and keeps every one. Getting copies off this machine, such as to another drive or a cloud folder, is up to you or your agent.",
+    next: `solobooks now writes a dated copy of the books here once a day, the first time they change that day. It keeps ${BACKUP_RULE}. To keep any other copy for good, rename it. Getting copies off this machine, such as to another drive or a cloud folder, is up to you or your agent.`,
   };
 }
