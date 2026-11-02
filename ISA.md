@@ -2,7 +2,7 @@
 task: "Build solobooks, agent-native books for solo consultants"
 slug: 20261022-solobooks
 project: solobooks
-phase: climbing
+phase: complete
 progress: 194/194
 started: 2026-10-23T01:31:17Z
 updated: 2026-11-02T00:00:00Z
@@ -721,12 +721,13 @@ Why: a copy every day the books change is about 1,750 files over seven years, in
 - ISC-184: real release 2026-11-01, run 41347916659: the probes step ran on GitHub's runner before publish and passed; a failing probe stopping the script is proven by test/release.test.ts with stand-in probes, not by a failed real release
 - v0.1.8 published 2026-11-01: README one-liner in a scratch home prints `solobooks 0.1.8`, hash matches SHA256SUMS, setup and doctor pass
 - npm 0.1.8 published 2026-11-02: all six packages on the registry, and a fresh install into an empty folder prints `solobooks 0.1.8`
+- v0.1.9 published 2026-11-02: release run 41476187424 passed; README one-liner in a scratch home prints `solobooks 0.1.9`, hash matches SHA256SUMS, setup passes, `backup set` states the rule; npm 0.1.9 on all six packages, and a fresh install prints `solobooks 0.1.9`
 - ISC-187..194: `bun test` 2026-11-02, each safeguard undone in turn and seen failing its test; live through the harness on scratch books: five seeded dailies thinned to the earliest of each month after one write, the pre-upgrade copy stayed, every survivor passes SQLite's integrity check
 ## Remaining Work
 
 - [x] Trademark search on "solobooks" — skipped at the maintainer's call (Decisions 2026-10-23).
 - [x] Keep the planning docs (`docs/brief.md`, `docs/proposal.md`, `docs/research/`) out of the public repo or scrub them first. They name the maintainer's clients and personal tax situation — they're a release step, not a product claim.
-- [x] Publish 0.1.6 to 0.1.8 to npm — done 2026-11-02: all six packages at 0.1.8, and a fresh registry install prints `solobooks 0.1.8`. Each package can ask for its own passkey approval, up to one per package, and a sign-in lapses within a day.
+- [x] Publish to npm — 0.1.8 and 0.1.9 done 2026-11-02, each proven by a fresh registry install. A publish needs the maintainer at the screen: a sign-in lapses within a day, a link lasts 5 minutes, and approvals ran from one to two per release. Publishing from the release workflow, with no link, is filed as its own task.
 - [ ] First real test: the maintainer's own month of client work becomes a correct invoice through the agent-time add-on — dogfood, not part of the product's definition of done.
 - [ ] Grok Build and Muse Code README-prompt install tests — moved out of the v1 climb by the maintainer; they need his accounts on those agents.
 - [ ] Windows `irm | iex` installer test — moved out of the v1 climb; a friend of the maintainer tests it on Windows.
