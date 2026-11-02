@@ -42,8 +42,8 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 - [Approve on the page](./approve-on-page.md) covers approving, rejecting, batches, letting the agent decide, and why only the person can approve.
 - [Bill a client](./bill-a-client.md) covers drafting from time and charges, issuing, the PDF and email text, recording it sent, and the MCP entry.
-- [Record money](./record-money.md) covers bank statements, payments backed by a bank line, and unbacked payments that wait for approval.
+- [Record money](./record-money.md) covers bank statements, payments backed by a bank line, unbacked payments that wait for approval, and client credit.
 - [Read the page](./read-the-page.md) covers the summary and panels when populated, empty, loading and unreadable.
 - [Install and connect](./install-and-connect.md) covers setup, doctor and the MCP server answering.
 
-Not mapped yet: expenses and receipts, credit notes and voids, refunds and client credit, owner money, sales tax, mileage, year-end reports and export, backups and `move`, importing past invoices, editing and deleting drafts, overdue reminders, milestones and recurring fees, `bank match`, `bank unmatch`, matching on import, other statement column layouts, and the agent-time add-on. Add a file here when one of them is the thing being verified.
+Not mapped yet: expenses and receipts, credit notes and voids, refunds, owner money, sales tax, mileage, year-end reports and export, backups and `move`, importing past invoices, editing and deleting drafts, overdue reminders, milestones and recurring fees, `bank match`, `bank unmatch`, matching on import, other statement column layouts, and the agent-time add-on. Add a file here when one of them is the thing being verified.
