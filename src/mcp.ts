@@ -12,7 +12,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { booksDir, booksFile, now, pageUrl, type Env } from "./config.ts";
-import { beforeWrite, flag, onlyFlags, openOptions, withWarnings } from "./durability.ts";
+import { afterWrite, beforeWrite, flag, onlyFlags, openOptions, withWarnings } from "./durability.ts";
 import { approvePending } from "./core/approve.ts";
 import { type Books, openForRun } from "./core/db.ts";
 import { dollars } from "./core/format.ts";
@@ -187,6 +187,7 @@ export function createServer(env: Env, books?: string): McpServer {
                 return inputRequired({ inputRequests: { approval: approvalForm(p) }, requestState: await approvals.mint({ pending_id: p.id }, ctx) });
               }
             }
+            if (op.kind === "write" && asked.status !== "pending") warnings.push(...afterWrite(env, dryRun));
             return reply(withWarnings(asked, warnings));
           } finally {
             db.close();

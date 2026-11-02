@@ -8,7 +8,7 @@ import { openForRun } from "./core/db.ts";
 import { findOp, OPS, performAsync } from "./core/perform.ts";
 import { Refusal } from "./core/refusal.ts";
 import { coerceFlags } from "./core/validate.ts";
-import { beforeWrite, onlyFlags, openOptions, withWarnings } from "./durability.ts";
+import { afterWrite, BACKUP_RULE, beforeWrite, onlyFlags, openOptions, withWarnings } from "./durability.ts";
 import { startPage } from "./page.ts";
 import { VERSION } from "./version.ts";
 
@@ -40,7 +40,7 @@ const COMMANDS = [
     command: "backup set",
     kind: "install",
     description:
-      "Pick the folder backups go to (--folder <dir>). solobooks then writes a dated copy of the books there once a day, the first time they change that day, and keeps every one; it writes today's at once.",
+      `Pick the folder backups go to (--folder <dir>). solobooks then writes a dated copy of the books there once a day, the first time they change that day, and it writes today's at once. It keeps ${BACKUP_RULE}. To keep any other copy for good, rename it.`,
   },
   {
     command: "move",
@@ -130,6 +130,7 @@ export async function run(argv: string[], env: Env = process.env): Promise<{ cod
         now: now(env),
         page: pageUrl(env),
       });
+      if (r.ok && op.kind === "write" && r.result.status !== "pending") warnings.push(...afterWrite(env, dryRun));
       // A file, such as an export, prints as itself so it can be redirected into a file; everything else is JSON.
       if (r.ok && op.text !== undefined && typeof r.result[op.text] === "string") return { code: 0, stdout: r.result[op.text] as string, text: true };
       return r.ok ? out(0, withWarnings(r.result, warnings)) : out(2, r.refusal);

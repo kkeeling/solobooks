@@ -12,11 +12,11 @@ Ask the person where backups should go, ideally a folder that leaves the machine
 solobooks backup set --folder ~/Dropbox/solobooks-backups
 ```
 
-It writes today's backup at once, so a wrong folder shows up now. After that, the first time the books change each day, solobooks first writes a copy named for that day, such as `solobooks-2026-10-23.sqlite`, and keeps every one. Days with no change get no copy, since nothing changed. Before an upgrade to a newer solobooks changes the books file, it writes `solobooks-<date>-before-upgrade-from-v<N>.sqlite`; if it can't, it refuses and leaves the books as they were.
+It writes today's backup at once, so a wrong folder shows up now. After that, the first time the books change each day, solobooks first writes a copy named for that day, such as `solobooks-2026-10-23.sqlite`. Days with no change get no copy, since nothing changed. It keeps every copy for 30 days, and always your newest 30, then the earliest copy of each month, and every copy made before an upgrade, and removes the other daily copies. To keep any other copy for good, rename it, because solobooks only removes files named exactly for a day. Before an upgrade to a newer solobooks changes the books file, it writes `solobooks-<date>-before-upgrade-from-v<N>.sqlite`; if it can't, it refuses and leaves the books as they were.
 
-`solobooks doctor` warns when no backup folder is chosen, or when the folder has gone missing (an unplugged drive). A write whose backup couldn't be written still goes ahead, and its result carries a `warnings` line saying so. Tell the person.
+`solobooks doctor` warns when no backup folder is chosen, or when the folder has gone missing (an unplugged drive). A write whose backup couldn't be written still goes ahead, and its result carries a `warnings` line saying so. Tell the person. The same goes for a line saying old backups were removed, or couldn't be.
 
-To restore, stop using solobooks, copy the backup they choose over `solobooks.sqlite` in the books folder (keep the current file aside first), and run `solobooks doctor`.
+A copy named for a day holds the books as they stood before that day's first change. To restore, stop using solobooks, copy the backup they choose over `solobooks.sqlite` in the books folder (keep the current file aside first), and run `solobooks doctor`.
 
 ## The synced-folder warning
 
